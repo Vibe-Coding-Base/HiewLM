@@ -1,0 +1,46 @@
+# hiewLM — workspace root
+# Cross-platform HIEW clone. See docs/develop/00-thiet-ke-tong-the.md
+[workspace]
+resolver = "2"
+members = [
+    "crates/hiewlm-core",
+    "crates/hiewlm-fmt",
+    "crates/hiewlm-asm",
+    "crates/hiewlm-tui",
+    "crates/hiewlm-cli",
+    "crates/hiewlm-plugin",
+    "crates/hiewlm-plugin-zip",
+    "crates/hiewlm-plugin-pdf",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/hiewLM/hiewLM"
+authors = ["hiewLM contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "1"
+
+# -- Security & quality pillars (docs §22, §24) --
+# unsafe is denied workspace-wide; the sole exception (mmap) must carry a local
+# `#[allow(unsafe_code)]` with a SAFETY note at the use site.
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# No panics on file data: discourage hidden unwrap/expect in input-handling code.
+# (Ramping up; "warn" for now so it doesn't block M0.)
+unwrap_used = "warn"
+
+# Release binary: small, a single static file.
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+panic = "abort"

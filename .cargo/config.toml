@@ -1,0 +1,9 @@
+# Cross-compiling to Windows from a Unix host uses the mingw-w64 toolchain
+# (brew install mingw-w64 / apt install gcc-mingw-w64-x86-64).
+# Native Windows builds with the MSVC toolchain need none of this.
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+ar = "x86_64-w64-mingw32-ar"
+
+[target.aarch64-pc-windows-gnullvm]
+linker = "aarch64-w64-mingw32-clang"

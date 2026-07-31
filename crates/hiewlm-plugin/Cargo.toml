@@ -1,0 +1,16 @@
+[package]
+name = "hiewlm-plugin"
+description = "hiewLM WASM plugin host (wasmtime sandbox)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+wasmtime = { version = "27", default-features = false, features = ["cranelift", "runtime", "wat"] }
+
+[lints]
+workspace = true

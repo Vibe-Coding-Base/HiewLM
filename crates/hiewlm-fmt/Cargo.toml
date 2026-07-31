@@ -1,0 +1,17 @@
+[package]
+name = "hiewlm-fmt"
+description = "hiewLM executable-format detection (PE/ELF/Mach-O) via goblin."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+hiewlm-core = { path = "../hiewlm-core" }
+anyhow.workspace = true
+goblin = "0.9"
+
+[lints]
+workspace = true

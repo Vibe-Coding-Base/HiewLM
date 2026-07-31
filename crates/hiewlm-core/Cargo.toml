@@ -1,0 +1,17 @@
+[package]
+name = "hiewlm-core"
+description = "hiewLM core: buffer, addressing, search, registry — no UI dependency."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+memmap2 = "0.9"
+
+[lints]
+workspace = true

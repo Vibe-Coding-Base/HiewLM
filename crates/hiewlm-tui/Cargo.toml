@@ -1,0 +1,33 @@
+[package]
+name = "hiewlm-tui"
+description = "hiewLM terminal UI (ratatui/crossterm), in the HIEW spirit."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "hiewlm"
+path = "src/main.rs"
+
+[dependencies]
+hiewlm-core = { path = "../hiewlm-core" }
+hiewlm-fmt = { path = "../hiewlm-fmt" }
+hiewlm-plugin-zip = { path = "../hiewlm-plugin-zip" }
+hiewlm-plugin-pdf = { path = "../hiewlm-plugin-pdf" }
+hiewlm-asm = { path = "../hiewlm-asm" }
+anyhow.workspace = true
+ratatui = "0.29"
+crossterm = "0.28"
+clap = { version = "4", features = ["derive"] }
+crc32fast = "1"
+md-5 = "0.10"
+sha2 = "0.10"
+blake3 = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[lints]
+workspace = true

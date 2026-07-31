@@ -1,0 +1,18 @@
+[package]
+name = "hiewlm-asm"
+description = "hiewLM disassembly: x86/x86-64 (iced-x86) + ARM/ARM64/MIPS/RISC-V (Capstone)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+capstone = "0.14.0"
+hiewlm-core = { path = "../hiewlm-core" }
+iced-x86 = { version = "1.21", features = ["code_asm"] }
+
+[lints]
+workspace = true
+

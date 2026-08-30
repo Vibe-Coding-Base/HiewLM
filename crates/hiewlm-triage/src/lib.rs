@@ -156,6 +156,8 @@ pub struct TriageReport {
     pub import_notes: Vec<String>,
     pub import_count: usize,
     pub export_count: usize,
+    /// Format-specific overview facts (dynamic loader, Mach-O file type, …).
+    pub extra: Vec<(String, String)>,
     pub anomalies: Vec<ReportFinding>,
     pub indicators: Vec<Indicator>,
     pub hidden: Vec<HiddenString>,
@@ -251,7 +253,13 @@ pub fn analyze(
     r.map = entropy_map(buf, opts.map_cells);
 
     let model = hiewlm_fmt::detect(buf);
+    // Exactly one of these claims the bytes; each contributes the structural
+    // checks that make sense for its format.
     let pe = hiewlm_fmt::pe_details(&bytes);
+    let elf = pe.is_none().then(|| hiewlm_fmt::elf_details(&bytes)).flatten();
+    let macho = (pe.is_none() && elf.is_none())
+        .then(|| hiewlm_fmt::macho_details(&bytes))
+        .flatten();
 
     if let Some(m) = &model {
         r.format = m.format.label().to_string();
@@ -271,10 +279,37 @@ pub fn analyze(
             .map(|(_, v)| v.clone());
 
         for (i, s) in m.address_space.sections().iter().enumerate() {
+            // PE section headers carry permissions directly; on ELF and Mach-O
+            // they belong to the enclosing segment, so look the section up there
+            // rather than leaving the column as "?".
             let perms = pe
                 .as_ref()
                 .and_then(|p| p.sections.get(i))
                 .map(|p| p.perms())
+                .or_else(|| {
+                    elf.as_ref().and_then(|e| {
+                        e.segments
+                            .iter()
+                            .find(|g| {
+                                g.kind_name == "LOAD"
+                                    && s.file_off >= g.offset
+                                    && s.file_off < g.file_end()
+                            })
+                            .map(|g| g.perms())
+                    })
+                })
+                .or_else(|| {
+                    macho.as_ref().and_then(|mo| {
+                        mo.segments
+                            .iter()
+                            .find(|g| {
+                                g.file_size > 0
+                                    && s.file_off >= g.file_off
+                                    && s.file_off < g.file_end()
+                            })
+                            .map(|g| g.perms())
+                    })
+                })
                 .unwrap_or_else(|| "?".into());
             let raw_size = pe
                 .as_ref()
@@ -324,6 +359,53 @@ pub fn analyze(
         r.tls_callbacks = p.tls_callbacks.clone();
         r.hashes.rich_hash = p.rich_clear.as_ref().map(|c| md5_hex(c));
         r.anomalies = p.anomalies.iter().map(ReportFinding::from).collect();
+    }
+
+    if let Some(e) = &elf {
+        r.overlay = e.overlay;
+        r.anomalies = e.anomalies.iter().map(ReportFinding::from).collect();
+        r.extra.push(("ELF type".into(), e.type_name.to_string()));
+        if let Some(i) = &e.interp {
+            r.extra.push(("Dynamic loader".into(), i.clone()));
+        } else if e.is_static() {
+            r.extra.push(("Linking".into(), "static".into()));
+        }
+        if e.no_section_headers {
+            r.extra.push(("Section headers".into(), "absent (stripped or packed)".into()));
+        }
+        r.extra.push((
+            "Segments".into(),
+            e.segments
+                .iter()
+                .filter(|s| s.kind_name == "LOAD")
+                .map(|s| format!("{:#x}{}", s.vaddr, s.perms()))
+                .collect::<Vec<_>>()
+                .join(" "),
+        ));
+    }
+
+    if let Some(m) = &macho {
+        r.overlay = m.overlay;
+        r.anomalies = m.anomalies.iter().map(ReportFinding::from).collect();
+        r.signed = m.is_signed();
+        if let Some((off, size)) = m.code_signature {
+            r.signature_note = Some(format!("code signature: {size} bytes at {off:#x}"));
+        }
+        r.extra.push(("Mach-O type".into(), m.filetype_name.to_string()));
+        if m.encrypted {
+            r.extra.push(("Encryption".into(), "cryptid set — segment ships encrypted".into()));
+        }
+        if !m.dylibs.is_empty() {
+            r.extra.push(("Linked libraries".into(), m.dylibs.len().to_string()));
+        }
+        r.extra.push((
+            "Segments".into(),
+            m.segments
+                .iter()
+                .map(|s| format!("{}{}", s.name, s.perms()))
+                .collect::<Vec<_>>()
+                .join(" "),
+        ));
     }
 
     if let Some(c) = container {
@@ -658,6 +740,35 @@ mod tests {
         assert_eq!(r.map.len(), 10);
         assert_eq!(r.map.iter().map(|c| c.len).sum::<u64>(), 10_000);
         assert!(r.map[0].entropy < 0.1, "zeros have no entropy");
+    }
+
+    #[test]
+    fn elf_anomalies_reach_the_report() {
+        // A 64-bit ELF whose only LOAD segment is writable and executable.
+        let mut b = vec![0u8; 64 + 56];
+        b[0..4].copy_from_slice(b"\x7fELF");
+        b[4] = 2;
+        b[5] = 1;
+        b[16..18].copy_from_slice(&2u16.to_le_bytes());
+        b[24..32].copy_from_slice(&0x400000u64.to_le_bytes());
+        b[32..40].copy_from_slice(&64u64.to_le_bytes());
+        b[54..56].copy_from_slice(&56u16.to_le_bytes());
+        b[56..58].copy_from_slice(&1u16.to_le_bytes());
+        let p = 64;
+        b[p..p + 4].copy_from_slice(&1u32.to_le_bytes());
+        b[p + 4..p + 8].copy_from_slice(&7u32.to_le_bytes()); // rwx
+        b[p + 16..p + 24].copy_from_slice(&0x400000u64.to_le_bytes());
+        b[p + 32..p + 40].copy_from_slice(&120u64.to_le_bytes());
+        b[p + 40..p + 48].copy_from_slice(&120u64.to_le_bytes());
+
+        let r = analyze("t.elf", &buf(b), None, &Options::default());
+        assert!(
+            r.anomalies.iter().any(|a| a.message.contains("writable AND executable")),
+            "{:?}",
+            r.anomalies
+        );
+        assert!(r.anomalies.iter().any(|a| a.message.contains("no section header table")));
+        assert!(r.extra.iter().any(|(k, _)| k == "ELF type"));
     }
 
     #[test]

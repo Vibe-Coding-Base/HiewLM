@@ -108,6 +108,10 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char('p'), _, _, _) if plain => Some(Command::BlockPaste),
         (Char('d'), _, _, _) if plain => Some(Command::BlockDelete),
         (Char('b'), _, _, _) if plain => Some(Command::OpenBlockMenu),
+        // Triage screen: the one keystroke that answers "what am I looking at?".
+        (Char('2'), _, _, _) if plain => Some(Command::OpenTriage),
+        (Char('T'), _, _, _) => Some(Command::OpenTriage),
+        (F(2), false, false, _) => Some(Command::OpenTriage),
         // Alt+F2 NOPs the instruction under the cursor (HIEW). It has to be
         // matched before the bare-F2 arm further down.
         (F(2), _, true, _) => Some(Command::NopInstruction),

@@ -151,7 +151,7 @@ pub fn parse(bytes: &[u8]) -> Option<PeDetails> {
     }
     let coff = e_lfanew + 4;
     let nsec = u16le(bytes, coff + 2) as usize;
-    let timestamp = u32le(bytes, coff + 8);
+    let timestamp = u32le(bytes, coff + 4);
     let size_of_opt = u16le(bytes, coff + 16) as usize;
     let opt = coff + 20;
     let magic = u16le(bytes, opt);
@@ -441,7 +441,10 @@ fn anomalies(d: &PeDetails, file_len: u64, size_of_headers: u32) -> Vec<Finding>
                 .at(s.raw_ptr as u64),
             );
         }
-        if s.raw_size == 0 && s.vsize > 0 {
+        // IMAGE_SCN_CNT_UNINITIALIZED_DATA: .bss is *supposed* to have no raw
+        // data, so only flag sections that claim initialized content.
+        let uninitialized = s.characteristics & 0x0000_0080 != 0;
+        if s.raw_size == 0 && s.vsize > 0 && !uninitialized {
             out.push(
                 Finding::suspicious(format!(
                     "section '{}' has no raw data but {:#x} bytes of memory — filled at runtime (packer)",
@@ -449,7 +452,7 @@ fn anomalies(d: &PeDetails, file_len: u64, size_of_headers: u32) -> Vec<Finding>
                 ))
                 .at(s.raw_ptr as u64),
             );
-        } else if s.vsize > 0 && s.raw_size > 0 && s.vsize as u64 > s.raw_size as u64 * 10 {
+        } else if !uninitialized && s.vsize > 0 && s.raw_size > 0 && s.vsize as u64 > s.raw_size as u64 * 10 {
             out.push(
                 Finding::suspicious(format!(
                     "section '{}' expands {:.0}x in memory ({:#x} -> {:#x}) — typical of a packer",
@@ -556,7 +559,7 @@ mod tests {
         let coff = e_lfanew + 4;
         b[coff..coff + 2].copy_from_slice(&0x014cu16.to_le_bytes()); // i386
         b[coff + 2..coff + 4].copy_from_slice(&1u16.to_le_bytes()); // 1 section
-        b[coff + 8..coff + 12].copy_from_slice(&0x6000_0000u32.to_le_bytes()); // timestamp
+        b[coff + 4..coff + 8].copy_from_slice(&0x6000_0000u32.to_le_bytes()); // timestamp
         b[coff + 16..coff + 18].copy_from_slice(&0xe0u16.to_le_bytes()); // size of opt
         let opt = coff + 20;
         b[opt..opt + 2].copy_from_slice(&0x10bu16.to_le_bytes()); // PE32
@@ -578,6 +581,28 @@ mod tests {
 
     const EXEC_READ: u32 = 0x6000_0020;
     const EXEC_WRITE_READ: u32 = 0xe000_0020;
+
+    #[test]
+    fn reads_the_timestamp_from_the_coff_header() {
+        let d = parse(&build_pe(EXEC_READ, 0)).expect("pe");
+        assert_eq!(d.timestamp, 0x6000_0000);
+        assert!(!d.anomalies.iter().any(|f| f.message.contains("TimeDateStamp is zero")));
+    }
+
+    #[test]
+    fn uninitialized_section_without_raw_data_is_not_flagged() {
+        // IMAGE_SCN_CNT_UNINITIALIZED_DATA | READ | WRITE, no raw data: a .bss.
+        let mut b = build_pe(EXEC_READ, 0);
+        let sec = 0x80 + 4 + 20 + 0xe0;
+        b[sec + 16..sec + 20].copy_from_slice(&0u32.to_le_bytes()); // raw size 0
+        b[sec + 36..sec + 40].copy_from_slice(&0xc000_0080u32.to_le_bytes());
+        let d = parse(&b).expect("pe");
+        assert!(
+            !d.anomalies.iter().any(|f| f.message.contains("no raw data")),
+            "{:?}",
+            d.anomalies
+        );
+    }
 
     #[test]
     fn parses_sections_and_entry() {

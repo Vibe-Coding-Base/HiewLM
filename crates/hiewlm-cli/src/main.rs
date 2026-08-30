@@ -54,6 +54,24 @@ enum Cmd {
         #[arg(long)]
         fail_on_suspicious: bool,
     },
+    /// One-screen triage verdict: hashes, packer, anomalies, capabilities, IOCs.
+    /// Give a directory to rank a whole folder of samples.
+    Triage {
+        /// File or directory to triage.
+        file: PathBuf,
+        /// Emit JSON instead of text (one object per file; an array for a folder).
+        #[arg(long)]
+        json: bool,
+        /// Exit 1 when the score reaches this threshold (default 40 with the flag).
+        #[arg(long)]
+        fail_on_suspicious: bool,
+        /// Score threshold for --fail-on-suspicious and folder filtering.
+        #[arg(long, default_value_t = 40)]
+        min_score: u8,
+        /// Cap the bytes scanned for strings (0 = whole file).
+        #[arg(long, default_value_t = 64 * 1024 * 1024)]
+        max_string_bytes: u64,
+    },
     /// List the container plugins compiled in.
     Plugins,
     /// Hex + ASCII dump.
@@ -143,6 +161,13 @@ enum Cmd {
         file: PathBuf,
         #[arg(long, default_value_t = 4)]
         min: usize,
+        /// Also list UTF-16LE (wide) strings — where Windows malware keeps its
+        /// configuration. On by default; `--no-utf16` turns it off.
+        #[arg(long = "no-utf16", action = clap::ArgAction::SetFalse)]
+        utf16: bool,
+        /// Only strings carrying an indicator (URL, IP, registry, LOLBin, …).
+        #[arg(long)]
+        ioc: bool,
     },
     /// Shannon entropy of the file and each section.
     Entropy { file: PathBuf },
@@ -175,6 +200,15 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
     use std::process::ExitCode;
     let out = match cmd {
         Cmd::Plugins => cmd_plugins()?,
+        Cmd::Triage { file, json, fail_on_suspicious, min_score, max_string_bytes } => {
+            let (text, worst) = cmd_triage(&file, plugins, json, min_score, max_string_bytes)?;
+            print!("{text}");
+            return Ok(if fail_on_suspicious && worst >= min_score {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            });
+        }
         Cmd::Container { file, findings, fail_on_suspicious } => {
             let (text, suspicious) = cmd_container(&file, plugins, findings)?;
             print!("{text}");
@@ -201,7 +235,7 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
             cmd_crypt(&file, &recipe, &at, count, dry_run, !no_backup)?
         }
         Cmd::Hash { file } => cmd_hash(&file)?,
-        Cmd::Strings { file, min } => cmd_strings(&file, min)?,
+        Cmd::Strings { file, min, utf16, ioc } => cmd_strings(&file, min, utf16, ioc)?,
         Cmd::Entropy { file } => cmd_entropy(&file)?,
         Cmd::Packer { file } => cmd_packer(&file)?,
         Cmd::Script { file, script } => cmd_script(&file, &script)?,
@@ -660,29 +694,118 @@ fn cmd_hash(file: &Path) -> Result<String> {
     ))
 }
 
-fn cmd_strings(file: &Path, min: usize) -> Result<String> {
+fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String> {
     let (buf, _) = open(file)?;
-    let data = read_all(&buf);
+    let scan = hiewlm_core::strings::extract_buffer(
+        &buf,
+        &hiewlm_core::strings::Options {
+            min_len: min,
+            ascii: true,
+            utf16,
+            max_results: 0,
+            max_bytes: 0,
+            only_tagged: ioc,
+        },
+    );
     let mut s = String::new();
-    let mut run = Vec::new();
-    let mut start = 0u64;
-    for (i, &b) in data.iter().enumerate() {
-        if (0x20..0x7f).contains(&b) {
-            if run.is_empty() {
-                start = i as u64;
-            }
-            run.push(b);
-        } else {
-            if run.len() >= min {
-                s.push_str(&format!("{start:08X}  {}\n", String::from_utf8_lossy(&run)));
-            }
-            run.clear();
-        }
+    for f in &scan.strings {
+        let tags = if f.kinds.is_empty() { String::new() } else { format!("[{}] ", f.kind_list()) };
+        s.push_str(&format!("{:08X} {} {tags}{}\n", f.offset, f.enc.label(), f.text));
     }
-    if run.len() >= min {
-        s.push_str(&format!("{start:08X}  {}\n", String::from_utf8_lossy(&run)));
+    if scan.truncated {
+        s.push_str("... (truncated: scan hit its limit)\n");
     }
     Ok(s)
+}
+
+/// Triage one file, or rank every file in a directory.
+fn cmd_triage(
+    path: &Path,
+    plugins: &[String],
+    json: bool,
+    min_score: u8,
+    max_string_bytes: u64,
+) -> Result<(String, u8)> {
+    let opts = hiewlm_triage::Options { max_string_bytes, ..Default::default() };
+    if path.is_dir() {
+        return triage_dir(path, plugins, json, min_score, &opts);
+    }
+    let report = triage_one(path, plugins, &opts)?;
+    let text = if json { report.to_json() } else { hiewlm_triage::render::text(&report) };
+    let score = report.score;
+    Ok((format!("{text}\n"), score))
+}
+
+fn triage_one(
+    path: &Path,
+    plugins: &[String],
+    opts: &hiewlm_triage::Options,
+) -> Result<hiewlm_triage::TriageReport> {
+    let (buf, _) = open(path)?;
+    // Container plugins only look at files the executable parsers did not claim.
+    let container = if plugins.is_empty() {
+        None
+    } else {
+        let reg = registry(plugins)?;
+        let data = read_all(&buf);
+        reg.parse(&data).map(|(_, c)| c)
+    };
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    Ok(hiewlm_triage::analyze(&name, &buf, container.as_ref(), opts))
+}
+
+/// Rank a folder of samples worst-first — the queue you work through.
+fn triage_dir(
+    dir: &Path,
+    plugins: &[String],
+    json: bool,
+    min_score: u8,
+    opts: &hiewlm_triage::Options,
+) -> Result<(String, u8)> {
+    let mut reports = Vec::new();
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
+        .with_context(|| format!("cannot read {}", dir.display()))?
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .map(|e| e.path())
+        .collect();
+    entries.sort();
+    for p in &entries {
+        match triage_one(p, plugins, opts) {
+            Ok(r) => reports.push(r),
+            Err(e) => eprintln!("skipped {}: {e:#}", p.display()),
+        }
+    }
+    reports.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));
+    let worst = reports.first().map(|r| r.score).unwrap_or(0);
+
+    if json {
+        let text = serde_json::to_string_pretty(&reports)
+            .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"));
+        return Ok((format!("{text}\n"), worst));
+    }
+    let mut out = format!("{:>5} {:<10} {:<40} {:<34} {}\n", "score", "verdict", "file", "sha256", "badges");
+    for r in &reports {
+        out.push_str(&format!(
+            "{:>5} {:<10} {:<40} {:<34} {}\n",
+            r.score,
+            r.verdict(),
+            truncate(&r.name, 40),
+            &r.hashes.sha256[..32.min(r.hashes.sha256.len())],
+            r.badge_line()
+        ));
+    }
+    let flagged = reports.iter().filter(|r| r.score >= min_score).count();
+    out.push_str(&format!("\n{} file(s), {flagged} at or above score {min_score}\n", reports.len()));
+    Ok((out, worst))
+}
+
+fn truncate(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n.saturating_sub(1)).collect::<String>() + "~"
+    }
 }
 
 fn cmd_entropy(file: &Path) -> Result<String> {
@@ -889,7 +1012,7 @@ mod tests {
         std::fs::write(&p, b"\x00Hello, world\x00").unwrap();
         let h = cmd_hash(&p).unwrap();
         assert!(h.contains("SHA-256"));
-        let s = cmd_strings(&p, 4).unwrap();
+        let s = cmd_strings(&p, 4, true, false).unwrap();
         assert!(s.contains("Hello, world"));
         std::fs::remove_file(&p).ok();
     }

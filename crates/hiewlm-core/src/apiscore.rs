@@ -222,6 +222,51 @@ const TABLE: &[Entry] = &[
     ("createevent", Category::Sync, "named event"),
 ];
 
+/// APIs that appear in almost every compiled program (CRT startup, ordinary
+/// file and registry access). They stay in the table because context matters —
+/// `GetTickCount` next to `IsDebuggerPresent` is a timing check — but on their
+/// own they must not raise the score, or every Rust and MSVC binary looks armed.
+const WEAK: &[&str] = &[
+    "gettickcount",
+    "gettickcount64",
+    "queryperformancecounter",
+    "setunhandledexceptionfilter",
+    "addvectoredexceptionhandler",
+    "outputdebugstring",
+    "ntquerysysteminformation",
+    "getforegroundwindow",
+    "getwindowtext",
+    "getdc",
+    "createfile",
+    "writefile",
+    "deletefile",
+    "findfirstfile",
+    "findnextfile",
+    "setfileattributes",
+    "gettemppath",
+    "shgetfolderpath",
+    "shgetknownfolderpath",
+    "regopenkeyex",
+    "regqueryvalueex",
+    "regenumkeyex",
+    "regdeletevalue",
+    "createevent",
+    "createmutex",
+    "openmutex",
+    "mapviewoffile",
+    "createfilemapping",
+    "heapcreate",
+    "virtualalloc",
+    "virtualprotect",
+    "getstartupinfo",
+    "createprocess",
+    "loadlibrary",
+    "loadlibraryex",
+    "getprocaddress",
+    "getlasterror",
+    "copyfile",
+];
+
 /// One matched import.
 #[derive(Clone, Debug)]
 pub struct ApiHit {
@@ -230,6 +275,8 @@ pub struct ApiHit {
     pub func: String,
     pub category: Category,
     pub note: &'static str,
+    /// False for APIs common in benign software: listed, but not scored.
+    pub strong: bool,
 }
 
 /// Verdict over a whole import table.
@@ -265,6 +312,11 @@ impl ImportReport {
 
 /// Look up one API name (with or without a `dll!` prefix and A/W suffix).
 pub fn categorize(name: &str) -> Option<(Category, &'static str)> {
+    lookup(name).map(|(c, n, _)| (c, n))
+}
+
+/// As [`categorize`], plus whether the API is a strong signal on its own.
+pub fn lookup(name: &str) -> Option<(Category, &'static str, bool)> {
     let func = name.rsplit('!').next().unwrap_or(name);
     let lower = func.to_ascii_lowercase();
     let candidates = [
@@ -273,20 +325,30 @@ pub fn categorize(name: &str) -> Option<(Category, &'static str)> {
         lower.strip_suffix('w').unwrap_or(&lower),
     ];
     for c in candidates {
-        if let Some((_, cat, note)) = TABLE.iter().find(|(n, _, _)| *n == c) {
-            return Some((*cat, *note));
+        if let Some((n, cat, note)) = TABLE.iter().find(|(n, _, _)| *n == c) {
+            return Some((*cat, *note, !WEAK.contains(n)));
         }
     }
     None
 }
 
 /// Score a whole import table. `names` are `dll!func` (or bare `func`) strings.
+///
+/// Assumes the format has a real import table whose size is meaningful (PE).
 pub fn analyze(names: &[String]) -> ImportReport {
+    analyze_with(names, true)
+}
+
+/// As [`analyze`], but `iat_size_matters` says whether a short list is itself a
+/// signal. It is for a PE — a Windows program with five imports is hiding
+/// something — and it is not for Mach-O/ELF, where linkers legitimately emit a
+/// handful of entries.
+pub fn analyze_with(names: &[String], iat_size_matters: bool) -> ImportReport {
     let mut report = ImportReport { total_imports: names.len(), ..Default::default() };
     for full in names {
         let func = full.rsplit('!').next().unwrap_or(full).to_string();
-        if let Some((category, note)) = categorize(full) {
-            report.hits.push(ApiHit { full: full.clone(), func, category, note });
+        if let Some((category, note, strong)) = lookup(full) {
+            report.hits.push(ApiHit { full: full.clone(), func, category, note, strong });
         }
     }
 
@@ -295,16 +357,20 @@ pub fn analyze(names: &[String]) -> ImportReport {
     // only make sense together.
     let present: std::collections::BTreeSet<Category> =
         report.hits.iter().map(|h| h.category).collect();
-    let mut score: u32 = present.iter().map(|c| c.weight() as u32).sum();
+    // Only categories backed by at least one strong API contribute weight; the
+    // rest are still shown, because they are context for the strong ones.
+    let scoring: std::collections::BTreeSet<Category> =
+        report.hits.iter().filter(|h| h.strong).map(|h| h.category).collect();
+    let mut score: u32 = scoring.iter().map(|c| c.weight() as u32).sum();
 
     let has = |c: Category| present.contains(&c);
-    if has(Category::DynamicResolve) && report.total_imports > 0 && report.total_imports <= 15 {
+    if iat_size_matters && has(Category::DynamicResolve) && report.total_imports > 0 && report.total_imports <= 15 {
         report.notes.push(format!(
             "only {} imports but resolves APIs at runtime — the real import table is hidden",
             report.total_imports
         ));
         score += 25;
-    } else if report.total_imports > 0 && report.total_imports <= 8 {
+    } else if iat_size_matters && report.total_imports > 0 && report.total_imports <= 8 {
         report.notes.push(format!("tiny import table ({}) — packed or dynamically resolved", report.total_imports));
         score += 15;
     }
@@ -352,6 +418,39 @@ mod tests {
         assert!(r.score >= 45, "{r:?}");
         assert!(r.notes.iter().any(|n| n.contains("injection chain")));
         assert!(r.by_category().contains_key(&Category::Injection));
+    }
+
+    #[test]
+    fn ubiquitous_apis_alone_do_not_raise_the_score() {
+        // A stock C-runtime import list: listed for context, but not damning.
+        let r = analyze(&names(&[
+            "kernel32.dll!QueryPerformanceCounter",
+            "kernel32.dll!GetTickCount",
+            "kernel32.dll!SetUnhandledExceptionFilter",
+            "kernel32.dll!AddVectoredExceptionHandler",
+            "kernel32.dll!CreateFileW",
+            "kernel32.dll!WriteFile",
+            "kernel32.dll!VirtualAlloc",
+            "kernel32.dll!VirtualProtect",
+            "kernel32.dll!GetProcAddress",
+            "kernel32.dll!LoadLibraryA",
+            "user32.dll!GetForegroundWindow",
+            "advapi32.dll!RegOpenKeyExW",
+            "kernel32.dll!CreateFileMappingW",
+            "kernel32.dll!MapViewOfFile",
+            "kernel32.dll!CreateMutexW",
+            "kernel32.dll!GetTempPathW",
+        ]));
+        assert!(!r.hits.is_empty(), "they are still reported");
+        assert!(r.hits.iter().all(|h| !h.strong));
+        assert!(r.score < 20, "weak APIs alone should stay quiet, got {}", r.score);
+    }
+
+    #[test]
+    fn weak_apis_still_count_toward_combination_rules() {
+        // Tiny IAT plus runtime resolution: individually weak, together loud.
+        let r = analyze(&names(&["kernel32.dll!LoadLibraryA", "kernel32.dll!GetProcAddress"]));
+        assert!(r.notes.iter().any(|n| n.contains("hidden")), "{r:?}");
     }
 
     #[test]

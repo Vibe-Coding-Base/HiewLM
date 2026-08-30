@@ -46,6 +46,17 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
             Dialog::Header { pane, sel, filter } => {
                 draw_header(f, area, app, *pane, *sel, filter, theme)
             }
+            Dialog::Triage { pane, sel, filter } => {
+                let entries = app.triage_entries(*pane, filter);
+                let tabs: Vec<&str> =
+                    hiewlm_triage::Pane::ALL.iter().map(|p| p.label()).collect();
+                let title = format!(
+                    " Triage — {}  [{}] ",
+                    pane.label(),
+                    tabs.join(" ")
+                );
+                draw_pane_list(f, area, &title, &entries, *sel, filter, theme)
+            }
             Dialog::JumpList { title, items, sel, filter } => {
                 draw_jump_list(f, area, title, items, *sel, filter, theme)
             }
@@ -144,6 +155,50 @@ fn draw_jump_list(
     f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
 }
 
+/// A large, scrollable, filterable list of `(label, jump target)` rows. Both the
+/// header view and the triage screen are this widget with different content.
+#[allow(clippy::too_many_arguments)]
+fn draw_pane_list(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    entries: &[(String, Option<u64>)],
+    sel: usize,
+    filter: &str,
+    theme: &Theme,
+) {
+    let width = 110.min(area.width.saturating_sub(2)).max(24);
+    let height = 34.min(area.height.saturating_sub(2)).max(8);
+    let rect = centered(area, width, height);
+    f.render_widget(Clear, rect);
+
+    let inner = height.saturating_sub(2) as usize;
+    let first = if sel >= inner { sel - inner + 1 } else { 0 };
+    let mut lines = Vec::with_capacity(inner);
+    if entries.is_empty() {
+        let msg = if filter.is_empty() { "  (none)" } else { "  (no match)" };
+        lines.push(Line::from(Span::raw(msg)));
+    }
+    for (i, (label, jump)) in entries.iter().enumerate().skip(first).take(inner) {
+        let style = if i == sel {
+            theme.selection()
+        } else if label.contains("[suspicious]") || label.contains("SUSPICIOUS") {
+            theme.warn()
+        } else if jump.is_some() {
+            theme.dialog()
+        } else {
+            Style::default().bg(theme.dialog_bg).fg(theme.ascii_other)
+        };
+        lines.push(Line::from(Span::styled(format!(" {label}"), style)));
+    }
+    let filt = if filter.is_empty() { String::new() } else { format!("[/{filter}] ") };
+    let block = Block::default()
+        .title(format!("{title}{filt} (←→ pane · type=filter · Enter jump · Esc) "))
+        .borders(Borders::ALL)
+        .style(theme.dialog());
+    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_header(
     f: &mut Frame,
@@ -223,8 +278,14 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     } else {
         String::new()
     };
+    // Once triage has run, its verdict rides along on the status line: the two
+    // facts you keep re-checking (how bad is this, and is it packed) stay visible.
+    let badges = match app.triage_badges() {
+        Some(b) => format!("  {b}"),
+        None => String::new(),
+    };
     let text = format!(
-        " {name}  {fmt}/{arch}{asm}  {mode:<4} {rw} {ins}  {addr}  size:{size}{sel}{diff}{dirty}{edit}  · {status}",
+        " {name}  {fmt}/{arch}{asm}  {mode:<4} {rw} {ins}  {addr}  size:{size}{sel}{diff}{dirty}{edit}{badges}  · {status}",
         fmt = app.format.label(),
         arch = app.arch.label(),
         mode = app.mode.label(),
@@ -501,30 +562,48 @@ fn draw_code(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     f.render_widget(Paragraph::new(lines).style(theme.base()).alignment(Alignment::Left), area);
 }
 
+/// The Fn-bar follows the mode, HIEW-style: the keys that matter where you are.
 fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+    const EDIT_BAR: &[(&str, &str)] = &[
+        ("1", "Help"),
+        ("3", "View"),
+        ("Tab", "Col"),
+        ("9", "Save"),
+        ("Esc", "Cancel"),
+    ];
+    const COMMON: &[(&str, &str)] = &[
+        ("1", "Help"),
+        ("2", "Triage"),
+        ("3", "Edit"),
+        ("4", "Mode"),
+        ("5", "Goto"),
+        ("7", "Srch"),
+        ("8", "Hdr"),
+    ];
+    const CODE_EXTRA: &[(&str, &str)] = &[
+        ("f", "Follow"),
+        ("6", "Xref"),
+        ("G", "CFG"),
+        (";", "Cmnt"),
+        ("A", "Asm"),
+    ];
+    const HEX_EXTRA: &[(&str, &str)] =
+        &[("*", "Mark"), ("b", "Blk"), ("s", "Str"), ("Y", "Yara"), ("L", "Lens")];
+    const TEXT_EXTRA: &[(&str, &str)] = &[("E", "Enc"), ("s", "Str"), ("*", "Mark")];
+    const TAIL: &[(&str, &str)] = &[("F12", "Names"), ("q", "Quit")];
+
+    let mut owned: Vec<(&str, &str)>;
     let items: &[(&str, &str)] = if app.editing {
-        &[
-            ("1", "Help"),
-            ("3", "View"),
-            ("Tab", "Col"),
-            ("9", "Save"),
-            ("Esc", "Cancel"),
-        ]
+        EDIT_BAR
     } else {
-        &[
-            ("1", "Help"),
-            ("3", "Edit"),
-            ("4", "Mode"),
-            ("5", "Goto"),
-            ("6", "Xref"),
-            ("7", "Srch"),
-            ("8", "Hdr"),
-            ("*", "Mark"),
-            ("b", "Blk"),
-            ("F12", "Names"),
-            ("9", "Save"),
-            ("q", "Quit"),
-        ]
+        owned = COMMON.to_vec();
+        owned.extend_from_slice(match app.mode {
+            Mode::Code => CODE_EXTRA,
+            Mode::Text => TEXT_EXTRA,
+            Mode::Hex => HEX_EXTRA,
+        });
+        owned.extend_from_slice(TAIL);
+        &owned
     };
     let mut spans = Vec::new();
     for (k, label) in items {
@@ -707,6 +786,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
         ),
         // Rendered separately (they need app data / scrolling).
         Dialog::Header { .. }
+        | Dialog::Triage { .. }
         | Dialog::JumpList { .. }
         | Dialog::FileHits { .. }
         | Dialog::FilePicker { .. }

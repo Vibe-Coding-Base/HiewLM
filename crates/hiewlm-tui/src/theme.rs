@@ -22,6 +22,9 @@ pub struct Theme {
     pub ascii_other: Color,
     pub dialog_bg: Color,
     pub dialog_fg: Color,
+    /// Foreground for rows that report something suspicious (triage findings,
+    /// risky imports). Readable on `dialog_bg`, not on `diff_bg`.
+    pub warn_fg: Color,
     // Disassembly syntax colors.
     pub tok_mnemonic: Color,
     pub tok_register: Color,
@@ -86,6 +89,7 @@ impl Theme {
             ascii_other: Color::Rgb(110, 110, 120),
             dialog_bg: Color::Rgb(32, 34, 40),
             dialog_fg: Color::Rgb(210, 210, 215),
+            warn_fg: Color::Rgb(255, 150, 120),
             tok_mnemonic: Color::Rgb(235, 235, 240),
             tok_register: Color::Rgb(130, 200, 255),
             tok_number: Color::Rgb(180, 230, 150),
@@ -114,6 +118,7 @@ impl Theme {
             ascii_printable: Color::Rgb(20, 20, 25),
             ascii_other: Color::Rgb(150, 150, 155),
             dialog_bg: Color::Rgb(235, 235, 230),
+            warn_fg: Color::Rgb(170, 30, 0),
             dialog_fg: Color::Rgb(40, 40, 45),
             tok_mnemonic: Color::Rgb(20, 20, 25),
             tok_register: Color::Rgb(30, 90, 170),
@@ -142,6 +147,7 @@ impl Theme {
             ascii_printable: Color::Rgb(255, 255, 255),
             ascii_other: Color::Rgb(120, 120, 120),
             dialog_bg: Color::Rgb(0, 0, 0),
+            warn_fg: Color::Rgb(255, 170, 80),
             dialog_fg: Color::Rgb(170, 170, 170),
             tok_mnemonic: Color::Rgb(255, 255, 255),
             tok_register: Color::Rgb(85, 255, 255),
@@ -192,6 +198,11 @@ impl Theme {
 
     pub fn diff(&self) -> Style {
         Style::default().bg(self.diff_bg).fg(self.diff_fg)
+    }
+
+    /// Style for a row reporting something suspicious.
+    pub fn warn(&self) -> Style {
+        Style::default().bg(self.dialog_bg).fg(self.warn_fg).add_modifier(Modifier::BOLD)
     }
 
     /// Number of distinct marker colors.

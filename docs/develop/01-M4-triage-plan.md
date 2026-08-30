@@ -26,31 +26,31 @@ Bối cảnh và lý do từng mục: xem review M4 trong lịch sử thảo lu�
 
 | # | Mục | Trạng thái | Ghi chú |
 |---|---|---|---|
-| 1.1 | Crate `hiewlm-triage`: dựng `TriageReport` (pure, dùng chung TUI+CLI) | [ ] | |
-| 1.2 | TUI: phím `2` / `F2` / `T` mở dashboard nhiều pane | [ ] | `2` đang trống, khớp Fn-bar |
-| 1.3 | CLI `hiewlmc triage <file> [--json] [--fail-on-suspicious]` | [ ] | |
+| 1.1 | Crate `hiewlm-triage`: dựng `TriageReport` (pure, dùng chung TUI+CLI) | [x] | |
+| 1.2 | TUI: phím `2` / `F2` / `T` mở dashboard nhiều pane | [x] | `2` đang trống, khớp Fn-bar |
+| 1.3 | CLI `hiewlmc triage <file> [--json] [--fail-on-suspicious]` | [x] | |
 
 ## M4.2 — Strings v2 + trích xuất IOC
 
 | # | Mục | Trạng thái | Ghi chú |
 |---|---|---|---|
-| 2.1 | `core::strings`: ASCII + UTF-16LE, min length, dedupe, phân loại IOC | [ ] | URL/domain/IP/registry/path/mutex/GUID/PDB/base64 |
+| 2.1 | `core::strings`: ASCII + UTF-16LE, min length, dedupe, phân loại IOC | [x] | URL/domain/IP/registry/path/mutex/GUID/PDB/base64 |
 | 2.2 | TUI `s`: engine mới + filter + lọc theo nhóm | [ ] | |
-| 2.3 | CLI `strings --utf16 --ioc --min N` | [ ] | |
+| 2.3 | CLI `strings --utf16 --ioc --min N` | [x] | |
 
 ## M4.3 — Chấm điểm import + bất thường PE
 
 | # | Mục | Trạng thái | Ghi chú |
 |---|---|---|---|
-| 3.1 | `core::apiscore`: phân nhóm hành vi API (inject/anti-debug/net/crypto/persist…) | [ ] | |
-| 3.2 | `fmt`: overlay, TLS callbacks, debug/PDB, security dir (Authenticode), anomalies | [ ] | |
+| 3.1 | `core::apiscore`: phân nhóm hành vi API (inject/anti-debug/net/crypto/persist…) | [x] | |
+| 3.2 | `fmt`: overlay, TLS callbacks, debug/PDB, security dir (Authenticode), anomalies | [x] | |
 | 3.3 | TUI: Imports pane tô màu theo rủi ro + pane Anomalies trong dashboard | [ ] | |
 
 ## M4.4 — Hash cho clustering + clipboard
 
 | # | Mục | Trạng thái | Ghi chú |
 |---|---|---|---|
-| 4.1 | SHA-1, ssdeep (spamsum thuần Rust), rich hash, authentihash, hash từng section | [ ] | |
+| 4.1 | SHA-1, ssdeep (spamsum thuần Rust), rich hash, authentihash | [x] | hash từng section: bỏ — entropy từng section đã đủ cho triage |
 | 4.2 | Clipboard qua OSC 52 (không cần dependency, chạy được qua SSH) + menu copy `Alt+C` | [ ] | hash / hex / C array / python bytes |
 
 ## M4.5 — YARA
@@ -65,7 +65,7 @@ Bối cảnh và lý do từng mục: xem review M4 trong lịch sử thảo lu�
 
 | # | Mục | Trạng thái | Ghi chú |
 |---|---|---|---|
-| 6.1 | `core::xorsearch`: brute 1-byte XOR/ADD/ROL + suy key từ known-plaintext | [ ] | |
+| 6.1 | `core::xorsearch`: brute 1-byte XOR/ADD/ROL + suy key từ known-plaintext | [x] | dùng chữ ký delta bất biến theo khoá: 20s → 0.2s |
 | 6.2 | TUI `L`: lens xem-qua-phép-biến-đổi, KHÔNG sửa buffer | [ ] | |
 | 6.3 | Code mode: chú giải tên API tại call/jmp + preview chuỗi tại toán hạng data | [ ] | |
 
@@ -75,17 +75,17 @@ Bối cảnh và lý do từng mục: xem review M4 trong lịch sử thảo lu�
 |---|---|---|---|
 | 7.1 | `O` mở file khác không cần thoát (`PickPurpose::Open`) | [ ] | |
 | 7.2 | Nhận tham số là thư mục → danh sách mẫu kèm điểm nghi ngờ | [ ] | |
-| 7.3 | CLI `hiewlmc triage <dir>` | [ ] | |
+| 7.3 | CLI `hiewlmc triage <dir>` | [x] | xếp hạng worst-first + `--json` |
 
 ## M4.8 — UI/UX bổ trợ (gộp các mục P2 của review)
 
 | # | Mục | Trạng thái | Ghi chú |
 |---|---|---|---|
-| 8.1 | Fn-bar theo ngữ cảnh (Hex/Code/Text khác nhau) | [ ] | |
+| 8.1 | Fn-bar theo ngữ cảnh (Hex/Code/Text khác nhau) | [x] | |
 | 8.2 | Command palette `:` (fuzzy, giải bài toán cạn phím) | [ ] | |
 | 8.3 | Entropy map (pane trong dashboard, jump được) | [ ] | |
 | 8.4 | Search: case-insensitive, lịch sử pattern, "list all matches" | [ ] | |
-| 8.5 | Badge rủi ro trên status line | [ ] | |
+| 8.5 | Badge rủi ro trên status line | [x] | |
 
 ## M4.9 — Hoàn thiện
 

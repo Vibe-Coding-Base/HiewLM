@@ -51,6 +51,8 @@ fn map_edit(app: &App, key: KeyEvent) -> Option<Command> {
         F(3) => Some(Command::CancelEdit),
         F(9) => Some(Command::Save),
         Char('s') if ctrl => Some(Command::Save),
+        // Re-locking must be reachable from inside edit mode too.
+        Char('w') if ctrl => Some(Command::ToggleWritable),
         Char('z') if ctrl => Some(Command::Undo),
         Char('y') if ctrl => Some(Command::Redo),
         Insert => Some(Command::ToggleInsert),
@@ -83,6 +85,7 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char('z'), true, _, _) => Some(Command::Undo),
         (Char('y'), true, _, _) => Some(Command::Redo),
         (Char('s'), true, _, _) => Some(Command::Save),
+        (Char('w'), true, _, _) => Some(Command::ToggleWritable),
         (Enter, true, _, _) => Some(Command::FindNext),
 
         (Insert, _, _, _) => Some(Command::ToggleInsert),
@@ -94,8 +97,9 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         // Colored markers (HIEW Alt+M / Alt+N).
         (Char('M'), _, _, _) => Some(Command::ColorBlock),
         (Char('m'), _, true, _) => Some(Command::ColorBlock),
-        (Char('n'), _, true, false) => Some(Command::NextMarker),
-        (Char('n'), _, true, true) => Some(Command::PrevMarker),
+        // Alt+n walks the colored markers; `[`/`]` do the same without Alt.
+        // (An Alt+Shift+n arm is pointless here: Shift+n arrives as 'N'.)
+        (Char('n'), _, true, _) => Some(Command::NextMarker),
         (Char(']'), _, _, _) => Some(Command::NextMarker),
         (Char('['), _, _, _) => Some(Command::PrevMarker),
 
@@ -104,7 +108,9 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char('p'), _, _, _) if plain => Some(Command::BlockPaste),
         (Char('d'), _, _, _) if plain => Some(Command::BlockDelete),
         (Char('b'), _, _, _) if plain => Some(Command::OpenBlockMenu),
-        (F(2), _, _, _) => Some(Command::OpenBlockWrite),
+        // Alt+F2 NOPs the instruction under the cursor (HIEW). It has to be
+        // matched before the bare-F2 arm further down.
+        (F(2), _, true, _) => Some(Command::NopInstruction),
 
         // Bookmark stack.
         (Char('+'), _, _, _) => Some(Command::BookmarkPush),
@@ -129,8 +135,9 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char('k'), _, _, _) if plain => Some(Command::OpenNameBookmark),
         (Char('s'), _, _, _) if plain => Some(Command::OpenStrings),
         (Char('H'), _, _, _) => Some(Command::OpenHistory),
-        (Char('N'), _, true, _) => Some(Command::FindPrev), // Alt+N: search backwards
-        (Char('N'), _, _, _) => Some(Command::NopInstruction),
+        // `n` finds next, `N` finds previous (Alt+N too, for HIEW muscle memory).
+        // NOP lives on Alt+F2 / the `b` menu — never one Shift away from `n`.
+        (Char('N'), _, _, _) => Some(Command::FindPrev),
         (Char('='), _, _, _) => Some(Command::OpenCalc),
         (Char('A'), _, _, _) => Some(Command::OpenAssemble),
         (Char('C'), _, _, _) => Some(Command::OpenCrypt),

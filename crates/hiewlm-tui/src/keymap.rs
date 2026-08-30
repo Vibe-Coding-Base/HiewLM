@@ -154,6 +154,9 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char(':'), _, _, _) => Some(Command::OpenPalette),
         (Char('x'), _, true, _) => Some(Command::XorSearch),
         (Char('X'), _, true, _) => Some(Command::XorSearch),
+        // Alt+K derives a repeating key from the marked block.
+        (Char('k'), _, true, _) => Some(Command::XorKey),
+        (Char('K'), _, true, _) => Some(Command::XorKey),
         (Char('K'), _, _, _) => Some(Command::SetSlotPrompt),
         (Char('S'), _, _, _) => Some(Command::ToggleSplitView),
         // `y` yanks a block into hiewLM's own clipboard; `Y` yanks a fact out to

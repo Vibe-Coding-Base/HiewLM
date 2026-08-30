@@ -84,6 +84,19 @@ enum Cmd {
         #[arg(long)]
         fail_on_match: bool,
     },
+    /// Recover a repeating XOR key from a region and print the decoded preview.
+    Xorkey {
+        file: PathBuf,
+        /// Start of the region: offset (hex), `.va`, `+n`, `Nt` decimal.
+        #[arg(long, default_value = "0")]
+        at: String,
+        /// Bytes to analyse (0 = to the end of the file).
+        #[arg(long, default_value_t = 4096)]
+        count: u64,
+        /// Longest key length to consider.
+        #[arg(long, default_value_t = 32)]
+        max_len: usize,
+    },
     /// List the container plugins compiled in.
     Plugins,
     /// Hex + ASCII dump.
@@ -212,6 +225,7 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
     use std::process::ExitCode;
     let out = match cmd {
         Cmd::Plugins => cmd_plugins()?,
+        Cmd::Xorkey { file, at, count, max_len } => cmd_xorkey(&file, &at, count, max_len)?,
         Cmd::Yara { file, rules, fail_on_match } => {
             let (text, matched) = cmd_yara(&file, &rules)?;
             print!("{text}");
@@ -734,6 +748,44 @@ fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String
         s.push_str("... (truncated: scan hit its limit)\n");
     }
     Ok(s)
+}
+
+fn cmd_xorkey(file: &Path, at: &str, count: u64, max_len: usize) -> Result<String> {
+    let (buf, model) = open(file)?;
+    let start = parse_addr(at, &model)?;
+    let avail = buf.len().saturating_sub(start);
+    let len = if count == 0 { avail } else { count.min(avail) };
+    if len < 16 {
+        bail!("region is too small ({len} bytes) to recover a key from");
+    }
+    let mut data = vec![0u8; len as usize];
+    buf.read_at(FileOffset(start), &mut data);
+
+    let cands = hiewlm_core::xorsearch::infer_repeating_key(&data, max_len, 8);
+    if cands.is_empty() {
+        return Ok("no repeating XOR key explains this region as plaintext\n".into());
+    }
+    let mut out = format!("region {start:#x}..{:#x} ({len} bytes)\n", start + len);
+    for c in &cands {
+        let printable: String = c
+            .key
+            .iter()
+            .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+            .collect();
+        out.push_str(&format!(
+            "{:>3}B  {:>3.0}%  {:<34} \"{printable}\"\n      {}\n",
+            c.key.len(),
+            c.score * 100.0,
+            c.recipe(),
+            c.preview
+        ));
+    }
+    out.push_str(&format!(
+        "\nApply with:  hiewlmc crypt {} \"{}\" --at {start:x} --count {len} --dry-run\n",
+        file.display(),
+        cands[0].recipe()
+    ));
+    Ok(out)
 }
 
 fn cmd_yara(file: &Path, rules: &Path) -> Result<(String, bool)> {

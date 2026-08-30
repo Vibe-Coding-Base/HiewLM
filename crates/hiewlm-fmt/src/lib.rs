@@ -2,6 +2,10 @@
 //! never executes or maps the target (design §22.1). Returns a unified
 //! [`ExecutableModel`] with arch/bits, entry point, and a file-offset ↔ VA map.
 
+pub mod pe_extra;
+
+pub use pe_extra::{parse as pe_details, PeDetails};
+
 use hiewlm_core::{
     AddressSpace, Arch, EditBuffer, ExecutableModel, FileOffset, Format, Resource, SectionMap, Sym,
 };

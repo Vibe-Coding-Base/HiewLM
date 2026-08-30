@@ -12,6 +12,9 @@ pub struct Config {
     pub theme: Option<String>,
     pub encoding: Option<String>,
     pub bytes_per_row: Option<usize>,
+    /// A YARA rule file or directory scanned by `R` without prompting. Point it
+    /// at your rule collection and the scan becomes one keystroke.
+    pub yara_rules: Option<PathBuf>,
     /// Container plugins to activate (`["zip", "pdf"]`, or `["all"]`).
     /// Absent = all of them; they are read-only parsers, so the useful default
     /// is on. Set to `[]` to inspect containers as raw bytes only.

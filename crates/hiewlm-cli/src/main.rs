@@ -71,6 +71,18 @@ enum Cmd {
         /// Cap the bytes scanned for strings (0 = whole file).
         #[arg(long, default_value_t = 64 * 1024 * 1024)]
         max_string_bytes: u64,
+        /// Also scan with these YARA rules and fold the result into the verdict.
+        #[arg(long)]
+        yara: Option<PathBuf>,
+    },
+    /// Scan with YARA rules (a file, or a folder of .yar/.yara).
+    /// Needs a build with `--features yara`.
+    Yara {
+        file: PathBuf,
+        rules: PathBuf,
+        /// Exit 1 when any rule matches.
+        #[arg(long)]
+        fail_on_match: bool,
     },
     /// List the container plugins compiled in.
     Plugins,
@@ -200,8 +212,14 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
     use std::process::ExitCode;
     let out = match cmd {
         Cmd::Plugins => cmd_plugins()?,
-        Cmd::Triage { file, json, fail_on_suspicious, min_score, max_string_bytes } => {
-            let (text, worst) = cmd_triage(&file, plugins, json, min_score, max_string_bytes)?;
+        Cmd::Yara { file, rules, fail_on_match } => {
+            let (text, matched) = cmd_yara(&file, &rules)?;
+            print!("{text}");
+            return Ok(if matched && fail_on_match { ExitCode::from(1) } else { ExitCode::SUCCESS });
+        }
+        Cmd::Triage { file, json, fail_on_suspicious, min_score, max_string_bytes, yara } => {
+            let (text, worst) =
+                cmd_triage(&file, plugins, json, min_score, max_string_bytes, yara.as_deref())?;
             print!("{text}");
             return Ok(if fail_on_suspicious && worst >= min_score {
                 ExitCode::from(1)
@@ -718,6 +736,24 @@ fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String
     Ok(s)
 }
 
+fn cmd_yara(file: &Path, rules: &Path) -> Result<(String, bool)> {
+    let (buf, _) = open(file)?;
+    let data = read_all(&buf);
+    let hits = hiewlm_triage::yara::scan_path(rules, &data).map_err(|e| anyhow!("{e}"))?;
+    if hits.is_empty() {
+        return Ok((format!("no match in {}\n", file.display()), false));
+    }
+    let mut out = String::new();
+    for h in &hits {
+        let tags = if h.tags.is_empty() { String::new() } else { format!(" [{}]", h.tags.join(" ")) };
+        out.push_str(&format!("{}{tags}  {} match(es)\n", h.rule, h.matches.len()));
+        for (off, len, id) in h.matches.iter().take(64) {
+            out.push_str(&format!("    {off:08X}  {len:>5}  {id}\n"));
+        }
+    }
+    Ok((out, true))
+}
+
 /// Triage one file, or rank every file in a directory.
 fn cmd_triage(
     path: &Path,
@@ -725,12 +761,14 @@ fn cmd_triage(
     json: bool,
     min_score: u8,
     max_string_bytes: u64,
+    yara: Option<&Path>,
 ) -> Result<(String, u8)> {
     let opts = hiewlm_triage::Options { max_string_bytes, ..Default::default() };
     if path.is_dir() {
-        return triage_dir(path, plugins, json, min_score, &opts);
+        return triage_dir(path, plugins, json, min_score, &opts, yara);
     }
-    let report = triage_one(path, plugins, &opts)?;
+    let mut report = triage_one(path, plugins, &opts)?;
+    apply_yara(&mut report, path, yara)?;
     let text = if json { report.to_json() } else { hiewlm_triage::render::text(&report) };
     let score = report.score;
     Ok((format!("{text}\n"), score))
@@ -754,6 +792,20 @@ fn triage_one(
     Ok(hiewlm_triage::analyze(&name, &buf, container.as_ref(), opts))
 }
 
+/// Fold a YARA scan into an existing report, if rules were given.
+fn apply_yara(
+    report: &mut hiewlm_triage::TriageReport,
+    file: &Path,
+    rules: Option<&Path>,
+) -> Result<()> {
+    let Some(rules) = rules else { return Ok(()) };
+    let (buf, _) = open(file)?;
+    let data = read_all(&buf);
+    let hits = hiewlm_triage::yara::scan_path(rules, &data).map_err(|e| anyhow!("{e}"))?;
+    report.set_yara(hits);
+    Ok(())
+}
+
 /// Rank a folder of samples worst-first — the queue you work through.
 fn triage_dir(
     dir: &Path,
@@ -761,6 +813,7 @@ fn triage_dir(
     json: bool,
     min_score: u8,
     opts: &hiewlm_triage::Options,
+    yara: Option<&Path>,
 ) -> Result<(String, u8)> {
     let mut reports = Vec::new();
     let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -772,7 +825,12 @@ fn triage_dir(
     entries.sort();
     for p in &entries {
         match triage_one(p, plugins, opts) {
-            Ok(r) => reports.push(r),
+            Ok(mut r) => {
+                if let Err(e) = apply_yara(&mut r, p, yara) {
+                    eprintln!("yara on {}: {e:#}", p.display());
+                }
+                reports.push(r)
+            }
             Err(e) => eprintln!("skipped {}: {e:#}", p.display()),
         }
     }

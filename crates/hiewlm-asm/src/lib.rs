@@ -50,6 +50,14 @@ pub struct Insn {
     pub tokens: Vec<Token>,
     /// Branch/call target VA, if this is a direct near branch/call (x86 only for now).
     pub target: Option<u64>,
+    /// Absolute VA of a memory operand when it is statically known — a
+    /// rip-relative reference or an absolute displacement. This is what turns
+    /// `call [rip+0x2f10]` into `call kernel32!VirtualAlloc` and `lea rax,
+    /// [rip+0x1c4]` into the string it points at. x86 only.
+    pub mem_target: Option<u64>,
+    /// An immediate operand large enough to be an address (32-bit code pushes
+    /// string pointers as immediates). x86 only.
+    pub imm_target: Option<u64>,
     pub flow: Flow,
 }
 
@@ -121,6 +129,8 @@ impl Disassembler {
                 text,
                 tokens: sink.tokens,
                 target: branch_target(&instr),
+                mem_target: mem_target(&instr),
+                imm_target: imm_target(&instr),
                 flow: flow_of(&instr),
             });
         }
@@ -149,6 +159,8 @@ impl Disassembler {
                 text,
                 tokens: tokenize_heuristic(mnem, op),
                 target: None,
+                mem_target: None,
+                imm_target: None,
                 flow: Flow::Seq,
             });
         }
@@ -250,6 +262,43 @@ fn flow_of(instr: &Instruction) -> Flow {
         FlowControl::Return => Flow::Ret,
         _ => Flow::Seq,
     }
+}
+
+/// The absolute VA of a statically-known memory operand: a rip-relative
+/// reference, or an absolute displacement with no base or index register.
+/// Everything else depends on runtime register values and is left alone.
+fn mem_target(instr: &Instruction) -> Option<u64> {
+    use iced_x86::Register;
+    let has_mem = (0..instr.op_count()).any(|i| instr.op_kind(i) == OpKind::Memory);
+    if !has_mem {
+        return None;
+    }
+    if instr.is_ip_rel_memory_operand() {
+        return Some(instr.ip_rel_memory_address());
+    }
+    if instr.memory_base() == Register::None && instr.memory_index() == Register::None {
+        let disp = instr.memory_displacement64();
+        // A tiny displacement is a struct offset, not an address.
+        return (disp >= 0x1000).then_some(disp);
+    }
+    None
+}
+
+/// An immediate big enough to be an address — how 32-bit code passes pointers
+/// to strings (`push offset 0x403010`).
+fn imm_target(instr: &Instruction) -> Option<u64> {
+    for i in 0..instr.op_count() {
+        let v = match instr.op_kind(i) {
+            OpKind::Immediate32 => instr.immediate32() as u64,
+            OpKind::Immediate64 => instr.immediate64(),
+            OpKind::Immediate32to64 => instr.immediate32to64() as u64,
+            _ => continue,
+        };
+        if (0x1000..0xffff_ffff_ffff).contains(&v) {
+            return Some(v);
+        }
+    }
+    None
 }
 
 fn branch_target(instr: &Instruction) -> Option<u64> {

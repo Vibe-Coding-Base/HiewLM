@@ -11,7 +11,7 @@ use crate::addr::FileOffset;
 use crate::buffer::EditBuffer;
 
 /// The reversible byte transforms worth brute-forcing.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Op {
     Xor,
     Add,
@@ -106,106 +106,141 @@ impl Hit {
 /// Search `data` for any of `needles` under every single-byte transform.
 /// `max_hits` bounds the work on hostile input.
 ///
-/// Brute-forcing 255 keys per needle would mean hundreds of passes over the
-/// file. Instead this exploits the fact that a constant XOR (or ADD) leaves the
-/// *differences* between neighbouring bytes untouched: one pass finds the
-/// difference pattern, and the key falls out of a single byte. Only rotations,
-/// which have just seven useful keys, are still brute-forced.
+/// Two ideas keep this near one pass over the file instead of hundreds:
+///
+/// 1. A constant XOR (or ADD) leaves the *differences* between neighbouring
+///    bytes untouched, so one scan finds the difference signature and the key
+///    falls out of a single byte — no 255-key brute force.
+/// 2. All needles are checked at every position through a 256-entry table keyed
+///    on the first difference, so adding needles costs a table entry, not a pass.
+///
+/// Rotations do not preserve differences, but they have only seven useful keys,
+/// and those are folded into the same one-pass-per-key shape.
 pub fn search(data: &[u8], needles: &[&str], max_hits: usize) -> Vec<Hit> {
     let mut hits = Vec::new();
-    for needle in needles {
-        let plain = needle.as_bytes();
-        if plain.is_empty() || plain.len() > data.len() {
-            continue;
-        }
-        scan_delta(data, plain, needle, Op::Xor, &mut hits, max_hits);
-        if hits.len() >= max_hits {
-            return hits;
-        }
-        scan_delta(data, plain, needle, Op::Add, &mut hits, max_hits);
-        if hits.len() >= max_hits {
-            return hits;
-        }
-        // Rotations do not preserve differences, but there are only seven keys.
-        for key in 1..=7u8 {
-            let encoded: Vec<u8> = plain.iter().map(|&b| Op::Rol.encode(b, key)).collect();
-            let mut from = 0usize;
-            while let Some(pos) = find_sub(&data[from..], &encoded) {
-                let at = from + pos;
-                hits.push(Hit {
-                    offset: at as u64,
-                    op: Op::Rol,
-                    key,
-                    needle: (*needle).to_string(),
-                    preview: decode_preview(data, at, Op::Rol, key),
-                });
-                if hits.len() >= max_hits {
-                    return hits;
-                }
-                from = at + 1;
-                if from >= data.len() {
-                    break;
-                }
-            }
-        }
+    scan_delta(data, needles, Op::Xor, &mut hits, max_hits);
+    if hits.len() < max_hits {
+        scan_delta(data, needles, Op::Add, &mut hits, max_hits);
+    }
+    if hits.len() < max_hits {
+        scan_rotations(data, needles, &mut hits, max_hits);
     }
     hits.sort_by_key(|h| h.offset);
     hits
 }
 
-/// One pass looking for `plain`'s difference signature under `op` (Xor or Add).
-fn scan_delta(
-    data: &[u8],
-    plain: &[u8],
-    needle: &str,
-    op: Op,
-    hits: &mut Vec<Hit>,
-    max_hits: usize,
-) {
-    let n = plain.len();
-    if n < 2 || data.len() < n {
-        return;
-    }
-    let delta = |a: u8, b: u8| match op {
+/// Difference between two neighbouring plaintext bytes under `op`.
+fn delta(op: Op, a: u8, b: u8) -> u8 {
+    match op {
         Op::Xor => a ^ b,
         _ => b.wrapping_sub(a),
-    };
-    let want: Vec<u8> = plain.windows(2).map(|w| delta(w[0], w[1])).collect();
+    }
+}
 
-    for at in 0..=data.len() - n {
-        if !data[at..at + n]
-            .windows(2)
-            .zip(&want)
-            .all(|(w, &d)| delta(w[0], w[1]) == d)
-        {
-            continue;
+/// Index of needles by the first byte of their signature, so one pass over the
+/// data can test every needle at once.
+fn bucket_by_first(keys: impl Iterator<Item = (usize, u8)>) -> [Vec<usize>; 256] {
+    let mut table: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
+    for (idx, first) in keys {
+        table[first as usize].push(idx);
+    }
+    table
+}
+
+/// One pass looking for every needle's difference signature under `op`.
+fn scan_delta(data: &[u8], needles: &[&str], op: Op, hits: &mut Vec<Hit>, max_hits: usize) {
+    let usable: Vec<(usize, &[u8])> = needles
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (i, n.as_bytes()))
+        .filter(|(_, b)| b.len() >= 2 && b.len() <= data.len())
+        .collect();
+    if usable.is_empty() || data.len() < 2 {
+        return;
+    }
+    let table = bucket_by_first(
+        usable.iter().map(|(i, b)| (*i, delta(op, b[0], b[1]))),
+    );
+    let by_idx: std::collections::BTreeMap<usize, &[u8]> = usable.into_iter().collect();
+
+    for at in 0..data.len() - 1 {
+        let d = delta(op, data[at], data[at + 1]);
+        for &ni in &table[d as usize] {
+            let plain = by_idx[&ni];
+            if at + plain.len() > data.len() {
+                continue;
+            }
+            let matched = data[at..at + plain.len()]
+                .windows(2)
+                .zip(plain.windows(2))
+                .all(|(w, p)| delta(op, w[0], w[1]) == delta(op, p[0], p[1]));
+            if !matched {
+                continue;
+            }
+            // The signature matched; the key is whatever maps plain[0] to data[at].
+            let (op, key) = match op {
+                Op::Xor => (Op::Xor, data[at] ^ plain[0]),
+                _ => {
+                    let k = data[at].wrapping_sub(plain[0]);
+                    // `add f9` and `sub 07` are the same thing; show the small one.
+                    if k > 0x80 {
+                        (Op::Sub, 0u8.wrapping_sub(k))
+                    } else {
+                        (Op::Add, k)
+                    }
+                }
+            };
+            // Key 0 is the identity — that string is not hidden, `strings` has it.
+            if key == 0 {
+                continue;
+            }
+            hits.push(Hit {
+                offset: at as u64,
+                op,
+                key,
+                needle: needles[ni].to_string(),
+                preview: decode_preview(data, at, op, key),
+            });
+            if hits.len() >= max_hits {
+                return;
+            }
         }
-        // The pattern matched; the key is whatever maps plain[0] to data[at].
-        let (op, key) = match op {
-            Op::Xor => (Op::Xor, data[at] ^ plain[0]),
-            _ => {
-                let k = data[at].wrapping_sub(plain[0]);
-                // `add f9` and `sub 07` are the same thing; show the small one.
-                if k > 0x80 {
-                    (Op::Sub, 0u8.wrapping_sub(k))
-                } else {
-                    (Op::Add, k)
+    }
+}
+
+/// One pass per rotation key, all needles at once.
+fn scan_rotations(data: &[u8], needles: &[&str], hits: &mut Vec<Hit>, max_hits: usize) {
+    for key in 1..=7u8 {
+        let encoded: Vec<(usize, Vec<u8>)> = needles
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| !n.is_empty() && n.len() <= data.len())
+            .map(|(i, n)| (i, n.bytes().map(|b| Op::Rol.encode(b, key)).collect()))
+            .collect();
+        if encoded.is_empty() {
+            return;
+        }
+        let table = bucket_by_first(encoded.iter().map(|(i, e)| (*i, e[0])));
+        let by_idx: std::collections::BTreeMap<usize, &Vec<u8>> =
+            encoded.iter().map(|(i, e)| (*i, e)).collect();
+
+        for at in 0..data.len() {
+            for &ni in &table[data[at] as usize] {
+                let want = by_idx[&ni];
+                if at + want.len() > data.len() || &data[at..at + want.len()] != want.as_slice() {
+                    continue;
+                }
+                hits.push(Hit {
+                    offset: at as u64,
+                    op: Op::Rol,
+                    key,
+                    needle: needles[ni].to_string(),
+                    preview: decode_preview(data, at, Op::Rol, key),
+                });
+                if hits.len() >= max_hits {
+                    return;
                 }
             }
-        };
-        // Key 0 is the identity — that string is not hidden, `s` already lists it.
-        if key == 0 {
-            continue;
-        }
-        hits.push(Hit {
-            offset: at as u64,
-            op,
-            key,
-            needle: needle.to_string(),
-            preview: decode_preview(data, at, op, key),
-        });
-        if hits.len() >= max_hits {
-            return;
         }
     }
 }
@@ -265,12 +300,6 @@ pub fn key_from_known(data: &[u8], at: usize, known: &str) -> Vec<(Op, u8)> {
     out
 }
 
-fn find_sub(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return None;
-    }
-    haystack.windows(needle.len()).position(|w| w == needle)
-}
 
 /// Decode up to 64 bytes around a hit into a printable preview.
 fn decode_preview(data: &[u8], at: usize, op: Op, key: u8) -> String {

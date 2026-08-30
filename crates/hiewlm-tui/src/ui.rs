@@ -46,6 +46,20 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
             Dialog::Header { pane, sel, filter } => {
                 draw_header(f, area, app, *pane, *sel, filter, theme)
             }
+            Dialog::Palette { input, sel } => draw_palette(f, area, input, *sel, theme),
+            Dialog::XorHits { items, sel, filter } => {
+                let labels: Vec<(String, u64)> =
+                    items.iter().map(|(l, o, _)| (l.clone(), *o)).collect();
+                draw_jump_list(
+                    f,
+                    area,
+                    "Plaintext under a single-byte key",
+                    &labels,
+                    *sel,
+                    filter,
+                    theme,
+                )
+            }
             Dialog::Triage { pane, sel, filter } => {
                 let entries = app.triage_entries(*pane, filter);
                 let tabs: Vec<&str> =
@@ -140,7 +154,13 @@ fn draw_jump_list(
         lines.push(Line::from(Span::raw(msg)));
     }
     for (i, (label, _)) in view.iter().enumerate().skip(first).take(inner) {
-        let style = if i == sel { theme.selection() } else { theme.dialog() };
+        let style = if i == sel {
+            theme.selection()
+        } else if is_warn_row(label) {
+            theme.warn()
+        } else {
+            theme.dialog()
+        };
         lines.push(Line::from(Span::styled(format!(" {label}"), style)));
     }
     let filt = if filter.is_empty() {
@@ -153,6 +173,41 @@ fn draw_jump_list(
         .borders(Borders::ALL)
         .style(theme.dialog());
     f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+}
+
+/// The command palette: type words, pick a command.
+fn draw_palette(f: &mut Frame, area: Rect, input: &str, sel: usize, theme: &Theme) {
+    let matches = crate::app::palette_matches(input);
+    let width = 76.min(area.width.saturating_sub(2)).max(30);
+    let height = 20.min(area.height.saturating_sub(2)).max(6);
+    let rect = centered(area, width, height);
+    f.render_widget(Clear, rect);
+
+    let mut lines = vec![Line::from(Span::styled(
+        format!(" > {input}_"),
+        theme.dialog(),
+    ))];
+    let inner = height.saturating_sub(3) as usize;
+    let first = if sel >= inner { sel - inner + 1 } else { 0 };
+    if matches.is_empty() {
+        lines.push(Line::from(Span::raw("   (no command matches)")));
+    }
+    for (i, (name, keys, _)) in matches.iter().enumerate().skip(first).take(inner) {
+        let style = if i == sel { theme.selection() } else { theme.dialog() };
+        lines.push(Line::from(Span::styled(format!(" {name:<44} {keys}"), style)));
+    }
+    let block = Block::default()
+        .title(" Commands  (type to filter · ↑↓ · Enter runs · Esc) ")
+        .borders(Borders::ALL)
+        .style(theme.dialog());
+    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+}
+
+/// Rows that report something worth noticing are drawn in the warning colour.
+/// A leading `!` is the marker producers use (risky imports, tagged strings);
+/// triage findings say it in words.
+fn is_warn_row(label: &str) -> bool {
+    label.starts_with('!') || label.contains("[suspicious]") || label.contains("SUSPICIOUS")
 }
 
 /// A large, scrollable, filterable list of `(label, jump target)` rows. Both the
@@ -182,7 +237,7 @@ fn draw_pane_list(
     for (i, (label, jump)) in entries.iter().enumerate().skip(first).take(inner) {
         let style = if i == sel {
             theme.selection()
-        } else if label.contains("[suspicious]") || label.contains("SUSPICIOUS") {
+        } else if is_warn_row(label) {
             theme.warn()
         } else if jump.is_some() {
             theme.dialog()
@@ -228,6 +283,8 @@ fn draw_header(
     for (i, (label, jump)) in entries.iter().enumerate().skip(first).take(inner) {
         let style = if i == sel {
             theme.selection()
+        } else if is_warn_row(label) {
+            theme.warn()
         } else if jump.is_some() {
             theme.dialog()
         } else {
@@ -273,6 +330,10 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         None => String::new(),
     };
     let diff = if app.has_diff() { format!(" diff:{}", app.diff_name) } else { String::new() };
+    let lens = match app.lens_label() {
+        Some(l) => format!(" lens:{l}"),
+        None => String::new(),
+    };
     let asm = if app.disasm_override {
         format!(" as:{}/{}", app.disasm_arch.label(), app.disasm_bits)
     } else {
@@ -285,7 +346,7 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         None => String::new(),
     };
     let text = format!(
-        " {name}  {fmt}/{arch}{asm}  {mode:<4} {rw} {ins}  {addr}  size:{size}{sel}{diff}{dirty}{edit}{badges}  · {status}",
+        " {name}  {fmt}/{arch}{asm}  {mode:<4} {rw} {ins}  {addr}  size:{size}{sel}{diff}{lens}{dirty}{edit}{badges}  · {status}",
         fmt = app.format.label(),
         arch = app.arch.label(),
         mode = app.mode.label(),
@@ -384,7 +445,7 @@ fn hex_line<'a>(app: &App, theme: &Theme, row_off: u64, bpr: usize, hits: &[(u64
     for i in 0..bpr {
         let off = row_off + i as u64;
         if off < app.buffer.len() {
-            let b = app.buffer.read_byte(hiewlm_core::FileOffset(off));
+            let b = app.view_byte(off);
             let style = if off == app.cursor && app.edit_focus_hex() {
                 theme.cursor()
             } else if app.byte_differs(off) {
@@ -409,7 +470,7 @@ fn hex_line<'a>(app: &App, theme: &Theme, row_off: u64, bpr: usize, hits: &[(u64
     for i in 0..bpr {
         let off = row_off + i as u64;
         if off < app.buffer.len() {
-            let b = app.buffer.read_byte(hiewlm_core::FileOffset(off));
+            let b = app.view_byte(off);
             let ch = if (0x20..0x7f).contains(&b) { b as char } else { '.' };
             let style = if off == app.cursor && !app.edit_focus_hex() {
                 theme.cursor()
@@ -454,11 +515,11 @@ fn draw_text(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             if off >= app.buffer.len() {
                 break;
             }
-            let b = app.buffer.read_byte(hiewlm_core::FileOffset(off));
+            let b = app.view_byte(off);
             let ch = if app.encoding.is_wide() {
                 // One glyph per 2 bytes, shown at the even offset.
                 if off % 2 == 0 {
-                    crate::encoding::Encoding::wide_glyph(b, app.buffer.read_byte(hiewlm_core::FileOffset(off + 1)))
+                    crate::encoding::Encoding::wide_glyph(b, app.view_byte(off + 1))
                 } else {
                     ' '
                 }
@@ -514,9 +575,12 @@ fn draw_code(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         let bytes = if ins.len > 8 { format!("{shown}..") } else { shown };
         // A marker on branch/call instructions ("f" follows the one under the cursor).
         let mark = if ins.target.is_some() { "»" } else { " " };
-        let text = match app.comment_at(ins.offset) {
-            Some(c) => format!("{}  ; {c}", ins.text),
-            None => ins.text.clone(),
+        // A user comment wins; otherwise show what the instruction resolves to
+        // (an imported API, or the string it points at).
+        let text = match (app.comment_at(ins.offset), app.annotate(ins)) {
+            (Some(c), _) => format!("{}  ; {c}", ins.text),
+            (None, Some(a)) => format!("{}  ; {a}", ins.text),
+            (None, None) => ins.text.clone(),
         };
 
         if is_cursor && app.editing {
@@ -588,7 +652,7 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         ("A", "Asm"),
     ];
     const HEX_EXTRA: &[(&str, &str)] =
-        &[("*", "Mark"), ("b", "Blk"), ("s", "Str"), ("Y", "Yara"), ("L", "Lens")];
+        &[("*", "Mark"), ("b", "Blk"), ("s", "Str"), ("R", "Yara"), ("Y", "Copy")];
     const TEXT_EXTRA: &[(&str, &str)] = &[("E", "Enc"), ("s", "Str"), ("*", "Mark")];
     const TAIL: &[(&str, &str)] = &[("F12", "Names"), ("q", "Quit")];
 
@@ -615,6 +679,21 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     }
     f.render_widget(Paragraph::new(Line::from(spans)).style(theme.bar()), area);
 }
+
+/// Copy-menu rows, in display order; `Enter` indexes them.
+pub const COPY_MENU_LABELS: [&str; 11] = [
+    "1  SHA-256 of the file",
+    "2  MD5 of the file",
+    "3  ssdeep fuzzy hash",
+    "4  imphash",
+    "5  block as hex bytes",
+    "6  block as C array",
+    "7  block as Python bytes",
+    "8  block as text",
+    "9  current address",
+    "0  every indicator (kind + value)",
+    "r  the whole triage report",
+];
 
 /// Block-menu rows, in display order. Enter indexes `BLOCK_MENU_CMDS` by the
 /// rendered row, so the two lists must stay the same length and order.
@@ -704,6 +783,17 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
                 .collect();
             ("Color block".into(), lines, 12)
         }
+        Dialog::CopyMenu { selected } => {
+            let lines = COPY_MENU_LABELS
+                .iter()
+                .enumerate()
+                .map(|(i, n)| {
+                    let marker = if i == *selected { "► " } else { "  " };
+                    Line::from(format!("{marker}{n}"))
+                })
+                .collect();
+            ("Copy to system clipboard".into(), lines, COPY_MENU_LABELS.len() as u16 + 2)
+        }
         Dialog::BlockMenu { selected } => {
             let lines = BLOCK_MENU_LABELS
                 .iter()
@@ -766,6 +856,28 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
             let h = lines.len() as u16 + 2;
             ("Crypt engine".into(), lines, h)
         }
+        Dialog::Lens { input } => {
+            let mut lines = vec![
+                Line::from(format!("Recipe: {input}_")),
+                Line::from(""),
+                Line::from(Span::raw(
+                    "Decodes the VIEW only — hex, text and disassembly. The file is untouched.",
+                )),
+            ];
+            if input.trim().is_empty() {
+                lines.push(Line::from(Span::raw("xor 5a · add 10 · rol 3 · not · xor deadbeef")));
+                lines.push(Line::from(Span::raw("Alt+X hunts for the key automatically.")));
+                lines.push(Line::from(Span::raw("Empty + Enter turns the lens off.")));
+            } else {
+                match hiewlm_core::crypt::parse(input) {
+                    Ok(r) => lines.push(Line::from(Span::raw(format!("{} step(s), ok", r.0.len())))),
+                    Err(e) => lines.push(Line::from(Span::raw(format!("{e}")))),
+                }
+            }
+            lines.push(Line::from(Span::raw("Enter applies · Esc cancel")));
+            let h = lines.len() as u16 + 2;
+            ("View lens".into(), lines, h)
+        }
         Dialog::Comment { input } => (
             "Comment (empty removes)".into(),
             vec![
@@ -787,6 +899,8 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
         // Rendered separately (they need app data / scrolling).
         Dialog::Header { .. }
         | Dialog::Triage { .. }
+        | Dialog::Palette { .. }
+        | Dialog::XorHits { .. }
         | Dialog::JumpList { .. }
         | Dialog::FileHits { .. }
         | Dialog::FilePicker { .. }
@@ -926,6 +1040,56 @@ fn pad_line(s: &str, width: u16) -> String {
         out.push(' ');
     }
     out
+}
+
+/// Assemble-at-cursor: shows the encoding live so the user sees the bytes and
+/// whether they fit before committing with Enter.
+fn draw_assemble(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Theme) {
+    let mut lines = vec![Line::from(format!(" {input}_")), Line::from("")];
+    if input.trim().is_empty() {
+        lines.push(Line::from(Span::raw(" type an instruction, e.g.:")));
+        lines.push(Line::from(Span::raw("   xor eax, eax    mov rax, rbx")));
+        lines.push(Line::from(Span::raw("   jmp 401000      call rax")));
+        lines.push(Line::from(Span::raw("   push rbp        ret")));
+        lines.push(Line::from(Span::raw(" numbers are hex; use Nt for decimal")));
+    } else {
+        match app.assemble_preview(input) {
+            Ok((bytes, slot)) => {
+                let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02X}")).collect();
+                lines.push(Line::from(Span::styled(
+                    format!("   {}", hex.join(" ")),
+                    Style::default().fg(theme.tok_number),
+                )));
+                if bytes.len() > slot {
+                    lines.push(Line::from(Span::styled(
+                        format!("   too long: {} bytes into a {slot}-byte slot", bytes.len()),
+                        Style::default().fg(theme.diff_bg),
+                    )));
+                } else {
+                    let pad = slot - bytes.len();
+                    lines.push(Line::from(format!(
+                        "   {} byte(s){}  — Enter to patch",
+                        bytes.len(),
+                        if pad > 0 { format!(" + {pad} NOP") } else { String::new() }
+                    )));
+                }
+            }
+            Err(e) => lines.push(Line::from(Span::styled(
+                format!("   {e}"),
+                Style::default().fg(theme.diff_bg),
+            ))),
+        }
+    }
+
+    let width = 60.min(area.width.saturating_sub(2)).max(30);
+    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let rect = centered(area, width, height);
+    f.render_widget(Clear, rect);
+    let block = Block::default()
+        .title(" Assemble  (Enter patches · Esc) ")
+        .borders(Borders::ALL)
+        .style(theme.dialog());
+    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
 }
 
 #[cfg(test)]
@@ -1070,8 +1234,9 @@ mod tests {
         let mut app = app_with("help", b"data");
         app.apply(crate::app::Command::Help);
         let screen = render_to_string(&mut app); // 80x12 backend
-        // Grouped, readable content is present…
-        assert!(screen.contains("NAVIGATE"), "help content missing:\n{screen}");
+        // Grouped, readable content is present — the first group is TRIAGE,
+        // because that is where a malware analyst starts.
+        assert!(screen.contains("TRIAGE"), "help content missing:\n{screen}");
         // …and since the help is taller than the box, a scroll indicator shows.
         assert!(screen.contains("scroll"), "expected scroll indicator:\n{screen}");
         // The box must not exceed the 80-col screen (no horizontal overflow).
@@ -1096,54 +1261,4 @@ mod tests {
             assert_eq!(out.chars().count(), w as usize);
         }
     }
-}
-
-/// Assemble-at-cursor: shows the encoding live so the user sees the bytes and
-/// whether they fit before committing with Enter.
-fn draw_assemble(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Theme) {
-    let mut lines = vec![Line::from(format!(" {input}_")), Line::from("")];
-    if input.trim().is_empty() {
-        lines.push(Line::from(Span::raw(" type an instruction, e.g.:")));
-        lines.push(Line::from(Span::raw("   xor eax, eax    mov rax, rbx")));
-        lines.push(Line::from(Span::raw("   jmp 401000      call rax")));
-        lines.push(Line::from(Span::raw("   push rbp        ret")));
-        lines.push(Line::from(Span::raw(" numbers are hex; use Nt for decimal")));
-    } else {
-        match app.assemble_preview(input) {
-            Ok((bytes, slot)) => {
-                let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02X}")).collect();
-                lines.push(Line::from(Span::styled(
-                    format!("   {}", hex.join(" ")),
-                    Style::default().fg(theme.tok_number),
-                )));
-                if bytes.len() > slot {
-                    lines.push(Line::from(Span::styled(
-                        format!("   too long: {} bytes into a {slot}-byte slot", bytes.len()),
-                        Style::default().fg(theme.diff_bg),
-                    )));
-                } else {
-                    let pad = slot - bytes.len();
-                    lines.push(Line::from(format!(
-                        "   {} byte(s){}  — Enter to patch",
-                        bytes.len(),
-                        if pad > 0 { format!(" + {pad} NOP") } else { String::new() }
-                    )));
-                }
-            }
-            Err(e) => lines.push(Line::from(Span::styled(
-                format!("   {e}"),
-                Style::default().fg(theme.diff_bg),
-            ))),
-        }
-    }
-
-    let width = 60.min(area.width.saturating_sub(2)).max(30);
-    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
-    let rect = centered(area, width, height);
-    f.render_widget(Clear, rect);
-    let block = Block::default()
-        .title(" Assemble  (Enter patches · Esc) ")
-        .borders(Borders::ALL)
-        .style(theme.dialog());
-    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
 }

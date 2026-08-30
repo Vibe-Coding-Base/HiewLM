@@ -29,5 +29,11 @@ blake3 = "1"
 rhai = "1"
 serde_json = "1"
 
+[features]
+default = []
+# Pass-through: `cargo build --features yara` here enables YARA scanning in the
+# triage engine (pure-Rust yara-x; heavy to compile, so it is opt-in).
+yara = ["hiewlm-triage/yara"]
+
 [lints]
 workspace = true

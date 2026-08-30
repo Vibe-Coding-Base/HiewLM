@@ -75,6 +75,8 @@ pub enum EditCol {
 pub enum SearchKind {
     Hex,
     Text,
+    /// ASCII text, ignoring case.
+    TextI,
     /// UTF-16LE text — HIEW's "Unicode" search, matching wide strings.
     Utf16,
     /// Assemble the typed instruction and search for its encoding.
@@ -86,6 +88,7 @@ impl SearchKind {
         match self {
             SearchKind::Hex => "hex",
             SearchKind::Text => "text",
+            SearchKind::TextI => "text/i",
             SearchKind::Utf16 => "utf-16",
             SearchKind::Asm => "asm",
         }
@@ -95,7 +98,8 @@ impl SearchKind {
     pub fn next(self) -> Self {
         match self {
             SearchKind::Hex => SearchKind::Text,
-            SearchKind::Text => SearchKind::Utf16,
+            SearchKind::Text => SearchKind::TextI,
+            SearchKind::TextI => SearchKind::Utf16,
             SearchKind::Utf16 => SearchKind::Asm,
             SearchKind::Asm => SearchKind::Hex,
         }
@@ -142,6 +146,10 @@ impl HeaderPane {
 pub enum PickPurpose {
     Diff,
     StructTemplate,
+    /// A YARA rule file (or a directory of them) to scan with.
+    YaraRules,
+    /// Another sample to open in place of this one.
+    Open,
     /// Insert the chosen file's bytes at the cursor (HIEW Ctrl+F2).
     ReadFile,
 }
@@ -164,10 +172,20 @@ pub enum Dialog {
     DisasmMenu { selected: usize },
     ColorMenu { selected: usize },
     BlockMenu { selected: usize },
+    /// Copy something to the system clipboard (OSC 52).
+    CopyMenu { selected: usize },
     BlockWrite { input: String },
     BlockFill { input: String },
     /// Crypt engine: XOR/ADD/ROL/… recipe applied to the selected block.
     Crypt { input: String },
+    /// The same recipe syntax, but applied to the *view* instead of the bytes.
+    Lens { input: String },
+    /// Fuzzy command launcher (`:`) — every command by name, for the ones whose
+    /// letter you do not remember.
+    Palette { input: String, sel: usize },
+    /// Plaintext recovered from under a single-byte transform: Enter jumps there
+    /// and puts the recovering recipe on the lens in one step.
+    XorHits { items: Vec<(String, u64, String)>, sel: usize, filter: String },
     /// Waiting for a digit 1-8 naming the slot to store the cursor in.
     BookmarkSlot,
     Header { pane: HeaderPane, sel: usize, filter: String },
@@ -215,6 +233,19 @@ pub struct App {
     /// Parsed container structure (ZIP/PDF), when a container plugin claimed
     /// the file. Members are listed by F12 instead of recovered functions.
     pub container: Option<hiewlm_core::Container>,
+    /// VA -> symbol name, for annotating disassembly (imports and exports).
+    sym_by_va: BTreeMap<u64, String>,
+    /// Recently used search patterns; Up/Down in the find dialog walks them.
+    search_history: Vec<String>,
+    /// Position in `search_history` while browsing it (0 = not browsing).
+    search_hist_pos: usize,
+    /// Rule file/folder from the config, scanned by `R` without prompting.
+    default_yara_rules: Option<PathBuf>,
+    /// A non-destructive view transform: bytes are decoded on their way to the
+    /// screen (and to the disassembler), the buffer is never touched. This is
+    /// how you read an XOR-ed config or unpack a stub visually without
+    /// committing a patch you would then have to undo.
+    lens: Option<(hiewlm_core::CryptRecipe, String)>,
     /// Cached triage report (computed on first use — it hashes the whole file).
     triage: Option<hiewlm_triage::TriageReport>,
     /// Cached entropy (computed lazily when the header opens).
@@ -370,6 +401,14 @@ impl App {
             ),
         };
 
+        // VA -> name, so a call through the IAT can be shown by name.
+        let mut syms: BTreeMap<u64, String> = BTreeMap::new();
+        for (name, va) in imports.iter().chain(exports.iter()) {
+            if *va != 0 {
+                syms.entry(*va).or_insert_with(|| name.clone());
+            }
+        }
+
         Ok(Self {
             path,
             buffer,
@@ -388,6 +427,11 @@ impl App {
             header_fields,
             resources,
             container,
+            sym_by_va: syms,
+            search_history: Vec::new(),
+            search_hist_pos: 0,
+            default_yara_rules: cfg.yara_rules.clone(),
+            lens: None,
             triage: None,
             file_entropy: None,
             section_entropy: Vec::new(),
@@ -430,6 +474,38 @@ impl App {
             theme_kind,
             encoding,
         })
+    }
+
+    /// Open a *directory*: rank its samples and show the queue straight away.
+    ///
+    /// `hiewlm ~/samples/` is how a triage session actually starts — with a
+    /// folder, not a file. The highest-scoring sample is opened underneath, so
+    /// closing the list leaves you somewhere useful.
+    pub fn open_folder(dir: PathBuf) -> Result<Self> {
+        let mut files: Vec<PathBuf> = fs::read_dir(&dir)
+            .with_context(|| format!("cannot read {}", dir.display()))?
+            .flatten()
+            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+            .map(|e| e.path())
+            .collect();
+        files.sort();
+        let first = files
+            .into_iter()
+            .find(|p| FileSource::open(p).is_ok())
+            .ok_or_else(|| anyhow::anyhow!("no readable files in {}", dir.display()))?;
+        let mut app = App::open(first)?;
+        app.apply(Command::FolderTriage);
+        // Opening the worst one first matches the ranking the list just showed.
+        if let Some(Dialog::FileHits { items, .. }) = &app.dialog {
+            if let Some((_, path, _)) = items.first().cloned() {
+                if path != app.path {
+                    let dialog = app.dialog.take();
+                    app.reload(path, 0);
+                    app.dialog = dialog;
+                }
+            }
+        }
+        Ok(app)
     }
 
     pub fn max_offset(&self) -> u64 {
@@ -795,6 +871,369 @@ impl App {
         hex_bytes(&md5::Md5::digest(parts.join(",").as_bytes()))
     }
 
+    // -- Disassembly annotation -----------------------------------------
+
+    /// What an instruction is really touching: the API it calls through the
+    /// import table, or the string it points at.
+    ///
+    /// Reading `call [rip+0x2f10]` tells you nothing; reading
+    /// `call [rip+0x2f10]  ; kernel32.dll!VirtualAlloc` tells you what the
+    /// function does. Same for `lea rcx, [rip+0x1c4]  ; "http://..."`.
+    pub fn annotate(&self, ins: &Insn) -> Option<String> {
+        for va in [ins.target, ins.mem_target, ins.imm_target].into_iter().flatten() {
+            if let Some(name) = self.sym_by_va.get(&va) {
+                return Some(name.clone());
+            }
+            let Some(off) = self.va_to_off(va) else { continue };
+            if off >= self.buffer.len() {
+                continue;
+            }
+            // An indirect call usually lands on an IAT slot: follow the pointer
+            // once and see whether *that* is a known import.
+            if matches!(ins.flow, Flow::Call | Flow::Jump) {
+                let mut ptr = [0u8; 8];
+                let n = 8.min((self.buffer.len() - off) as usize);
+                self.view_bytes(off, &mut ptr[..n]);
+                let indirect = u64::from_le_bytes(ptr);
+                if let Some(name) = self.sym_by_va.get(&indirect) {
+                    return Some(format!("{name} (via IAT)"));
+                }
+            }
+            if let Some(text) = self.string_at(off) {
+                return Some(format!("\"{text}\""));
+            }
+        }
+        None
+    }
+
+    /// A printable string starting exactly at `off` (ASCII or UTF-16LE), read
+    /// through the lens so an encoded string still shows up decoded.
+    fn string_at(&self, off: u64) -> Option<String> {
+        const MIN: usize = 4;
+        const MAX: usize = 48;
+        let n = MAX.min((self.buffer.len() - off) as usize);
+        if n < MIN {
+            return None;
+        }
+        let mut buf = vec![0u8; n];
+        self.view_bytes(off, &mut buf);
+
+        let printable = |b: u8| (0x20..0x7f).contains(&b);
+        let ascii: String = buf.iter().copied().take_while(|&b| printable(b)).map(|b| b as char).collect();
+        if ascii.chars().count() >= MIN {
+            return Some(ascii);
+        }
+        // UTF-16LE: printable byte followed by a zero.
+        let wide: String = buf
+            .chunks_exact(2)
+            .take_while(|c| c[1] == 0 && printable(c[0]))
+            .map(|c| c[0] as char)
+            .collect();
+        (wide.chars().count() >= MIN).then_some(wide)
+    }
+
+    // -- Folder triage & search-all -------------------------------------
+
+    /// Rank every file next to this one by triage score — the FAR-style panel
+    /// that turns a folder of samples into a work queue. Enter opens one.
+    fn folder_triage(&mut self) {
+        let dir = self
+            .path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| p.to_path_buf())
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let mut files: Vec<PathBuf> = fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+            .map(|e| e.path())
+            .collect();
+        files.sort();
+        // Triage hashes and scans each file, so the folder is capped: this is a
+        // triage queue, not a corpus scanner (use `hiewlmc triage <dir>` for that).
+        const MAX_FILES: usize = 200;
+        let truncated = files.len() > MAX_FILES;
+        files.truncate(MAX_FILES);
+
+        let opts = hiewlm_triage::Options {
+            // A folder pass wants to be quick; the full scan is one keystroke
+            // away once a file is open.
+            max_string_bytes: 8 * 1024 * 1024,
+            max_xor_bytes: 4 * 1024 * 1024,
+            max_indicators: 40,
+            ..Default::default()
+        };
+        let mut rows: Vec<(u8, String, PathBuf)> = Vec::new();
+        for path in files {
+            let Ok(src) = FileSource::open(&path) else { continue };
+            let buf = EditBuffer::new(Arc::new(src));
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let r = hiewlm_triage::analyze(&name, &buf, None, &opts);
+            rows.push((
+                r.score,
+                format!(
+                    "{}{:>4}  {:<9} {:<28} {:<8} {}",
+                    if r.score >= 40 { "!" } else { " " },
+                    r.score,
+                    r.verdict(),
+                    truncate_label(&name, 28),
+                    r.format,
+                    r.badge_line()
+                ),
+                path,
+            ));
+        }
+        if rows.is_empty() {
+            self.set_status(format!("No readable files in {}", dir.display()));
+            return;
+        }
+        rows.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        let items: Vec<(String, PathBuf, u64)> =
+            rows.into_iter().map(|(_, label, path)| (label, path, 0)).collect();
+        self.dialog = Some(Dialog::FileHits {
+            title: format!(
+                "Folder triage — {} ({} file(s){})",
+                dir.display(),
+                items.len(),
+                if truncated { ", capped" } else { "" }
+            ),
+            items,
+            sel: 0,
+            filter: String::new(),
+        });
+        self.set_status("Worst first · Enter opens · type to filter · Esc closes");
+    }
+
+    /// Every match of the current pattern at once, as a jump list with context.
+    /// Stepping with `n` is fine for three hits and useless for three hundred.
+    fn search_all(&mut self) {
+        let Some((pattern, _)) = self.last_pattern.clone() else {
+            self.set_status("Search first (/), then list every match.");
+            return;
+        };
+        const MAX_HITS: usize = 5000;
+        let hits = find_all(&self.buffer, &pattern, FileOffset(0), FileOffset(self.buffer.len()));
+        if hits.is_empty() {
+            self.set_status("Not found.");
+            return;
+        }
+        let truncated = hits.len() > MAX_HITS;
+        let items: Vec<(String, u64)> = hits
+            .iter()
+            .take(MAX_HITS)
+            .map(|h| {
+                let off = h.get();
+                let mut ctx = vec![0u8; 48.min((self.buffer.len() - off) as usize)];
+                self.view_bytes(off, &mut ctx);
+                let text: String = ctx
+                    .iter()
+                    .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+                    .collect();
+                (format!("{}  {text}", self.display_addr(off)), off)
+            })
+            .collect();
+        self.highlight = Some(pattern);
+        self.dialog = Some(Dialog::JumpList {
+            title: format!("All matches ({}{})", hits.len(), if truncated { ", capped" } else { "" }),
+            items,
+            sel: 0,
+            filter: String::new(),
+        });
+    }
+
+    // -- YARA ----------------------------------------------------------
+
+    /// Scan the sample with the rules at `path` (a file, or a folder of rules).
+    /// Matches become a jump list, and they also feed the triage screen's YARA
+    /// pane and its score.
+    fn run_yara(&mut self, path: &std::path::Path) {
+        self.dialog = None;
+        let cap = self.buffer.len().min(256 * 1024 * 1024) as usize;
+        let mut data = vec![0u8; cap];
+        self.buffer.read_at(FileOffset(0), &mut data);
+
+        let hits = match hiewlm_triage::yara::scan_path(path, &data) {
+            Ok(h) => h,
+            Err(e) => {
+                self.set_status(format!("YARA: {e}"));
+                return;
+            }
+        };
+        if hits.is_empty() {
+            self.set_status(format!("YARA: no rule in {} matched.", path.display()));
+            return;
+        }
+        // Feed the triage screen too, so the verdict reflects the match.
+        self.ensure_triage();
+        if let Some(t) = &mut self.triage {
+            t.set_yara(hits.clone());
+        }
+        let mut items: Vec<(String, u64)> = Vec::new();
+        for h in &hits {
+            let tags = if h.tags.is_empty() { String::new() } else { format!(" [{}]", h.tags.join(" ")) };
+            items.push((format!("!rule {}{tags}  ({} match(es))", h.rule, h.matches.len()), h.matches.first().map(|m| m.0).unwrap_or(0)));
+            for (off, len, id) in h.matches.iter().take(64) {
+                items.push((format!("     {}  {len:>5}  {id}", self.display_addr(*off)), *off));
+            }
+        }
+        let n = hits.len();
+        self.dialog = Some(Dialog::JumpList {
+            title: format!("YARA — {n} rule(s) matched"),
+            items,
+            sel: 0,
+            filter: String::new(),
+        });
+        self.set_status(format!("YARA: {n} rule(s) matched · 2 shows the updated verdict"));
+    }
+
+    // -- View lens (non-destructive decoding) --------------------------
+
+    /// One byte as it should be *displayed*: through the lens when one is set.
+    pub fn view_byte(&self, off: u64) -> u8 {
+        let raw = self.buffer.read_byte(FileOffset(off));
+        match &self.lens {
+            Some((recipe, _)) => {
+                let mut b = [raw];
+                // The key index follows the file offset, so a repeating key stays
+                // aligned no matter where you scroll.
+                recipe.apply(&mut b, off as usize);
+                b[0]
+            }
+            None => raw,
+        }
+    }
+
+    /// Fill `out` with the bytes at `off`, decoded through the lens.
+    pub fn view_bytes(&self, off: u64, out: &mut [u8]) {
+        self.buffer.read_at(FileOffset(off), out);
+        if let Some((recipe, _)) = &self.lens {
+            recipe.apply(out, off as usize);
+        }
+    }
+
+    pub fn lens_label(&self) -> Option<&str> {
+        self.lens.as_ref().map(|(_, l)| l.as_str())
+    }
+
+    fn set_lens(&mut self, input: &str) {
+        self.dialog = None;
+        let text = input.trim();
+        if text.is_empty() {
+            self.lens = None;
+            self.set_status("Lens off — showing the file's real bytes.");
+            return;
+        }
+        match hiewlm_core::crypt::parse(text) {
+            Ok(recipe) => {
+                self.lens = Some((recipe, text.to_string()));
+                self.set_status(format!(
+                    "Lens: {text} — the view is decoded, the file is untouched (L then Enter clears)."
+                ));
+            }
+            Err(e) => {
+                self.set_status(format!("Lens: {e}"));
+                self.dialog = Some(Dialog::Lens { input: text.to_string() });
+            }
+        }
+    }
+
+    /// Hunt for plaintext hidden behind a single-byte XOR/ADD/ROL.
+    fn xor_search(&mut self) {
+        let hits = hiewlm_core::xorsearch::search_buffer(
+            &self.buffer,
+            &hiewlm_core::xorsearch::DEFAULT_NEEDLES,
+            500,
+            64 * 1024 * 1024,
+        );
+        if hits.is_empty() {
+            self.set_status("No plaintext found under any single-byte xor/add/sub/rol key.");
+            return;
+        }
+        let items: Vec<(String, u64, String)> = hits
+            .iter()
+            .map(|h| {
+                let preview: String = h.preview.chars().take(72).collect();
+                (
+                    format!(
+                        "!{} {:<10} {:<14} {preview}",
+                        self.display_addr(h.offset),
+                        h.recipe(),
+                        h.needle
+                    ),
+                    h.offset,
+                    h.recipe(),
+                )
+            })
+            .collect();
+        self.set_status("Enter jumps there AND sets the lens to that recipe · type to filter");
+        self.dialog = Some(Dialog::XorHits { items, sel: 0, filter: String::new() });
+    }
+
+    // -- Clipboard ----------------------------------------------------
+
+    /// Copy entry `idx` of the copy menu to the system clipboard.
+    ///
+    /// Everything here is about getting a fact out of the terminal and into a
+    /// ticket, a rule or a script without retyping it.
+    fn copy_item(&mut self, idx: usize) {
+        self.dialog = None;
+        // Hashes and indicators come from the triage report; build it on demand.
+        if idx <= 3 || idx == 9 || idx == 10 {
+            self.ensure_triage();
+        }
+        let sel = self.read_selection();
+        let what: (String, String) = match idx {
+            0 => ("SHA-256".into(), self.triage.as_ref().map(|t| t.hashes.sha256.clone()).unwrap_or_default()),
+            1 => ("MD5".into(), self.triage.as_ref().map(|t| t.hashes.md5.clone()).unwrap_or_default()),
+            2 => ("ssdeep".into(), self.triage.as_ref().map(|t| t.hashes.ssdeep.clone()).unwrap_or_default()),
+            3 => (
+                "imphash".into(),
+                self.triage
+                    .as_ref()
+                    .and_then(|t| t.hashes.imphash.clone())
+                    .unwrap_or_else(|| "(no import hash: not a PE, or no imports)".into()),
+            ),
+            4 => ("block as hex".into(), sel.map(|b| crate::clipboard::as_hex(&b)).unwrap_or_default()),
+            5 => ("block as C array".into(), sel.map(|b| crate::clipboard::as_c_array(&b)).unwrap_or_default()),
+            6 => ("block as Python".into(), sel.map(|b| crate::clipboard::as_python(&b)).unwrap_or_default()),
+            7 => (
+                "block as text".into(),
+                sel.map(|b| b.iter().map(|&c| if (0x20..0x7f).contains(&c) { c as char } else { '.' }).collect())
+                    .unwrap_or_default(),
+            ),
+            8 => ("address".into(), self.display_addr(self.cursor)),
+            9 => (
+                "indicators".into(),
+                self.triage
+                    .as_ref()
+                    .map(|t| {
+                        t.indicators
+                            .iter()
+                            .map(|i| format!("{}\t{}", i.kinds, i.value))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default(),
+            ),
+            _ => (
+                "triage report".into(),
+                self.triage.as_ref().map(hiewlm_triage::render::text).unwrap_or_default(),
+            ),
+        };
+        let (label, text) = what;
+        if text.is_empty() {
+            self.set_status(format!("Nothing to copy for {label} (mark a block with * first?)"));
+            return;
+        }
+        match crate::clipboard::copy(&text) {
+            Ok(n) => self.set_status(format!("Copied {label} ({n} bytes) to the system clipboard.")),
+            Err(e) => self.set_status(format!("Copy failed: {e}")),
+        }
+    }
+
     // -- Triage screen -----------------------------------------------
 
     /// Build the triage report once and keep it. It hashes and scans the whole
@@ -914,10 +1353,19 @@ impl App {
                     )
                 })
                 .collect(),
+            // Each import carries its behaviour category, and the ones that are
+            // a signal on their own are marked so the list highlights them.
             HeaderPane::Imports => self
                 .imports
                 .iter()
-                .map(|(n, va)| (fmt_sym(n, *va), jump(*va)))
+                .map(|(n, va)| {
+                    let (tag, warn) = match hiewlm_core::apiscore::lookup(n) {
+                        Some((cat, _, true)) => (format!("[{}] ", cat.label()), "!"),
+                        Some((cat, _, false)) => (format!("[{}] ", cat.label()), ""),
+                        None => (String::new(), ""),
+                    };
+                    (format!("{warn}{tag}{}", fmt_sym(n, *va)), jump(*va))
+                })
                 .collect(),
             HeaderPane::Exports => self
                 .exports
@@ -1046,7 +1494,7 @@ impl App {
             return;
         };
         let repl = match kind {
-            SearchKind::Text => input.as_bytes().to_vec(),
+            SearchKind::Text | SearchKind::TextI => input.as_bytes().to_vec(),
             SearchKind::Utf16 => input.encode_utf16().flat_map(|u| u.to_le_bytes()).collect(),
             SearchKind::Asm => {
                 self.set_status("Replace does not support instruction search.");
@@ -1274,6 +1722,8 @@ impl App {
             PickPurpose::Diff => self.open_diff(path),
             PickPurpose::StructTemplate => self.open_struct(path),
             PickPurpose::ReadFile => self.read_file_into_buffer(std::path::Path::new(path)),
+            PickPurpose::YaraRules => self.run_yara(std::path::Path::new(path)),
+            PickPurpose::Open => self.reload(PathBuf::from(path), 0),
         }
     }
 
@@ -1549,57 +1999,52 @@ impl App {
         items
     }
 
-    /// List printable ASCII strings (>= 4 chars) in the file, jumpable (HIEW Alt+F6).
+    /// List the file's strings, jumpable and filterable (HIEW Alt+F6, grown up).
+    ///
+    /// ASCII *and* UTF-16LE, each tagged with the indicator categories it
+    /// matches, so typing `url` in the list filters to the URLs.
     fn open_strings(&mut self) {
-        const MIN: usize = 4;
-        let cap = self.buffer.len().min(64 * 1024 * 1024);
-        let mut items: Vec<(String, u64)> = Vec::new();
-        let mut run: Vec<u8> = Vec::new();
-        let mut run_start = 0u64;
-        let mut off = 0u64;
-        let mut chunk = vec![0u8; 64 * 1024];
-        let mut remaining = cap;
-        while remaining > 0 && items.len() < 20_000 {
-            let n = (remaining as usize).min(chunk.len());
-            self.buffer.read_at(FileOffset(off), &mut chunk[..n]);
-            for (i, &b) in chunk[..n].iter().enumerate() {
-                if (0x20..0x7f).contains(&b) {
-                    if run.is_empty() {
-                        run_start = off + i as u64;
-                    }
-                    run.push(b);
-                } else {
-                    if run.len() >= MIN {
-                        let s: String = run.iter().map(|&c| c as char).collect();
-                        items.push((format!("{}  {}", self.display_addr(run_start), s), run_start));
-                    }
-                    run.clear();
-                }
-            }
-            off += n as u64;
-            remaining -= n as u64;
-        }
-        if run.len() >= MIN {
-            let s: String = run.iter().map(|&c| c as char).collect();
-            items.push((format!("{}  {}", self.display_addr(run_start), s), run_start));
-        }
-        if items.is_empty() {
+        let scan = hiewlm_core::strings::extract_buffer(
+            &self.buffer,
+            &hiewlm_core::strings::Options {
+                min_len: 4,
+                ascii: true,
+                utf16: true,
+                max_results: 50_000,
+                max_bytes: 64 * 1024 * 1024,
+                only_tagged: false,
+            },
+        );
+        if scan.strings.is_empty() {
             self.set_status("No strings found.");
             return;
         }
-        // Say so when the scan stopped early: a silently truncated list is worse
-        // than none, because the missing part is usually the appended payload.
-        let truncated = if items.len() >= 20_000 || cap < self.buffer.len() {
-            "  [TRUNCATED]"
-        } else {
-            ""
-        };
+        let tagged = scan.strings.iter().filter(|s| !s.kinds.is_empty()).count();
+        let items: Vec<(String, u64)> = scan
+            .strings
+            .iter()
+            .map(|f| {
+                let tags = if f.kinds.is_empty() {
+                    String::new()
+                } else {
+                    format!("[{}] ", f.kind_list())
+                };
+                let text: String = f.text.chars().take(160).collect();
+                let warn = if f.kinds.is_empty() { "" } else { "!" };
+                (
+                    format!("{warn}{} {} {tags}{text}", self.display_addr(f.offset), f.enc.label()),
+                    f.offset,
+                )
+            })
+            .collect();
+        let truncated = if scan.truncated { "  [TRUNCATED]" } else { "" };
         self.dialog = Some(Dialog::JumpList {
-            title: format!("Strings ({}){truncated}", items.len()),
+            title: format!("Strings ({}, {tagged} tagged){truncated}", items.len()),
             items,
             sel: 0,
             filter: String::new(),
         });
+        self.set_status("Type to filter (try: url, ip, registry, lolbin, mutex) · Enter jumps");
     }
 
     /// Replace the instruction under the cursor with NOP padding (HIEW Alt+F2).
@@ -2162,7 +2607,9 @@ impl App {
         let avail = (self.buffer.len() - off) as usize;
         let want = (count * MAX_INSN_LEN).min(avail);
         let mut data = vec![0u8; want];
-        self.buffer.read_at(FileOffset(off), &mut data);
+        // Through the lens, so an encrypted stub disassembles as what it will be
+        // at runtime without patching the sample first.
+        self.view_bytes(off, &mut data);
         Disassembler::new(self.disasm_arch, self.disasm_bits).decode(&data, off, self.va_of(off), count)
     }
 
@@ -2439,6 +2886,7 @@ impl App {
     pub(crate) fn search_pattern(&self, input: &str, kind: SearchKind) -> Result<Pattern, String> {
         match kind {
             SearchKind::Text => Ok(Pattern::from_text(input)),
+            SearchKind::TextI => Ok(Pattern::from_text_ci(input)),
             SearchKind::Hex => Pattern::from_hex(input).map_err(|_| "Invalid hex string.".into()),
             SearchKind::Utf16 => {
                 // UTF-16LE: each unit little-endian, so ASCII gains a 0x00 pad.
@@ -2463,6 +2911,12 @@ impl App {
     }
 
     pub(crate) fn confirm_search(&mut self, input: &str, kind: SearchKind) {
+        if !input.is_empty() && self.search_history.last().map(String::as_str) != Some(input) {
+            self.search_history.push(input.to_string());
+            if self.search_history.len() > 50 {
+                self.search_history.remove(0);
+            }
+        }
         let pattern = match self.search_pattern(input, kind) {
             Ok(p) => p,
             Err(e) => {
@@ -2626,8 +3080,30 @@ impl App {
             Dialog::Search { mut input, kind } => match key.code {
                 Enter => self.confirm_search(&input.clone(), kind),
                 Esc => {}
+                // Ctrl+A lists every match instead of jumping to the next one.
+                Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.confirm_search(&input.clone(), kind);
+                    self.search_all();
+                }
                 Tab => {
                     let kind = kind.next();
+                    self.dialog = Some(Dialog::Search { input, kind });
+                }
+                // Up/Down walk the patterns you have already used.
+                Up => {
+                    self.search_hist_pos = (self.search_hist_pos + 1).min(self.search_history.len());
+                    let i = self.search_history.len().saturating_sub(self.search_hist_pos);
+                    let input = self.search_history.get(i).cloned().unwrap_or(input);
+                    self.dialog = Some(Dialog::Search { input, kind });
+                }
+                Down => {
+                    self.search_hist_pos = self.search_hist_pos.saturating_sub(1);
+                    let input = if self.search_hist_pos == 0 {
+                        String::new()
+                    } else {
+                        let i = self.search_history.len().saturating_sub(self.search_hist_pos);
+                        self.search_history.get(i).cloned().unwrap_or_default()
+                    };
                     self.dialog = Some(Dialog::Search { input, kind });
                 }
                 Backspace => {
@@ -2743,6 +3219,21 @@ impl App {
                 Esc => {}
                 _ => self.dialog = Some(Dialog::BlockMenu { selected }),
             },
+            Dialog::CopyMenu { selected } => {
+                let n = crate::ui::COPY_MENU_LABELS.len();
+                match key.code {
+                    Up => self.dialog = Some(Dialog::CopyMenu { selected: (selected + n - 1) % n }),
+                    Down | Tab => self.dialog = Some(Dialog::CopyMenu { selected: (selected + 1) % n }),
+                    // Routed through `apply` like every other state change, so
+                    // macros can replay a copy.
+                    Enter => self.apply(Command::CopyItem(selected)),
+                    Char(c @ '1'..='9') => self.apply(Command::CopyItem(c as usize - '1' as usize)),
+                    Char('0') => self.apply(Command::CopyItem(9)),
+                    Char('r') | Char('R') => self.apply(Command::CopyItem(10)),
+                    Esc => {}
+                    _ => self.dialog = Some(Dialog::CopyMenu { selected }),
+                }
+            }
             Dialog::BlockWrite { mut input } => match key.code {
                 Enter => self.block_write_file(&input.clone()),
                 Esc => {}
@@ -2781,6 +3272,98 @@ impl App {
                 }
                 _ => self.dialog = Some(Dialog::Crypt { input }),
             },
+            Dialog::Palette { mut input, sel } => {
+                let matches = palette_matches(&input);
+                let last = matches.len().saturating_sub(1);
+                let mut sel = sel;
+                let mut run = None;
+                let mut close = false;
+                match key.code {
+                    Up => sel = sel.saturating_sub(1),
+                    Down => sel = (sel + 1).min(last),
+                    PageUp => sel = sel.saturating_sub(LIST_PAGE),
+                    PageDown => sel = (sel + LIST_PAGE).min(last),
+                    Enter => {
+                        run = matches.get(sel).map(|e| e.2);
+                        close = true;
+                    }
+                    Backspace => {
+                        input.pop();
+                        sel = 0;
+                    }
+                    Char(c) => {
+                        input.push(c);
+                        sel = 0;
+                    }
+                    Esc => close = true,
+                    _ => {}
+                }
+                if !close {
+                    self.dialog = Some(Dialog::Palette { input, sel });
+                } else if let Some(cmd) = run {
+                    self.apply(cmd);
+                }
+            }
+            Dialog::Lens { mut input } => match key.code {
+                Enter => self.set_lens(&input.clone()),
+                Esc => {}
+                Backspace => {
+                    input.pop();
+                    self.dialog = Some(Dialog::Lens { input });
+                }
+                Char(c) => {
+                    input.push(c);
+                    self.dialog = Some(Dialog::Lens { input });
+                }
+                _ => self.dialog = Some(Dialog::Lens { input }),
+            },
+            Dialog::XorHits { items, sel, mut filter } => {
+                let view =
+                    filter_indices(&items, |it: &(String, u64, String)| it.0.as_str(), &filter);
+                let last = view.len().saturating_sub(1);
+                let mut sel = sel;
+                let mut chosen = None;
+                let mut close = false;
+                match key.code {
+                    Up => sel = sel.saturating_sub(1),
+                    Down => sel = (sel + 1).min(last),
+                    PageUp => sel = sel.saturating_sub(LIST_PAGE),
+                    PageDown => sel = (sel + LIST_PAGE).min(last),
+                    Home => sel = 0,
+                    End => sel = last,
+                    Enter => {
+                        chosen = view.get(sel).map(|&i| {
+                            let (_, off, recipe) = &items[i];
+                            (*off, recipe.clone())
+                        });
+                        close = true;
+                    }
+                    Backspace => {
+                        filter.pop();
+                        sel = 0;
+                    }
+                    Char(c) => {
+                        filter.push(c);
+                        sel = 0;
+                    }
+                    Esc if !filter.is_empty() => {
+                        filter.clear();
+                        sel = 0;
+                    }
+                    Esc => close = true,
+                    _ => {}
+                }
+                if !close {
+                    self.dialog = Some(Dialog::XorHits { items, sel, filter });
+                } else if let Some((off, recipe)) = chosen {
+                    self.set_lens(&recipe);
+                    self.goto_offset(off);
+                    self.set_status(format!(
+                        "Lens {recipe} at {} — the view is decoded, the file is untouched.",
+                        self.display_addr(off)
+                    ));
+                }
+            }
             Dialog::BlockFill { mut input } => match key.code {
                 Enter => self.confirm_block_fill(&input.clone()),
                 Esc => {}
@@ -3153,6 +3736,11 @@ impl App {
                     self.set_status("Select a block first (press * then move).");
                 }
             }
+            Command::OpenCopyMenu => {
+                self.dialog = Some(Dialog::CopyMenu { selected: 0 });
+                self.set_status("Copy to the system clipboard (works over SSH via OSC 52).");
+            }
+            Command::CopyItem(i) => self.copy_item(i),
             Command::OpenBlockWrite => {
                 if self.selection().is_some() {
                     self.dialog = Some(Dialog::BlockWrite { input: String::new() });
@@ -3186,6 +3774,11 @@ impl App {
                     self.dialog = Some(Dialog::Crypt { input: String::new() });
                 }
             }
+            Command::OpenLens => {
+                let current = self.lens.as_ref().map(|(_, l)| l.clone()).unwrap_or_default();
+                self.dialog = Some(Dialog::Lens { input: current });
+            }
+            Command::XorSearch => self.xor_search(),
             Command::OpenBlockFill => {
                 if self.selection().is_some() {
                     self.dialog = Some(Dialog::BlockFill { input: String::new() });
@@ -3208,6 +3801,22 @@ impl App {
             Command::NextMarker => self.jump_marker(true),
             Command::PrevMarker => self.jump_marker(false),
             Command::OpenCfg => self.open_cfg(),
+            Command::OpenFile => self.open_file_picker(PickPurpose::Open),
+            Command::FolderTriage => self.folder_triage(),
+            Command::OpenPalette => {
+                self.dialog = Some(Dialog::Palette { input: String::new(), sel: 0 });
+                self.set_status("Type a command name · Enter runs it · Esc cancels");
+            }
+            Command::SearchAll => self.search_all(),
+            Command::RunYara => match self.default_yara_rules.clone() {
+                Some(p) => self.run_yara(&p),
+                None => {
+                    self.set_status(
+                        "Pick a YARA rule file or folder (set `yara_rules` in config.toml to skip this).",
+                    );
+                    self.open_file_picker(PickPurpose::YaraRules);
+                }
+            },
             Command::Xref => self.open_xrefs(),
             Command::OpenDiff => self.open_file_picker(PickPurpose::Diff),
             Command::NextDiff => self.next_diff(true),
@@ -3282,7 +3891,9 @@ impl App {
             Command::OpenGoto => self.dialog = Some(Dialog::Goto { input: String::new() }),
             Command::OpenSearch => {
                 let kind = if self.mode == Mode::Text { SearchKind::Text } else { SearchKind::Hex };
-                self.dialog = Some(Dialog::Search { input: String::new(), kind })
+                self.search_hist_pos = 0;
+                self.dialog = Some(Dialog::Search { input: String::new(), kind });
+                self.set_status("Tab: hex/text/text-i/utf-16/asm · ↑↓ history · Ctrl+A lists all");
             }
             Command::FindNext => self.find_next(),
             Command::Help => {
@@ -3336,9 +3947,16 @@ pub enum Command {
     BlockPaste,
     BlockDelete,
     OpenBlockMenu,
+    /// `Y`: copy a hash / the selection / the IOC list to the system clipboard.
+    OpenCopyMenu,
+    CopyItem(usize),
     OpenBlockWrite,
     OpenBlockFill,
     OpenCrypt,
+    /// `L`: view the file through a byte transform without modifying it.
+    OpenLens,
+    /// `Alt+X`: find plaintext hidden behind a single-byte transform.
+    XorSearch,
     BlockCopy,
     BlockMove,
     BlockInsert,
@@ -3361,6 +3979,16 @@ pub enum Command {
     NextMarker,
     PrevMarker,
     OpenCfg,
+    /// `O`: open another sample without leaving hiewLM.
+    OpenFile,
+    /// `F`: rank every file in this folder by triage score.
+    FolderTriage,
+    /// `:`: the command palette.
+    OpenPalette,
+    /// List every match of the last search instead of stepping through them.
+    SearchAll,
+    /// `R`: scan with YARA rules (from the config path, else pick a file).
+    RunYara,
     Xref,
     OpenDiff,
     NextDiff,
@@ -3584,6 +4212,19 @@ fn parse_hex_bytes(input: &str) -> Option<Vec<u8>> {
 const HELP_TEXT: &str = "\
 Every action has a plain-key shortcut; function keys are optional
 (many terminals, e.g. macOS, don't send F1-F12).  up/down to scroll.
+Press : for the command palette — every command by name.
+
+TRIAGE  (start here)
+  2  or  T                      triage screen: verdict, hashes, packer,
+                                anomalies, capabilities, IOCs, entropy map
+  s                             strings (ASCII + UTF-16), tagged with
+                                url/ip/registry/lolbin/... — type to filter
+  R                             YARA scan (rule file or folder)
+  Alt+X                         find plaintext hidden behind a 1-byte key
+  L                             view lens: decode the VIEW, not the file
+  Y                             copy hash / block / IOC list to the clipboard
+  F                             rank every sample in this folder
+  O                             open another file
 
 NAVIGATE
   arrows PgUp PgDn Home End     move / scroll
@@ -3592,30 +4233,36 @@ NAVIGATE
   + / -                         push / pop bookmark
   k                             name a bookmark
   Backspace                     go back (return stack)
+  H                             jump history
 
 VIEW
   Enter                         cycle Hex / Code / Text
   m  or  4                      mode menu
-  a                             toggle offset / VA
+  Alt+A                         toggle offset / VA
   \\                             cycle theme
   E                             cycle text encoding
 
-EDIT
+SEARCH
+  /  or  7                      find; Tab picks hex / text / text-i (no case)
+                                / utf-16 / asm.  Up/Down recalls past patterns,
+                                Ctrl+A lists every match at once
+  n  /  N                       find next / previous
+  x                             search across the whole folder
+  X                             replace across the folder (.bak)
+
+EDIT  (the sample is LOCKED until you unlock it)
+  Ctrl+W                        unlock / re-lock writing (or start with --rw)
   e  or  3                      edit (Tab hex<->ascii, Esc done)
   Ins                           insert / overwrite
   Ctrl+Z   Ctrl+Y               undo / redo
   w  or  9                      save (atomic, .bak backup)
 
-SEARCH
-  /  or  7                      find (highlights all matches)
-  n                             find next
-  s                             list strings (jumpable)
-  x                             search across the whole folder
-  X                             replace across the folder (.bak)
-
 BLOCK  (select: * or v, or Shift+arrows)
   y   p   d                     yank / paste / delete
-  b                             block menu (write / fill / zero)
+  b                             block menu (write, read, copy, move, insert,
+                                fill, zero, delete, NOP)
+  C                             crypt the block (MODIFIES the bytes; L only
+                                changes the view)
   M                             color the block (saved to sidecar)
   ] / [                         jump to next / prev colored marker
 
@@ -3623,34 +4270,102 @@ CODE  (disassembly)
   f                             follow branch under cursor
   o                             disassemble as x86 / x64 / ARM64 / ...
   6  or  F6                     cross-references to cursor
-  N                             NOP the instruction under cursor
+  Alt+F2                        NOP the instruction under cursor
   G                             control-flow graph of this function
+  A                             assemble at cursor (x86/x64)
   ;                             add / edit comment
-  H                             jump history
+  Instructions are annotated with the API they call and the string they
+  point at, and are disassembled through the lens when one is set.
 
 ANALYSIS
-  8  or  F8                     header view (info / sections /
-                                imports / exports / resources)
+  8  or  F8                     header view (info / sections / imports /
+                                exports / resources) — imports are tagged
+                                with their behaviour category
   i                             data inspector (int/float, LE+BE)
   =                             calculator (@o/@b/@w/@d/@q operands)
-  A                             assemble at cursor (x86/x64, Code mode)
-  C                             crypt engine on block (xor/add/rol/...)
-  K then 1-8                    set numbered bookmark slot
-  Alt+1..8                      jump to numbered slot
-  Alt+N                         search backwards (find previous)
-  S                             split 2-pane diff view (needs c first)
   h                             hashes (CRC32/MD5/SHA-256/BLAKE3)
   c                             compare with a file (diff); >/< next
+  S                             split 2-pane diff view (needs c first)
   t                             apply a struct template
+  K then 1-8 / Alt+1..8         set / jump to a numbered slot
   F12                           names, slots & functions (members for ZIP/PDF)
 
 MISC
   Ctrl+.  Ctrl+P  Ctrl+L       record / play / loop macro (stops on search-fail)
   ?  or  1                     this help
   q  or  0  or  F10            quit
-  Esc                          clear highlight/block, then go back (never quits)
+  Esc                          clear filter/highlight/block, then go back
 
 Read-only by default.  The target file is data, never executed.";
+
+/// Every command the palette can run: `(name, key hint, command)`.
+///
+/// The letter keyspace is nearly full, so this is how a command stays reachable
+/// when you cannot remember which letter it landed on.
+pub const PALETTE: &[(&str, &str, Command)] = &[
+    ("triage screen", "2 / T", Command::OpenTriage),
+    ("header / sections / imports", "8", Command::OpenHeader),
+    ("strings with indicators", "s", Command::OpenStrings),
+    ("yara scan", "R", Command::RunYara),
+    ("xor search (find hidden plaintext)", "Alt+X", Command::XorSearch),
+    ("view lens (decode without patching)", "L", Command::OpenLens),
+    ("copy to system clipboard", "Y", Command::OpenCopyMenu),
+    ("folder triage (rank samples)", "F", Command::FolderTriage),
+    ("open another file", "O", Command::OpenFile),
+    ("find", "/ or 7", Command::OpenSearch),
+    ("find next", "n", Command::FindNext),
+    ("find previous", "N", Command::FindPrev),
+    ("list all matches", "Ctrl+A in find", Command::SearchAll),
+    ("search every file in the folder", "x", Command::MultiSearch),
+    ("goto address", "g / 5", Command::OpenGoto),
+    ("names, functions, bookmarks", "F12", Command::OpenNames),
+    ("cross-references to cursor", "6", Command::Xref),
+    ("control-flow graph", "G", Command::OpenCfg),
+    ("disassemble as (arch/bits)", "o", Command::OpenDisasmMenu),
+    ("assemble at cursor", "A", Command::OpenAssemble),
+    ("data inspector", "i", Command::OpenInspector),
+    ("hashes of file/block", "h", Command::OpenHashes),
+    ("calculator", "=", Command::OpenCalc),
+    ("compare with a file (diff)", "c", Command::OpenDiff),
+    ("split diff view", "S", Command::ToggleSplitView),
+    ("apply struct template", "t", Command::OpenStruct),
+    ("comment at cursor", ";", Command::OpenComment),
+    ("name a bookmark", "k", Command::OpenNameBookmark),
+    ("jump history", "H", Command::OpenHistory),
+    ("block menu", "b", Command::OpenBlockMenu),
+    ("crypt block (modifies bytes)", "C", Command::OpenCrypt),
+    ("toggle write lock", "Ctrl+W", Command::ToggleWritable),
+    ("edit bytes", "e / 3", Command::EnterEdit),
+    ("save", "w / 9", Command::Save),
+    ("cycle theme", "\\", Command::ToggleTheme),
+    ("cycle text encoding", "E", Command::CycleEncoding),
+    ("toggle offset / virtual address", "Alt+A", Command::ToggleAddrMode),
+    ("help", "1 / ?", Command::Help),
+    ("quit", "q / 0", Command::Quit),
+];
+
+/// Palette entries matching `query`: every whitespace-separated word must appear
+/// somewhere in the name or the key hint.
+pub fn palette_matches(query: &str) -> Vec<&'static (&'static str, &'static str, Command)> {
+    let q = query.to_lowercase();
+    let words: Vec<&str> = q.split_whitespace().collect();
+    PALETTE
+        .iter()
+        .filter(|(name, keys, _)| {
+            let hay = format!("{name} {keys}").to_lowercase();
+            words.iter().all(|w| hay.contains(w))
+        })
+        .collect()
+}
+
+/// Shorten a label to `n` characters for a fixed-width column.
+fn truncate_label(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n.saturating_sub(1)).collect::<String>() + "~"
+    }
+}
 
 /// Indices of the entries whose label contains `filter` (case-insensitive).
 /// Shared by every scrollable list so filtering behaves identically everywhere.
@@ -3708,6 +4423,182 @@ mod tests {
         let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
         a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(b"0123456789ABCDEF".to_vec())));
         a
+    }
+
+    #[test]
+    fn disassembly_is_annotated_with_strings_and_imports() {
+        // lea rcx, [rip+1]: rip is the next instruction (7), so this points at 8,
+        // where the string starts.
+        let mut data = vec![0x48, 0x8d, 0x0d, 0x01, 0x00, 0x00, 0x00, 0xc3];
+        data.extend_from_slice(b"http://c2.example.top\0");
+        let mut a = locked_app();
+        a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
+        a.arch = Arch::X86_64;
+        a.bits = 64;
+        a.disasm_arch = Arch::X86_64;
+        a.disasm_bits = 64;
+
+        let ins = a.disasm_from(0, 1).into_iter().next().expect("decode");
+        assert_eq!(a.annotate(&ins).as_deref(), Some("\"http://c2.example.top\""));
+
+        // A direct call to a known symbol VA is named.
+        a.sym_by_va.insert(0x20, "kernel32.dll!VirtualAlloc".to_string());
+        let call = Insn { target: Some(0x20), ..ins.clone() };
+        assert_eq!(a.annotate(&call).as_deref(), Some("kernel32.dll!VirtualAlloc"));
+    }
+
+    #[test]
+    fn palette_finds_commands_by_words_not_by_key() {
+        // The point of the palette: you remember "yara", not that it is `R`.
+        let m = palette_matches("yara");
+        assert!(m.iter().any(|(_, _, c)| matches!(c, Command::RunYara)), "{m:?}");
+        assert!(palette_matches("copy clipboard").len() == 1);
+        assert!(palette_matches("zzzz").is_empty());
+        // An empty query lists everything.
+        assert_eq!(palette_matches("").len(), PALETTE.len());
+    }
+
+    #[test]
+    fn palette_runs_the_selected_command() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        let mut a = locked_app();
+        a.handle_key(KeyEvent::from(KeyCode::Char(':')));
+        for c in "help".chars() {
+            a.handle_key(KeyEvent::from(KeyCode::Char(c)));
+        }
+        a.handle_key(KeyEvent::from(KeyCode::Enter));
+        assert!(matches!(&a.dialog, Some(Dialog::Message { title, .. }) if title.contains("help")));
+    }
+
+    #[test]
+    fn search_all_lists_every_match_with_context() {
+        let mut a = app();
+        a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(
+            b"AxxAxxAxx".to_vec(),
+        )));
+        a.confirm_search("A", SearchKind::Text);
+        a.apply(Command::SearchAll);
+        let Some(Dialog::JumpList { title, items, .. }) = &a.dialog else {
+            panic!("expected a jump list");
+        };
+        assert!(title.contains("All matches (3"), "{title}");
+        assert_eq!(items.iter().map(|(_, o)| *o).collect::<Vec<_>>(), vec![0, 3, 6]);
+    }
+
+    #[test]
+    fn case_insensitive_search_kind_is_in_the_tab_cycle() {
+        let mut a = app();
+        a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(
+            b"xx VirtualAlloc xx".to_vec(),
+        )));
+        assert_eq!(SearchKind::Text.next(), SearchKind::TextI);
+        a.confirm_search("virtualalloc", SearchKind::TextI);
+        assert_eq!(a.cursor, 3);
+    }
+
+    #[test]
+    fn search_history_is_recalled_with_up() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        let mut a = app();
+        a.confirm_search("abc", SearchKind::Text);
+        a.apply(Command::OpenSearch);
+        a.handle_key(KeyEvent::from(KeyCode::Up));
+        assert!(matches!(&a.dialog, Some(Dialog::Search { input, .. }) if input == "abc"));
+    }
+
+    #[test]
+    fn opening_a_directory_shows_the_ranked_queue() {
+        let dir = std::env::temp_dir().join("hiewlm_open_folder_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("a_dull.bin"), vec![0u8; 2048]).unwrap();
+        let mut nasty = b"http://c2.example.top/gate.php\0".to_vec();
+        nasty.extend(b"powershell -EncodedCommand ZQBjAGgAbwA\0");
+        nasty.extend(b"185.220.101.7\0");
+        fs::write(dir.join("z_nasty.bin"), &nasty).unwrap();
+
+        let app = App::open_folder(dir.clone()).unwrap();
+        assert!(matches!(app.dialog, Some(Dialog::FileHits { .. })));
+        // The worst sample is the one open underneath, not the alphabetical first.
+        assert!(app.path.ends_with("z_nasty.bin"), "opened {:?}", app.path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn folder_triage_ranks_files_worst_first() {
+        let dir = std::env::temp_dir().join("hiewlm_folder_triage_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // One dull file, one full of indicators.
+        fs::write(dir.join("boring.bin"), vec![0u8; 4096]).unwrap();
+        let mut nasty = b"http://c2.example.top/gate.php\0".to_vec();
+        nasty.extend(b"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\0");
+        nasty.extend(b"powershell -EncodedCommand ZQBjAGgAbwA\0");
+        nasty.extend(b"185.220.101.7\0");
+        fs::write(dir.join("nasty.bin"), &nasty).unwrap();
+
+        let mut a = App::open(dir.join("boring.bin")).unwrap();
+        a.apply(Command::FolderTriage);
+        let Some(Dialog::FileHits { items, .. }) = &a.dialog else {
+            panic!("expected the folder list");
+        };
+        assert_eq!(items.len(), 2);
+        assert!(items[0].1.ends_with("nasty.bin"), "worst first: {:?}", items[0].0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_menu_labels_match_the_copy_actions() {
+        let mut a = locked_app();
+        a.apply(Command::OpenCopyMenu);
+        assert!(matches!(a.dialog, Some(Dialog::CopyMenu { .. })));
+        // Copying the address never needs a selection and never fails.
+        a.apply(Command::CopyItem(8));
+        assert!(a.dialog.is_none());
+        // Copying a block without one explains itself instead of copying nothing.
+        a.apply(Command::CopyItem(4));
+        assert!(a.status.contains("Nothing to copy"), "{}", a.status);
+    }
+
+    #[test]
+    fn lens_decodes_the_view_without_touching_the_file() {
+        let mut a = locked_app();
+        let plain = a.buffer.to_vec();
+        let encoded: Vec<u8> = plain.iter().map(|&b| b ^ 0x5a).collect();
+        a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(encoded.clone())));
+
+        a.set_lens("xor 5a");
+        assert_eq!(a.lens_label(), Some("xor 5a"));
+        let seen: Vec<u8> = (0..plain.len() as u64).map(|o| a.view_byte(o)).collect();
+        assert_eq!(seen, plain, "the view is decoded");
+        assert_eq!(a.buffer.to_vec(), encoded, "the file is not");
+        assert!(!a.buffer.is_dirty());
+
+        a.set_lens("");
+        assert!(a.lens_label().is_none());
+        assert_eq!(a.view_byte(0), encoded[0]);
+    }
+
+    #[test]
+    fn xor_search_finds_a_hidden_url_and_offers_its_recipe() {
+        let mut a = locked_app();
+        let mut data = vec![0u8; 64];
+        data.extend(b"http://c2.example.top/x".iter().map(|&b| b ^ 0x33));
+        a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
+
+        a.apply(Command::XorSearch);
+        let Some(Dialog::XorHits { items, .. }) = &a.dialog else {
+            panic!("expected the xor hits list");
+        };
+        assert!(items.iter().any(|(_, off, recipe)| *off == 64 && recipe == "xor 33"), "{items:?}");
+
+        // Enter jumps there and puts the recovering recipe on the lens.
+        use crossterm::event::{KeyCode, KeyEvent};
+        a.handle_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(a.lens_label(), Some("xor 33"));
+        assert_eq!(a.cursor, 64);
+        let decoded: String = (64..64 + 7).map(|o| a.view_byte(o) as char).collect();
+        assert_eq!(decoded, "http://");
     }
 
     #[test]
@@ -4296,14 +5187,14 @@ mod tests {
     }
 
     #[test]
-    fn search_kind_tab_cycles_all_four() {
+    fn search_kind_tab_cycles_every_kind() {
         let mut k = SearchKind::Hex;
         let mut seen = vec![k.label()];
-        for _ in 0..3 {
+        for _ in 0..4 {
             k = k.next();
             seen.push(k.label());
         }
-        assert_eq!(seen, vec!["hex", "text", "utf-16", "asm"]);
+        assert_eq!(seen, vec!["hex", "text", "text/i", "utf-16", "asm"]);
         assert_eq!(k.next().label(), "hex", "must wrap around");
     }
 

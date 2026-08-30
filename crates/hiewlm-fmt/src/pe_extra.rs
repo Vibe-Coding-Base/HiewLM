@@ -378,9 +378,11 @@ pub fn compute_checksum(bytes: &[u8], checksum_off: usize) -> u32 {
     (sum as u32) + bytes.len() as u32
 }
 
-/// The decoded Rich header bytes (what the Rich hash covers) and its comp-id
-/// pairs.
-fn parse_rich_clear(b: &[u8], e_lfanew: usize) -> Option<(Vec<u8>, Vec<(u32, u32)>)> {
+/// The decoded Rich header: its clear bytes (what the Rich hash covers) and the
+/// `(comp-id, count)` pairs it lists.
+type RichHeader = (Vec<u8>, Vec<(u32, u32)>);
+
+fn parse_rich_clear(b: &[u8], e_lfanew: usize) -> Option<RichHeader> {
     let limit = e_lfanew.min(b.len());
     let mut rich_pos = None;
     let mut i = 0x40;

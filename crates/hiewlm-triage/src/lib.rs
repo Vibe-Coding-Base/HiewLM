@@ -16,7 +16,9 @@ use hiewlm_fmt::pe_extra::PeDetails;
 use serde::Serialize;
 
 pub mod render;
+pub mod yara;
 pub use render::Pane;
+pub use yara::{scan as yara_scan, scan_path as yara_scan_path, YaraError};
 
 /// Hash set for identification and clustering.
 #[derive(Clone, Debug, Default, Serialize)]
@@ -109,6 +111,17 @@ impl From<&FoundString> for Indicator {
     }
 }
 
+/// Plaintext recovered from behind a single-byte transform — a URL or command
+/// the sample took the trouble to hide, which is worth more than one it did not.
+#[derive(Clone, Debug, Serialize)]
+pub struct HiddenString {
+    pub offset: u64,
+    /// The recipe that decodes it, in `crypt`/lens syntax (`xor 5a`).
+    pub recipe: String,
+    pub needle: String,
+    pub preview: String,
+}
+
 /// A capability group: the behaviour bucket and the APIs that put it there.
 #[derive(Clone, Debug, Serialize)]
 pub struct Capability {
@@ -145,6 +158,7 @@ pub struct TriageReport {
     pub export_count: usize,
     pub anomalies: Vec<ReportFinding>,
     pub indicators: Vec<Indicator>,
+    pub hidden: Vec<HiddenString>,
     pub map: Vec<MapCell>,
     pub yara: Vec<YaraHit>,
     pub container_kind: Option<String>,
@@ -167,6 +181,9 @@ pub struct Options {
     pub max_indicators: usize,
     /// Cells in the entropy map.
     pub map_cells: usize,
+    /// Bytes searched for plaintext hidden behind a single-byte key
+    /// (0 disables the hunt).
+    pub max_xor_bytes: u64,
 }
 
 impl Default for Options {
@@ -176,6 +193,7 @@ impl Default for Options {
             min_string_len: 5,
             max_indicators: 400,
             map_cells: 64,
+            max_xor_bytes: 32 * 1024 * 1024,
         }
     }
 }
@@ -334,6 +352,27 @@ pub fn analyze(
     tagged.retain(|s| seen.insert((s.kind_list(), s.value())));
     tagged.truncate(opts.max_indicators);
     r.indicators = tagged.iter().map(Indicator::from).collect();
+
+    // Anything the sample bothered to hide behind a key.
+    if opts.max_xor_bytes > 0 {
+        let hits = hiewlm_core::xorsearch::search_buffer(
+            buf,
+            &hiewlm_core::xorsearch::DEFAULT_NEEDLES,
+            64,
+            opts.max_xor_bytes,
+        );
+        let mut seen = std::collections::HashSet::new();
+        for h in hits {
+            if seen.insert((h.op, h.key, h.needle.clone())) {
+                r.hidden.push(HiddenString {
+                    offset: h.offset,
+                    recipe: h.recipe(),
+                    needle: h.needle.clone(),
+                    preview: h.preview.clone(),
+                });
+            }
+        }
+    }
 
     score(&mut r);
     r
@@ -514,6 +553,11 @@ fn score(r: &mut TriageReport) {
     if strong_iocs > 0 {
         r.badges.push(format!("IOC{strong_iocs}"));
     }
+    if !r.hidden.is_empty() {
+        // Obfuscation is intent: a URL behind an XOR key is not an accident.
+        s += 20;
+        r.badges.push(format!("HIDDEN{}", r.hidden.len()));
+    }
     if !r.yara.is_empty() {
         s += 25;
         r.badges.push(format!("YARA{}", r.yara.len()));
@@ -557,6 +601,15 @@ impl TriageReport {
     /// The badge string for a status line.
     pub fn badge_line(&self) -> String {
         self.badges.join(" ")
+    }
+
+    /// Attach YARA results and re-score. Scanning is a separate, optional step
+    /// (it needs rules), so the report is built first and told afterwards.
+    pub fn set_yara(&mut self, hits: Vec<YaraHit>) {
+        self.yara = hits;
+        self.badges.clear();
+        self.score = 0;
+        score(self);
     }
 
     pub fn to_json(&self) -> String {
@@ -605,6 +658,34 @@ mod tests {
         assert_eq!(r.map.len(), 10);
         assert_eq!(r.map.iter().map(|c| c.len).sum::<u64>(), 10_000);
         assert!(r.map[0].entropy < 0.1, "zeros have no entropy");
+    }
+
+    #[test]
+    fn plaintext_hidden_behind_a_key_is_found_and_scored() {
+        let mut data = vec![0u8; 256];
+        data.extend(b"http://hidden.example.top/a.php".iter().map(|&b| b ^ 0x41));
+        let r = analyze("t.bin", &buf(data), None, &Options::default());
+        let h = r.hidden.first().expect("a hidden string");
+        assert_eq!(h.recipe, "xor 41");
+        assert!(h.preview.contains("http://hidden.example.top"), "{}", h.preview);
+        assert!(r.badges.iter().any(|b| b.starts_with("HIDDEN")), "{:?}", r.badges);
+    }
+
+    #[test]
+    fn yara_hits_raise_the_score_and_badge() {
+        let mut r = analyze("t.bin", &buf(b"abcd".to_vec()), None, &Options::default());
+        let before = r.score;
+        r.set_yara(vec![YaraHit {
+            rule: "family_x".into(),
+            tags: vec!["trojan".into()],
+            matches: vec![(0, 4, "$a".into())],
+        }]);
+        assert!(r.score > before);
+        assert!(r.badges.iter().any(|b| b.starts_with("YARA")), "{:?}", r.badges);
+        // Re-scoring must not double-count on a second call.
+        let once = r.score;
+        r.set_yara(r.yara.clone());
+        assert_eq!(r.score, once);
     }
 
     #[test]

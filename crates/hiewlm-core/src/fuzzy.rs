@@ -33,7 +33,7 @@ impl Roll {
         self.h1 = self.h1.wrapping_sub(self.window[self.n] as u32);
         self.window[self.n] = c;
         self.n = (self.n + 1) % ROLLING_WINDOW;
-        self.h3 = self.h3 << 5;
+        self.h3 <<= 5;
         self.h3 ^= c as u32;
         self.h1.wrapping_add(self.h2).wrapping_add(self.h3)
     }

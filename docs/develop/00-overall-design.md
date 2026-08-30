@@ -983,9 +983,22 @@ Maps HiewGate's spirit but safely:
 | **M1** (HIEW-parity) | Code mode + asm-at-cursor, PE/ELF/MachO headers, block ops, crypt, bookmark/xref/names, macros, VA addressing | "HIEW but cross-platform and open source". |
 | **M2** (beyond) | Binary diff, recursive disasm, structure viewer, extended archs, hash, multi-file replace, themes, data inspector | Beyond HIEW in analysis & convenience. |
 | **M3** (ecosystem) | WASM/Lua plugins, CLI batch, HEM shim, GUI wrapper, process memory, packer detect, CFG view | An extensible, community platform. |
+| **M4** (triage-first) | Triage screen + `hiewlmc triage`, strings/IOC extraction, import capability scoring, PE anomalies (overlay/TLS/debug/Authenticode), ssdeep, YARA, XOR lens & key hunt, annotated disassembly, folder queue, command palette, real write lock | Fast initial malware classification, not just inspection. |
 
 Principle: each milestone is a usable release; the core is always separated from the
 UI to avoid technical debt when adding a GUI.
+
+### 19.1 M4 in one paragraph
+
+M0–M3 answered "what is in this file?". M4 answers "**is this file worth my next
+hour, and why?**" — the question that actually starts a malware investigation. The
+design consequence is a new pure crate, `hiewlm-triage`, that turns the existing
+parsers into a single scored verdict and renders it as panes the TUI and the CLI
+both consume, so the interactive screen and the JSON a pipeline reads can never
+disagree. Two rules kept it honest: every signal is *listed* but only strong
+signals *score* (otherwise every compiled program looks armed), and the sample is
+locked against writing until the analyst says otherwise (evidence must not change
+by accident). Progress and remaining follow-ups: `docs/develop/01-M4-triage-plan.md`.
 
 ---
 

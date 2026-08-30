@@ -6,6 +6,7 @@ mod clipboard;
 mod config;
 mod encoding;
 mod keymap;
+mod notes;
 mod theme;
 mod ui;
 

@@ -233,6 +233,9 @@ pub struct App {
     /// Parsed container structure (ZIP/PDF), when a container plugin claimed
     /// the file. Members are listed by F12 instead of recovered functions.
     pub container: Option<hiewlm_core::Container>,
+    /// Content key (SHA-256 of the sample) the persistent notes hang off, so
+    /// renaming or moving the file never loses an hour of annotation.
+    notes_key: String,
     /// VA -> symbol name, for annotating disassembly (imports and exports).
     sym_by_va: BTreeMap<u64, String>,
     /// Recently used search patterns; Up/Down in the find dialog walks them.
@@ -327,7 +330,29 @@ impl App {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| hiewlm_core::format_unix(d.as_secs() as i64));
 
-        let markers = load_markers(&path);
+        // Notes are keyed by content, so they follow the bytes rather than the
+        // path. The legacy per-path marker sidecar is imported once.
+        let notes_key = crate::notes::content_key(&buffer);
+        let mut notes = crate::notes::load(&notes_key).unwrap_or_default();
+        notes.key = notes_key.clone();
+        notes.last_path = path.to_string_lossy().into_owned();
+        if notes.markers.is_empty() {
+            let legacy = load_markers(&path);
+            if !legacy.is_empty() {
+                notes.markers = legacy;
+                let _ = crate::notes::save(&notes);
+            }
+        }
+        let restored = (!notes.is_empty()).then(|| notes.summary());
+        let markers = notes.markers.clone();
+        let comments: BTreeMap<u64, String> = notes.comments.iter().cloned().collect();
+        let named_bookmarks = notes.bookmarks.clone();
+        let mut slots: [Option<u64>; 8] = [None; 8];
+        for (n, off) in &notes.slots {
+            if (1..=8).contains(n) {
+                slots[(*n - 1) as usize] = Some(*off);
+            }
+        }
 
         // Config file overrides; otherwise auto-detect the text encoding.
         let cfg = crate::config::Config::load();
@@ -384,7 +409,14 @@ impl App {
             None
         };
 
-        let ready = match &container {
+        let ready = match &restored {
+            Some(summary) => format!("Notes restored: {summary}  ·  1/? help · 2 triage · q quit"),
+            None => String::new(),
+        };
+        let ready = if !ready.is_empty() {
+            ready
+        } else {
+        match &container {
             Some(c) => format!(
                 "{}  ·  {} member(s){}  ·  1/? help · F12 members · q quit",
                 c.kind,
@@ -399,6 +431,7 @@ impl App {
                 format.label(),
                 arch.label()
             ),
+        }
         };
 
         // VA -> name, so a call through the IAT can be shown by name.
@@ -443,6 +476,7 @@ impl App {
             nav_stack: Vec::new(),
             history: Vec::new(),
             markers,
+            notes_key,
             top: 0,
             bytes_per_row,
             text_cols: 16,
@@ -460,10 +494,10 @@ impl App {
             highlight: None,
             clipboard: Vec::new(),
             bookmarks: Vec::new(),
-            slots: [None; 8],
+            slots,
             search_scope: None,
-            named_bookmarks: Vec::new(),
-            comments: BTreeMap::new(),
+            named_bookmarks,
+            comments,
             macro_rec: None,
             macro_saved: Vec::new(),
             replaying: false,
@@ -1885,7 +1919,7 @@ impl App {
         };
         self.markers.push(Marker { start, end, color: idx % crate::theme::Theme::MARKER_COLORS });
         self.mark = None;
-        self.save_markers();
+        self.save_notes();
         self.set_status(format!(
             "Marked {} bytes {}. Alt+N / ] jumps between markers.",
             end - start + 1,
@@ -1897,7 +1931,7 @@ impl App {
         self.dialog = None;
         let n = self.markers.len();
         self.markers.clear();
-        self.save_markers();
+        self.save_notes();
         self.set_status(format!("Cleared {n} marker(s)."));
     }
 
@@ -1925,15 +1959,23 @@ impl App {
         }
     }
 
-    fn save_markers(&self) {
-        let path = markers_path(&self.path);
-        if self.markers.is_empty() {
-            let _ = fs::remove_file(&path);
-            return;
-        }
-        if let Ok(s) = toml::to_string(&MarkerFile { markers: self.markers.clone() }) {
-            let _ = fs::write(&path, s);
-        }
+    /// Persist every hand-made annotation under the sample's content key.
+    /// Called after each change, so a crash costs nothing.
+    fn save_notes(&self) {
+        let notes = crate::notes::Notes {
+            key: self.notes_key.clone(),
+            last_path: self.path.to_string_lossy().into_owned(),
+            markers: self.markers.clone(),
+            comments: self.comments.iter().map(|(o, c)| (*o, c.clone())).collect(),
+            bookmarks: self.named_bookmarks.clone(),
+            slots: self
+                .slots
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| s.map(|off| (i as u8 + 1, off)))
+                .collect(),
+        };
+        let _ = crate::notes::save(&notes);
     }
 
     // -- Comments, names, xrefs --------------------------------------
@@ -1954,8 +1996,9 @@ impl App {
             self.set_status("Comment removed.");
         } else {
             self.comments.insert(self.cursor, t.to_string());
-            self.set_status(format!("Comment set at {}", self.display_addr(self.cursor)));
+            self.set_status(format!("Comment set at {} (saved)", self.display_addr(self.cursor)));
         }
+        self.save_notes();
         self.dialog = None;
     }
 
@@ -2504,6 +2547,7 @@ impl App {
             name.to_string()
         };
         self.named_bookmarks.push((label, self.cursor));
+        self.save_notes();
         self.set_status(format!("Bookmark saved ({} total). F12 to jump.", self.named_bookmarks.len()));
         self.dialog = None;
     }
@@ -3251,6 +3295,7 @@ impl App {
                 Char(c @ '1'..='8') => {
                     let n = c as u8 - b'0';
                     self.slots[(n - 1) as usize] = Some(self.cursor);
+                    self.save_notes();
                     self.set_status(format!(
                         "Slot {n} = {} (Alt+{n} to jump)",
                         self.display_addr(self.cursor)
@@ -4419,9 +4464,20 @@ mod tests {
     }
 
     /// An app in its real startup state: the sample is locked.
+    ///
+    /// Every helper app opens `/dev/null`, so they would all share one content
+    /// key and leak notes into each other. Each gets a unique key instead; the
+    /// tests that exercise persistence use real files.
     fn locked_app() -> App {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
         let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
         a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(b"0123456789ABCDEF".to_vec())));
+        a.notes_key = format!("test-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+        a.comments.clear();
+        a.named_bookmarks.clear();
+        a.markers.clear();
+        a.slots = [None; 8];
         a
     }
 
@@ -4504,6 +4560,80 @@ mod tests {
         a.apply(Command::OpenSearch);
         a.handle_key(KeyEvent::from(KeyCode::Up));
         assert!(matches!(&a.dialog, Some(Dialog::Search { input, .. }) if input == "abc"));
+    }
+
+    #[test]
+    fn legacy_marker_sidecar_is_imported_once() {
+        let path = std::env::temp_dir().join("hiewlm_legacy_markers.bin");
+        fs::write(&path, b"legacy marker migration sample").unwrap();
+        // A sidecar written by an older build, next to the file.
+        let sidecar = super::markers_path(&path);
+        fs::write(
+            &sidecar,
+            toml::to_string(&MarkerFile {
+                markers: vec![Marker { start: 2, end: 5, color: 3 }],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        let a = App::open(path.clone()).unwrap();
+        assert_eq!(a.marker_color_at(3), Some(3), "old markers must not be lost");
+
+        // Now they live in the content-keyed store, so the sidecar is redundant.
+        fs::remove_file(&sidecar).ok();
+        let b = App::open(path.clone()).unwrap();
+        assert_eq!(b.marker_color_at(3), Some(3));
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn notes_survive_a_rename() {
+        let first = std::env::temp_dir().join("hiewlm_notes_sample.bin");
+        fs::write(&first, b"sample bytes for the notes test").unwrap();
+
+        {
+            let mut a = App::open(first.clone()).unwrap();
+            a.cursor = 4;
+            a.set_comment("decrypt loop starts here");
+            a.cursor = 8;
+            a.add_named_bookmark("config blob");
+            a.mark = Some(0);
+            a.cursor = 3;
+            a.color_block(1);
+        }
+
+        // The analyst renames the sample, as everyone does after identifying it.
+        let renamed = std::env::temp_dir().join("hiewlm_notes_emotet_2026.bin");
+        let _ = fs::remove_file(&renamed);
+        fs::rename(&first, &renamed).unwrap();
+
+        let b = App::open(renamed.clone()).unwrap();
+        assert_eq!(b.comment_at(4), Some("decrypt loop starts here"));
+        assert!(b.named_bookmarks.iter().any(|(n, o)| n == "config blob" && *o == 8));
+        assert_eq!(b.markers.len(), 1);
+        assert!(b.status.contains("Notes restored"), "{}", b.status);
+
+        let _ = fs::remove_file(&renamed);
+    }
+
+    #[test]
+    fn different_content_does_not_share_notes() {
+        let one = std::env::temp_dir().join("hiewlm_notes_one.bin");
+        let two = std::env::temp_dir().join("hiewlm_notes_two.bin");
+        fs::write(&one, b"first sample").unwrap();
+        fs::write(&two, b"second sample").unwrap();
+        {
+            let mut a = App::open(one.clone()).unwrap();
+            a.cursor = 2;
+            a.set_comment("only mine");
+        }
+        let b = App::open(two.clone()).unwrap();
+        assert_eq!(b.comment_at(2), None);
+
+        let _ = fs::remove_file(&one);
+        let _ = fs::remove_file(&two);
     }
 
     #[test]

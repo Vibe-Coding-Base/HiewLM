@@ -7,6 +7,7 @@ use hiewlm_core::{
     find, find_all, AddressSpace, Arch, Direction, EditBuffer, FileOffset, FileSource, Format,
     Pattern,
 };
+use hiewlm_triage::Pane as TriagePane;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -170,6 +171,9 @@ pub enum Dialog {
     /// Waiting for a digit 1-8 naming the slot to store the cursor in.
     BookmarkSlot,
     Header { pane: HeaderPane, sel: usize, filter: String },
+    /// The triage screen: one keystroke, every signal that decides whether this
+    /// sample is worth opening. Panes mirror [`hiewlm_triage::Pane`].
+    Triage { pane: TriagePane, sel: usize, filter: String },
     /// Scrollable read-only text (help, inspector, hashes).
     Comment { input: String },
     NameBookmark { input: String },
@@ -211,6 +215,8 @@ pub struct App {
     /// Parsed container structure (ZIP/PDF), when a container plugin claimed
     /// the file. Members are listed by F12 instead of recovered functions.
     pub container: Option<hiewlm_core::Container>,
+    /// Cached triage report (computed on first use — it hashes the whole file).
+    triage: Option<hiewlm_triage::TriageReport>,
     /// Cached entropy (computed lazily when the header opens).
     file_entropy: Option<f32>,
     section_entropy: Vec<f32>,
@@ -382,6 +388,7 @@ impl App {
             header_fields,
             resources,
             container,
+            triage: None,
             file_entropy: None,
             section_entropy: Vec::new(),
             imphash: None,
@@ -786,6 +793,65 @@ impl App {
             })
             .collect();
         hex_bytes(&md5::Md5::digest(parts.join(",").as_bytes()))
+    }
+
+    // -- Triage screen -----------------------------------------------
+
+    /// Build the triage report once and keep it. It hashes and scans the whole
+    /// file, so it is worth a second on a large sample but not on every redraw.
+    fn ensure_triage(&mut self) {
+        if self.triage.is_some() {
+            return;
+        }
+        let name = self
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| self.path.to_string_lossy().into_owned());
+        let report = hiewlm_triage::analyze(
+            &name,
+            &self.buffer,
+            self.container.as_ref(),
+            &hiewlm_triage::Options::default(),
+        );
+        self.set_status(format!(
+            "Triage: {} ({}/100) {} · ←→ pane · type=filter · Enter jump · Esc",
+            report.verdict().to_uppercase(),
+            report.score,
+            report.badge_line()
+        ));
+        self.triage = Some(report);
+    }
+
+    /// Badges for the status line (`PACKED ENT7.9 OVL+128K`), once triage has run.
+    pub fn triage_badges(&self) -> Option<String> {
+        let r = self.triage.as_ref()?;
+        let b = r.badge_line();
+        Some(if b.is_empty() {
+            format!("[{} {}]", r.verdict(), r.score)
+        } else {
+            format!("[{} {} {b}]", r.verdict(), r.score)
+        })
+    }
+
+    pub fn triage_entries(&self, pane: TriagePane, filter: &str) -> Vec<(String, Option<u64>)> {
+        let Some(r) = &self.triage else {
+            return vec![("(analysing…)".to_string(), None)];
+        };
+        apply_header_filter(hiewlm_triage::render::pane_lines(r, pane), filter)
+    }
+
+    fn triage_activate(&mut self, pane: TriagePane, sel: usize, filter: &str) {
+        let entries = self.triage_entries(pane, filter);
+        match entries.get(sel) {
+            Some((label, Some(off))) => {
+                let (off, label) = (*off, label.clone());
+                self.goto_offset(off);
+                self.set_status(format!("→ {}  {}", self.display_addr(off), label.trim()));
+            }
+            Some((_, None)) => self.set_status("Not a jump target."),
+            None => {}
+        }
     }
 
     /// Entries for a header pane after applying `filter`: label + optional jump
@@ -2869,6 +2935,52 @@ impl App {
                     self.goto_offset(off);
                 }
             }
+            Dialog::Triage { pane, sel, mut filter } => {
+                let last = self.triage_entries(pane, &filter).len().saturating_sub(1);
+                let mut sel = sel;
+                let mut pane = pane;
+                let mut activate = false;
+                let mut close = false;
+                match key.code {
+                    Tab | Right => {
+                        pane = pane.next();
+                        sel = 0;
+                    }
+                    Left => {
+                        pane = pane.prev();
+                        sel = 0;
+                    }
+                    Up => sel = sel.saturating_sub(1),
+                    Down => sel = (sel + 1).min(last),
+                    PageUp => sel = sel.saturating_sub(LIST_PAGE),
+                    PageDown => sel = (sel + LIST_PAGE).min(last),
+                    Home => sel = 0,
+                    End => sel = last,
+                    Enter => {
+                        activate = true;
+                        close = true;
+                    }
+                    Backspace => {
+                        filter.pop();
+                        sel = 0;
+                    }
+                    Char(c) => {
+                        filter.push(c);
+                        sel = 0;
+                    }
+                    Esc if !filter.is_empty() => {
+                        filter.clear();
+                        sel = 0;
+                    }
+                    Esc => close = true,
+                    _ => {}
+                }
+                if !close {
+                    self.dialog = Some(Dialog::Triage { pane, sel, filter });
+                } else if activate {
+                    self.triage_activate(pane, sel, &filter);
+                }
+            }
             Dialog::Header { pane, sel, mut filter } => {
                 let len = self.header_entries(pane, &filter).len().max(1);
                 match key.code {
@@ -2977,6 +3089,14 @@ impl App {
                     .filter(|_| self.disasm_override)
                     .unwrap_or(0);
                 self.dialog = Some(Dialog::DisasmMenu { selected: cur });
+            }
+            Command::OpenTriage => {
+                self.ensure_triage();
+                self.dialog = Some(Dialog::Triage {
+                    pane: TriagePane::Overview,
+                    sel: 0,
+                    filter: String::new(),
+                });
             }
             Command::OpenHeader => {
                 self.ensure_entropy();
@@ -3207,6 +3327,8 @@ pub enum Command {
     FollowBranch,
     NavBack,
     OpenHeader,
+    /// The triage screen (`2` / `T` / F2).
+    OpenTriage,
     ToggleMark,
     SelectStep(i64),
     SelectRow(i64),
@@ -3586,6 +3708,51 @@ mod tests {
         let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
         a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(b"0123456789ABCDEF".to_vec())));
         a
+    }
+
+    #[test]
+    fn triage_screen_opens_and_lists_panes() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        let mut a = locked_app();
+        a.handle_key(KeyEvent::from(KeyCode::Char('2')));
+        let Some(Dialog::Triage { pane, .. }) = &a.dialog else {
+            panic!("expected the triage dialog, got {:?}", a.dialog.is_some());
+        };
+        assert_eq!(*pane, TriagePane::Overview);
+        assert!(a.triage_entries(TriagePane::Overview, "").iter().any(|(l, _)| l.contains("SHA-256")));
+        // Right cycles panes; every pane renders something.
+        for _ in 0..hiewlm_triage::Pane::ALL.len() {
+            a.handle_key(KeyEvent::from(KeyCode::Right));
+            let Some(Dialog::Triage { pane, .. }) = &a.dialog else { panic!("dialog closed") };
+            assert!(!a.triage_entries(*pane, "").is_empty(), "{pane:?} empty");
+        }
+    }
+
+    #[test]
+    fn triage_filter_narrows_and_esc_clears_it() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        let mut a = locked_app();
+        a.apply(Command::OpenTriage);
+        let all = a.triage_entries(TriagePane::Overview, "").len();
+        for c in "sha".chars() {
+            a.handle_key(KeyEvent::from(KeyCode::Char(c)));
+        }
+        let Some(Dialog::Triage { filter, .. }) = &a.dialog else { panic!("closed") };
+        assert_eq!(filter, "sha");
+        assert!(a.triage_entries(TriagePane::Overview, "sha").len() < all);
+        // First Esc clears the filter, second closes.
+        a.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert!(matches!(&a.dialog, Some(Dialog::Triage { filter, .. }) if filter.is_empty()));
+        a.handle_key(KeyEvent::from(KeyCode::Esc));
+        assert!(a.dialog.is_none());
+    }
+
+    #[test]
+    fn triage_badges_appear_only_after_analysis() {
+        let mut a = locked_app();
+        assert!(a.triage_badges().is_none());
+        a.apply(Command::OpenTriage);
+        assert!(a.triage_badges().is_some_and(|b| b.starts_with('[')));
     }
 
     #[test]

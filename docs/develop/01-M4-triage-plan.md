@@ -110,8 +110,23 @@ Những việc *cố ý* để lại, không phải bỏ quên:
 | HEM shim (nạp DLL native) | vi phạm mô hình an ninh (§22), giữ nguyên trạng thái "deferred" |
 | Chuột | cố ý không hỗ trợ — đúng tinh thần HIEW/FAR |
 
+### Mục trong bản review nhưng KHÔNG nằm trong bảng M4.0–M4.9 (cần anh quyết)
+
+Phần "Nên bỏ / ngừng đầu tư" của bản review đề xuất **gỡ** vài thứ. Chúng chưa được gỡ,
+vì gỡ phím có trong HIEW đụng thẳng vào trụ cột "HIEW-faithful" (§23) — đó là quyết định
+của anh, không phải của tôi. Hiện trạng: tất cả đều đã bị **khoá ghi chặn** (M4.0.1),
+nên rủi ro vô ý đã hết:
+
+| Đề xuất trong review | Hiện trạng |
+|---|---|
+| Gỡ `X` (replace toàn thư mục) khỏi TUI | vẫn còn, nhưng `ensure_writable()` chặn khi đang khoá |
+| Dồn `y`/`p`/`d` vào menu `b`, trả phím cho điều hướng | vẫn còn ở phím đơn, đã bị khoá ghi chặn |
+| Bỏ Rhai hoặc WASM plugin (hai cơ chế chồng nhau) | giữ nguyên cả hai, không đầu tư thêm |
+
 Ý tưởng cho M5 (chưa làm):
 
+- Sidecar ghi chú (comment/bookmark/marker) khoá theo SHA-256 thay vì theo tên file —
+  mẫu hay bị đổi tên; hiện `*.hiewlm.markers` bám tên file.
 - Điểm nghi ngờ cho ELF/Mach-O ngang mức đang có với PE (hiện anomalies chủ yếu là PE).
 - Giải mã stack string (chuỗi dựng bằng lệnh `mov`) trong Code mode.
 - Lens nhiều tầng / suy khoá nhiều byte (hiện chỉ 1 byte).

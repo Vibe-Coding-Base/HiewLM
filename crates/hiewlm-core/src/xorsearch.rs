@@ -294,17 +294,17 @@ mod tests {
 
     #[test]
     fn finds_xored_url_and_recipe() {
-        let plain = b"cfg http://c2.example.tld/gate.php end";
+        let plain = b"cfg http://c2.example.top/gate.php end";
         let data: Vec<u8> = plain.iter().map(|&b| b ^ 0x5a).collect();
         let hits = search(&data, &DEFAULT_NEEDLES, 32);
         let hit = hits.iter().find(|h| h.op == Op::Xor && h.key == 0x5a).expect("xor 5a hit");
-        assert!(hit.preview.contains("http://c2.example.tld"), "{}", hit.preview);
+        assert!(hit.preview.contains("http://c2.example.top"), "{}", hit.preview);
         assert_eq!(hit.recipe(), "xor 5a");
     }
 
     #[test]
     fn finds_add_and_rol_encodings() {
-        let plain = b"xx https://evil.tld/x";
+        let plain = b"xx https://evil.top/x";
         let added: Vec<u8> = plain.iter().map(|&b| b.wrapping_add(7)).collect();
         assert!(search(&added, &DEFAULT_NEEDLES, 32).iter().any(|h| h.op == Op::Add && h.key == 7));
         let rolled: Vec<u8> = plain.iter().map(|&b| b.rotate_left(3)).collect();
@@ -328,7 +328,7 @@ mod tests {
         use crate::buffer::MemSource;
         use std::sync::Arc;
         let mut data = vec![0xaau8; 1024 * 1024 - 4];
-        data.extend(b"http://boundary.tld/x".iter().map(|&b| b ^ 0x11));
+        data.extend(b"http://boundary.top/x".iter().map(|&b| b ^ 0x11));
         data.extend(std::iter::repeat(0xaau8).take(1000));
         let buf = EditBuffer::new(Arc::new(MemSource::new(data)));
         let hits = search_buffer(&buf, &DEFAULT_NEEDLES, 16, 0);

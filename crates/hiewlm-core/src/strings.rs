@@ -322,7 +322,7 @@ pub fn classify(s: &str) -> Vec<Kind> {
     if lower.contains("global\\") || lower.contains("local\\") || lower.contains("\\basenamedobjects\\") {
         kinds.push(Kind::Mutex);
     }
-    if lower.starts_with("\\\\") || lower.starts_with("\\\\?\\") {
+    if is_unc(s) {
         kinds.push(Kind::Unc);
     } else if is_path(s, &lower) {
         kinds.push(Kind::Path);
@@ -422,12 +422,41 @@ fn is_domain(lower: &str) -> bool {
     if labels.len() < 2 || labels.iter().any(|l| l.is_empty()) {
         return false;
     }
-    let tld = labels[labels.len() - 1];
-    if tld.len() < 2 || tld.len() > 24 || !tld.chars().all(|c| c.is_ascii_alphabetic()) {
+    // Every label must look like a hostname label, and the last one must be a
+    // TLD people actually register. Without that, "Z.xgU" and "__.SYMDEF" from a
+    // binary's string table drown the real indicators.
+    if labels[..labels.len() - 1].iter().any(|l| l.len() < 2) {
         return false;
     }
-    !FILE_EXTS.contains(&tld)
+    // The second-level label carries the identity. Reject the shapes that are
+    // code, not infrastructure: `i32.store`, `f64.load`, `u8.max`.
+    let sld = labels[labels.len() - 2];
+    if sld.len() < 3 || !sld.chars().any(|c| c.is_ascii_alphabetic()) {
+        return false;
+    }
+    let code_ish = sld.len() <= 4
+        && sld.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && sld.chars().skip(1).all(|c| c.is_ascii_digit());
+    if code_ish {
+        return false;
+    }
+    let tld = labels[labels.len() - 1];
+    TLDS.contains(&tld) && !FILE_EXTS.contains(&tld)
 }
+
+/// Top-level domains worth recognising: the generic ones plus the country codes
+/// that show up in malware infrastructure. Not exhaustive by design — a closed
+/// list is what keeps the IOC pane signal instead of noise.
+const TLDS: [&str; 97] = [
+    "com", "net", "org", "info", "biz", "xyz", "top", "site", "online", "club", "shop", "store",
+    "icu", "vip", "cc", "tv", "io", "co", "me", "app", "dev", "cloud", "space", "website", "fun",
+    "live", "life", "world", "today", "digital", "network", "systems", "tech", "tools", "link",
+    "click", "download", "stream", "host", "press", "pro", "monster", "quest", "cyou", "sbs",
+    "rest", "cfd", "bar", "buzz", "one", "ws", "su", "ru", "ua", "by", "kz", "cn", "hk", "tw",
+    "jp", "kr", "in", "id", "vn", "th", "my", "sg", "ph", "au", "nz", "uk", "de", "fr", "nl",
+    "it", "es", "pt", "pl", "cz", "sk", "ro", "bg", "gr", "tr", "se", "no", "fi", "dk", "ch",
+    "at", "be", "ie", "br", "mx", "ar", "za", "ng",
+];
 
 /// Extensions that make a dotted token a filename rather than a hostname.
 const FILE_EXTS: [&str; 24] = [
@@ -469,6 +498,16 @@ pub fn lolbin_hit(lower: &str) -> Option<&'static str> {
     LOLBINS.iter().copied().find(|b| lower.contains(b))
 }
 
+/// `\\server\share` — but not a run of backslashes, which is just binary noise.
+fn is_unc(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix("\\\\") else {
+        return false;
+    };
+    let rest = rest.strip_prefix("?\\").unwrap_or(rest);
+    let host = rest.split('\\').next().unwrap_or("");
+    host.len() >= 2 && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+}
+
 fn is_path(s: &str, lower: &str) -> bool {
     if s.len() < 6 {
         return false;
@@ -505,6 +544,51 @@ fn is_base64_blob(s: &str) -> bool {
     let lower = t.chars().filter(|c| c.is_ascii_lowercase()).count();
     let digit = t.chars().filter(|c| c.is_ascii_digit()).count();
     upper > 0 && lower > 0 && digit > 0 && (upper + lower) * 4 > t.len()
+}
+
+/// The indicator substring inside a longer string — the URL out of a log line,
+/// the address out of a sentence. Dedup and display use this, so a message that
+/// happens to mention a URL a dozen times contributes one indicator.
+pub fn indicator_value(s: &str, kind: Kind) -> Option<String> {
+    match kind {
+        Kind::Url => url_span(s),
+        Kind::Ipv4 => find_ipv4(s).map(|(_, v)| v),
+        Kind::Email => s
+            .split(|c: char| c.is_whitespace() || "\"'<>()[]{},;".contains(c))
+            .find(|t| is_email(t))
+            .map(str::to_string),
+        Kind::Domain => s
+            .split(|c: char| c.is_whitespace() || "\"'<>()[]{},;/".contains(c))
+            .find(|t| is_domain(&t.to_ascii_lowercase()))
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+/// The URL starting at the first scheme (or `www.`), up to whitespace or a quote.
+fn url_span(s: &str) -> Option<String> {
+    let lower = s.to_ascii_lowercase();
+    let start = SCHEMES
+        .iter()
+        .filter_map(|sch| lower.find(sch))
+        .chain(lower.starts_with("www.").then_some(0))
+        .min()?;
+    let rest = &s[start..];
+    let end = rest
+        .find(|c: char| c.is_whitespace() || c.is_control() || "\"'<>|".contains(c))
+        .unwrap_or(rest.len());
+    let url = rest[..end].trim_end_matches(['.', ',', ')', ']', ';']);
+    (!url.is_empty()).then(|| url.to_string())
+}
+
+impl FoundString {
+    /// The indicator value for the strongest category, else the whole string.
+    pub fn value(&self) -> String {
+        self.kinds
+            .first()
+            .and_then(|&k| indicator_value(&self.text, k))
+            .unwrap_or_else(|| self.text.clone())
+    }
 }
 
 #[cfg(test)]
@@ -549,8 +633,8 @@ mod tests {
     fn classifies_indicators() {
         assert!(classify("http://x.example.com/a").contains(&Kind::Url));
         assert!(classify("185.220.101.7").contains(&Kind::Ipv4));
-        assert!(classify("ops@evil.tld").contains(&Kind::Email));
-        assert!(classify("evil-domain.tld").contains(&Kind::Domain));
+        assert!(classify("ops@evil.top").contains(&Kind::Email));
+        assert!(classify("evil-domain.top").contains(&Kind::Domain));
         assert!(classify("HKEY_CURRENT_USER\\Software\\Run").contains(&Kind::Registry));
         assert!(classify("powershell -EncodedCommand ZQBj").contains(&Kind::LolBin));
         assert!(classify("C:\\Users\\a\\AppData\\x.exe").contains(&Kind::Path));
@@ -567,6 +651,41 @@ mod tests {
     }
 
     #[test]
+    fn binary_noise_is_not_a_domain() {
+        // Real string-table debris that used to pass the old TLD check.
+        for junk in ["Z.xgU", "__.SYMDEF", "a.b", "x.QQQZ"] {
+            assert!(!classify(junk).contains(&Kind::Domain), "{junk} classified as a domain");
+        }
+        assert!(classify("update.evil-cdn.top").contains(&Kind::Domain));
+    }
+
+    #[test]
+    fn code_tokens_are_not_domains() {
+        for junk in ["i32.store", "f64.load", "u8.max", "v128.const"] {
+            assert!(!classify(junk).contains(&Kind::Domain), "{junk} classified as a domain");
+        }
+    }
+
+    #[test]
+    fn backslash_runs_are_not_unc_paths() {
+        assert!(!classify("\\\\\\\\\\\\").contains(&Kind::Unc));
+        assert!(classify("\\\\fileserver\\share\\payload.exe").contains(&Kind::Unc));
+    }
+
+    #[test]
+    fn indicator_value_extracts_just_the_indicator() {
+        let line = "Fatal error, report at https://github.com/clap-rs/clap/issues thanks";
+        assert_eq!(
+            indicator_value(line, Kind::Url).as_deref(),
+            Some("https://github.com/clap-rs/clap/issues")
+        );
+        assert_eq!(
+            indicator_value("beacon to 185.220.101.7 now", Kind::Ipv4).as_deref(),
+            Some("185.220.101.7")
+        );
+    }
+
+    #[test]
     fn filenames_are_not_domains() {
         assert!(!classify("kernel32.dll").contains(&Kind::Domain));
         assert!(classify("kernel32.dll").contains(&Kind::Module));
@@ -580,7 +699,7 @@ mod tests {
 
     #[test]
     fn only_tagged_keeps_indicators_only() {
-        let data = b"just some prose here\0http://c2.example.tld/p\0";
+        let data = b"just some prose here\0http://c2.example.top/p\0";
         let scan = extract(data, &Options { only_tagged: true, ..Default::default() });
         assert_eq!(scan.strings.len(), 1);
         assert!(scan.strings[0].kinds.contains(&Kind::Url));

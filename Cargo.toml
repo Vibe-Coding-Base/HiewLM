@@ -5,6 +5,7 @@ resolver = "2"
 members = [
     "crates/hiewlm-core",
     "crates/hiewlm-fmt",
+    "crates/hiewlm-triage",
     "crates/hiewlm-asm",
     "crates/hiewlm-tui",
     "crates/hiewlm-cli",

@@ -100,6 +100,9 @@ fn overview(r: &TriageReport) -> Vec<(String, Option<u64>)> {
     if let Some(p) = &r.pdb_path {
         v.push(kv("PDB path", p));
     }
+    for (k, val) in &r.extra {
+        v.push(kv(k, val));
+    }
     if let Some((off, size)) = r.overlay {
         v.push((format!("{:<16} {size} bytes at {off:#x}   [Enter jumps]", "Overlay"), Some(off)));
     }

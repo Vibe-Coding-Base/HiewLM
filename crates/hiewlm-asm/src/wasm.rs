@@ -257,6 +257,7 @@ pub fn decode(data: &[u8], base_off: u64, base_va: u64, max: usize) -> Vec<Insn>
                         target: None,
                         mem_target: None,
                         imm_target: None,
+                        stack_store: None,
                         flow: Flow::Seq,
                     });
                     at += 1;
@@ -405,6 +406,7 @@ pub fn decode(data: &[u8], base_off: u64, base_va: u64, max: usize) -> Vec<Insn>
             target: None,
             mem_target: None,
             imm_target: None,
+            stack_store: None,
             flow,
         });
         at += n;

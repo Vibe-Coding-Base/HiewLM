@@ -6,7 +6,28 @@ safe for viewing malware (it only reads data — the target file is never execut
 
 Full design: [docs/develop/00-overall-design.md](docs/develop/00-overall-design.md).
 
-## Status — M0–M4 done (except HEM shim & GUI)
+## Status — M0–M5 done (except HEM shim & GUI)
+
+M5 (don't lose analysis work, don't be blind on non-Windows samples):
+
+- **Notes that survive**: comments, named bookmarks, numbered slots and colored
+  markers are saved automatically in a per-user store keyed by the sample's
+  **SHA-256** — rename or move the file and they follow the bytes. Older
+  `.hiewlm.markers` sidecars are imported on first open.
+- **ELF and Mach-O structural checks**, on par with the PE ones: RWX segments,
+  a missing section header table, executable stack, memory expanding past file
+  size, entry points outside code, appended data — and for Mach-O, a missing
+  `LC_CODE_SIGNATURE`, `cryptid`, the legacy `LC_UNIXTHREAD` entry, and libraries
+  loaded from writable paths. Universal binaries are followed into their slice.
+- **Repeating XOR key recovery** (`Alt+K`, `hiewlmc xorkey`): the key is derived
+  from a marked block — ranked by a plaintext model with a description-length
+  penalty, so it doesn't just return the longest key you allowed — and picking a
+  candidate puts it on the lens.
+- **Stack strings** (`Alt+S`): replays the `mov [rbp-0x20], 'h'` stores a
+  function makes and rebuilds the strings that never exist in the file at all.
+- **Markdown report** (`hiewlmc triage --format markdown`, `Y` then `m`/`w`):
+  verdict first, then identity, findings, capabilities and indicators as tables —
+  paste it into a ticket, or write it beside the sample without unlocking it.
 
 M4 (triage-first — make initial malware classification fast):
 
@@ -176,6 +197,8 @@ hiewlmc triage  <file> [--json] [--fail-on-suspicious]   # one-screen verdict
 hiewlmc triage  <dir>  [--json]              # rank a folder of samples
 hiewlmc triage  <file> --yara rules.yar      # fold a YARA scan into the verdict
 hiewlmc yara    <file> rules.yar|rules_dir/  # scan only  (needs --features yara)
+hiewlmc triage  <file> --format markdown     # report for a ticket
+hiewlmc xorkey  <file> --at ADDR --count N   # recover a repeating XOR key
 hiewlmc strings <file> --ioc                 # indicators only (URL/IP/registry/…)
 hiewlmc plugins                              # list container plugins
 hiewlmc --plugin all container <file>        # ZIP/PDF structure + findings
@@ -207,8 +230,10 @@ cargo clippy      # clean, no warnings
 
 ## Roadmap
 
-**M4 (done)** — triage-first: see the top of this file. Progress and the remaining
-follow-ups live in [docs/develop/01-M4-triage-plan.md](docs/develop/01-M4-triage-plan.md).
+**M4 (done)** — triage-first · **M5 (done)** — persistent notes, ELF/Mach-O checks,
+repeating-key recovery, stack strings, Markdown reports. See the top of this file;
+progress and the remaining decisions live in
+[docs/develop/01-M4-triage-plan.md](docs/develop/01-M4-triage-plan.md).
 
 
 M0 (done) · M1 (done) ·

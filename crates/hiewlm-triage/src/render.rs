@@ -303,6 +303,126 @@ pub fn text(r: &TriageReport) -> String {
     out
 }
 
+/// The report as Markdown, for pasting into a ticket or a case note.
+///
+/// Deliberately not the pane text with hashes bolted on: a report someone else
+/// reads wants the verdict first, the identity second, and the evidence in
+/// tables they can scan.
+pub fn markdown(r: &TriageReport) -> String {
+    let mut m = String::new();
+    m.push_str(&format!("# Triage — {}\n\n", r.name));
+    m.push_str(&format!(
+        "**{}** ({}/100){}\n\n",
+        r.verdict().to_uppercase(),
+        r.score,
+        if r.badges.is_empty() { String::new() } else { format!(" · `{}`", r.badge_line()) }
+    ));
+
+    m.push_str("## Identity\n\n");
+    m.push_str("| | |\n|---|---|\n");
+    let row = |m: &mut String, k: &str, v: &str| {
+        if !v.is_empty() {
+            m.push_str(&format!("| {k} | `{v}` |\n"));
+        }
+    };
+    row(&mut m, "Size", &format!("{} bytes ({})", r.size, human(r.size)));
+    row(&mut m, "Format", &format!("{} / {} / {}-bit", r.format, r.arch, r.bits));
+    row(&mut m, "SHA-256", &r.hashes.sha256);
+    row(&mut m, "SHA-1", &r.hashes.sha1);
+    row(&mut m, "MD5", &r.hashes.md5);
+    row(&mut m, "ssdeep", &r.hashes.ssdeep);
+    if let Some(h) = &r.hashes.imphash {
+        row(&mut m, "imphash", h);
+    }
+    if let Some(h) = &r.hashes.authentihash {
+        row(&mut m, "authentihash", h);
+    }
+    if let Some(t) = &r.timestamp {
+        row(&mut m, "Compiled", t);
+    }
+    row(&mut m, "Entropy", &format!("{:.3} / 8.0", r.entropy));
+    if let Some(p) = &r.packer {
+        row(&mut m, "Packer", p);
+    }
+    row(&mut m, "Signature", if r.signed { "present" } else { "unsigned" });
+    if let Some(p) = &r.pdb_path {
+        row(&mut m, "PDB path", p);
+    }
+    m.push('\n');
+
+    if !r.anomalies.is_empty() || !r.container_findings.is_empty() || !r.import_notes.is_empty() {
+        m.push_str("## Findings\n\n");
+        for f in r.anomalies.iter().chain(&r.container_findings) {
+            let mark = if f.severity == "suspicious" { "**!**" } else { "-" };
+            match f.offset {
+                Some(o) => m.push_str(&format!("{mark} {} (`{o:#x}`)\n", f.message)),
+                None => m.push_str(&format!("{mark} {}\n", f.message)),
+            }
+        }
+        for n in &r.import_notes {
+            m.push_str(&format!("**!** imports: {n}\n"));
+        }
+        m.push('\n');
+    }
+
+    if !r.capabilities.is_empty() {
+        m.push_str(&format!("## Capabilities (import risk {}/100)\n\n", r.import_score));
+        m.push_str("| Category | APIs |\n|---|---|\n");
+        for c in &r.capabilities {
+            m.push_str(&format!("| {} | {} |\n", c.category, c.apis.join(", ")));
+        }
+        m.push('\n');
+    }
+
+    if !r.hidden.is_empty() {
+        m.push_str("## Hidden strings\n\n");
+        m.push_str("| Offset | Recipe | Decoded |\n|---|---|---|\n");
+        for h in &r.hidden {
+            let preview: String = h.preview.chars().take(80).collect();
+            m.push_str(&format!("| `{:08X}` | `{}` | `{}` |\n", h.offset, h.recipe, preview));
+        }
+        m.push('\n');
+    }
+
+    if !r.indicators.is_empty() {
+        m.push_str("## Indicators\n\n");
+        m.push_str("| Offset | Kind | Value |\n|---|---|---|\n");
+        for i in r.indicators.iter().take(100) {
+            let value: String = i.value.chars().take(110).collect();
+            m.push_str(&format!("| `{:08X}` | {} | `{}` |\n", i.offset, i.kinds, value));
+        }
+        m.push('\n');
+    }
+
+    if !r.sections.is_empty() {
+        m.push_str("## Sections\n\n");
+        m.push_str("| Name | Offset | VA | Raw | Virtual | Perms | Entropy |\n");
+        m.push_str("|---|---|---|---|---|---|---|\n");
+        for s in &r.sections {
+            m.push_str(&format!(
+                "| `{}` | `{:X}` | `{:X}` | `{:X}` | `{:X}` | `{}` | {:.2} |\n",
+                s.name, s.file_off, s.va, s.raw_size, s.virt_size, s.perms, s.entropy
+            ));
+        }
+        m.push('\n');
+    }
+
+    if !r.yara.is_empty() {
+        m.push_str("## YARA\n\n");
+        for h in &r.yara {
+            let tags =
+                if h.tags.is_empty() { String::new() } else { format!(" [{}]", h.tags.join(" ")) };
+            m.push_str(&format!("- **{}**{tags} — {} match(es)\n", h.rule, h.matches.len()));
+        }
+        m.push('\n');
+    }
+
+    if r.truncated {
+        m.push_str("> Note: the scan hit its size limit, so these results are partial.\n");
+    }
+    m
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -342,6 +462,24 @@ mod tests {
         assert!(t.contains("SHA-256"));
         assert!(t.contains("http://c2.example.top/gate.php"), "{t}");
         assert!(!t.contains("== YARA =="), "empty YARA pane is skipped on the CLI");
+    }
+
+    #[test]
+    fn markdown_leads_with_the_verdict_and_tabulates_the_evidence() {
+        let r = report();
+        let md = markdown(&r);
+        assert!(md.starts_with("# Triage — t.bin"), "{md}");
+        // The verdict is the first thing a reader sees, before the hashes.
+        let verdict = md.find("/100)").expect("a verdict line");
+        let sha = md.find("SHA-256").expect("the hash table");
+        assert!(verdict < sha);
+        assert!(md.contains("## Identity"));
+        assert!(md.contains("## Indicators"));
+        assert!(md.contains("http://c2.example.top/gate.php"));
+        // Tables must be well formed, or the ticket renders as noise.
+        for line in md.lines().filter(|l| l.starts_with('|')) {
+            assert!(line.ends_with('|'), "malformed table row: {line}");
+        }
     }
 
     #[test]

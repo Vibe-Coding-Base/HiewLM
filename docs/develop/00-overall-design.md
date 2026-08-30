@@ -984,6 +984,7 @@ Maps HiewGate's spirit but safely:
 | **M2** (beyond) | Binary diff, recursive disasm, structure viewer, extended archs, hash, multi-file replace, themes, data inspector | Beyond HIEW in analysis & convenience. |
 | **M3** (ecosystem) | WASM/Lua plugins, CLI batch, HEM shim, GUI wrapper, process memory, packer detect, CFG view | An extensible, community platform. |
 | **M4** (triage-first) | Triage screen + `hiewlmc triage`, strings/IOC extraction, import capability scoring, PE anomalies (overlay/TLS/debug/Authenticode), ssdeep, YARA, XOR lens & key hunt, annotated disassembly, folder queue, command palette, real write lock | Fast initial malware classification, not just inspection. |
+| **M5** (keep the work) | Notes keyed by content hash, ELF/Mach-O structural checks, repeating-XOR key recovery, stack-string reconstruction, Markdown reports | Analysis survives the session, and non-Windows samples get the same scrutiny. |
 
 Principle: each milestone is a usable release; the core is always separated from the
 UI to avoid technical debt when adding a GUI.

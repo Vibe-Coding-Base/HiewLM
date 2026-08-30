@@ -58,6 +58,10 @@ pub struct Insn {
     /// An immediate operand large enough to be an address (32-bit code pushes
     /// string pointers as immediates). x86 only.
     pub imm_target: Option<u64>,
+    /// A constant written to a stack slot: `(displacement, value, size)`.
+    /// This is how obfuscated code builds strings a byte or four at a time,
+    /// leaving nothing for `strings` to find. x86 only.
+    pub stack_store: Option<(i64, u64, u8)>,
     pub flow: Flow,
 }
 
@@ -131,6 +135,7 @@ impl Disassembler {
                 target: branch_target(&instr),
                 mem_target: mem_target(&instr),
                 imm_target: imm_target(&instr),
+                stack_store: stack_store(&instr),
                 flow: flow_of(&instr),
             });
         }
@@ -161,6 +166,7 @@ impl Disassembler {
                 target: None,
                 mem_target: None,
                 imm_target: None,
+                stack_store: None,
                 flow: Flow::Seq,
             });
         }
@@ -284,6 +290,42 @@ fn mem_target(instr: &Instruction) -> Option<u64> {
     None
 }
 
+/// A `mov [rsp/rbp +/- disp], imm` — the shape of a stack-built string.
+///
+/// Only stores of a *constant* to a stack slot count: a register source tells
+/// us nothing at this level, and a non-stack destination is ordinary data.
+fn stack_store(instr: &Instruction) -> Option<(i64, u64, u8)> {
+    use iced_x86::{Mnemonic, Register};
+    if instr.mnemonic() != Mnemonic::Mov || instr.op_count() != 2 {
+        return None;
+    }
+    if instr.op_kind(0) != OpKind::Memory || instr.memory_index() != Register::None {
+        return None;
+    }
+    if !matches!(
+        instr.memory_base(),
+        Register::RSP | Register::RBP | Register::ESP | Register::EBP | Register::SP | Register::BP
+    ) {
+        return None;
+    }
+    let value = match instr.op_kind(1) {
+        OpKind::Immediate8 => instr.immediate8() as u64,
+        OpKind::Immediate16 => instr.immediate16() as u64,
+        OpKind::Immediate32 => instr.immediate32() as u64,
+        OpKind::Immediate64 => instr.immediate64(),
+        OpKind::Immediate8to16 => instr.immediate8to16() as u16 as u64,
+        OpKind::Immediate8to32 => instr.immediate8to32() as u32 as u64,
+        OpKind::Immediate8to64 => instr.immediate8to64() as u64,
+        OpKind::Immediate32to64 => instr.immediate32to64() as u64,
+        _ => return None,
+    };
+    let size = instr.memory_size().size();
+    if size == 0 || size > 8 {
+        return None;
+    }
+    Some((instr.memory_displacement64() as i64, value, size as u8))
+}
+
 /// An immediate big enough to be an address — how 32-bit code passes pointers
 /// to strings (`push offset 0x403010`).
 fn imm_target(instr: &Instruction) -> Option<u64> {
@@ -320,6 +362,28 @@ fn branch_target(instr: &Instruction) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detects_stack_stores_that_build_a_string() {
+        // mov byte ptr [rbp-8], 'h' ; mov dword ptr [rsp+4], 0x41414141
+        let data = [0xc6, 0x45, 0xf8, 0x68, 0xc7, 0x44, 0x24, 0x04, 0x41, 0x41, 0x41, 0x41];
+        let dis = Disassembler::new(Arch::X86_64, 64);
+        let insns = dis.decode(&data, 0, 0, 8);
+        let stores: Vec<(i64, u64, u8)> = insns.iter().filter_map(|i| i.stack_store).collect();
+        assert_eq!(stores.len(), 2, "{:?}", insns.iter().map(|i| &i.text).collect::<Vec<_>>());
+        assert_eq!(stores[0], (-8, u64::from(b'h'), 1));
+        assert_eq!(stores[1], (4, 0x4141_4141, 4));
+    }
+
+    #[test]
+    fn non_stack_and_register_stores_are_ignored() {
+        // mov [rax], 1  (not a stack slot) ; mov [rbp-4], eax (not a constant)
+        let data = [0x48, 0xc7, 0x00, 0x01, 0x00, 0x00, 0x00, 0x89, 0x45, 0xfc];
+        let dis = Disassembler::new(Arch::X86_64, 64);
+        for ins in dis.decode(&data, 0, 0, 8) {
+            assert!(ins.stack_store.is_none(), "{} should not count", ins.text);
+        }
+    }
 
     #[test]
     fn decodes_basic_x64() {

@@ -681,7 +681,7 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
 }
 
 /// Copy-menu rows, in display order; `Enter` indexes them.
-pub const COPY_MENU_LABELS: [&str; 11] = [
+pub const COPY_MENU_LABELS: [&str; 13] = [
     "1  SHA-256 of the file",
     "2  MD5 of the file",
     "3  ssdeep fuzzy hash",
@@ -692,7 +692,9 @@ pub const COPY_MENU_LABELS: [&str; 11] = [
     "8  block as text",
     "9  current address",
     "0  every indicator (kind + value)",
-    "r  the whole triage report",
+    "r  the whole triage report (text)",
+    "m  the report as Markdown (for a ticket)",
+    "w  write the Markdown report next to the sample",
 ];
 
 /// Block-menu rows, in display order. Enter indexes `BLOCK_MENU_CMDS` by the

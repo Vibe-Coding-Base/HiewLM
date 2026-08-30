@@ -157,6 +157,9 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         // Alt+K derives a repeating key from the marked block.
         (Char('k'), _, true, _) => Some(Command::XorKey),
         (Char('K'), _, true, _) => Some(Command::XorKey),
+        // Alt+S rebuilds strings this function assembles on the stack.
+        (Char('s'), _, true, _) => Some(Command::StackStrings),
+        (Char('S'), _, true, _) => Some(Command::StackStrings),
         (Char('K'), _, _, _) => Some(Command::SetSlotPrompt),
         (Char('S'), _, _, _) => Some(Command::ToggleSplitView),
         // `y` yanks a block into hiewLM's own clipboard; `Y` yanks a fact out to

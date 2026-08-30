@@ -62,6 +62,9 @@ enum Cmd {
         /// Emit JSON instead of text (one object per file; an array for a folder).
         #[arg(long)]
         json: bool,
+        /// Output shape: text (default), json, or markdown for a ticket.
+        #[arg(long, value_parser = ["text", "json", "markdown"], default_value = "text")]
+        format: String,
         /// Exit 1 when the score reaches this threshold (default 40 with the flag).
         #[arg(long)]
         fail_on_suspicious: bool,
@@ -231,9 +234,19 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
             print!("{text}");
             return Ok(if matched && fail_on_match { ExitCode::from(1) } else { ExitCode::SUCCESS });
         }
-        Cmd::Triage { file, json, fail_on_suspicious, min_score, max_string_bytes, yara } => {
+        Cmd::Triage {
+            file,
+            json,
+            format,
+            fail_on_suspicious,
+            min_score,
+            max_string_bytes,
+            yara,
+        } => {
+            // `--json` stays as the shorthand it always was.
+            let format = if json { "json".to_string() } else { format };
             let (text, worst) =
-                cmd_triage(&file, plugins, json, min_score, max_string_bytes, yara.as_deref())?;
+                cmd_triage(&file, plugins, &format, min_score, max_string_bytes, yara.as_deref())?;
             print!("{text}");
             return Ok(if fail_on_suspicious && worst >= min_score {
                 ExitCode::from(1)
@@ -810,18 +823,22 @@ fn cmd_yara(file: &Path, rules: &Path) -> Result<(String, bool)> {
 fn cmd_triage(
     path: &Path,
     plugins: &[String],
-    json: bool,
+    format: &str,
     min_score: u8,
     max_string_bytes: u64,
     yara: Option<&Path>,
 ) -> Result<(String, u8)> {
     let opts = hiewlm_triage::Options { max_string_bytes, ..Default::default() };
     if path.is_dir() {
-        return triage_dir(path, plugins, json, min_score, &opts, yara);
+        return triage_dir(path, plugins, format, min_score, &opts, yara);
     }
     let mut report = triage_one(path, plugins, &opts)?;
     apply_yara(&mut report, path, yara)?;
-    let text = if json { report.to_json() } else { hiewlm_triage::render::text(&report) };
+    let text = match format {
+        "json" => report.to_json(),
+        "markdown" => hiewlm_triage::render::markdown(&report),
+        _ => hiewlm_triage::render::text(&report),
+    };
     let score = report.score;
     Ok((format!("{text}\n"), score))
 }
@@ -862,7 +879,7 @@ fn apply_yara(
 fn triage_dir(
     dir: &Path,
     plugins: &[String],
-    json: bool,
+    format: &str,
     min_score: u8,
     opts: &hiewlm_triage::Options,
     yara: Option<&Path>,
@@ -889,10 +906,25 @@ fn triage_dir(
     reports.sort_by(|a, b| b.score.cmp(&a.score).then(a.name.cmp(&b.name)));
     let worst = reports.first().map(|r| r.score).unwrap_or(0);
 
-    if json {
+    if format == "json" {
         let text = serde_json::to_string_pretty(&reports)
             .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"));
         return Ok((format!("{text}\n"), worst));
+    }
+    if format == "markdown" {
+        let mut out = format!("# Triage — {}\n\n", dir.display());
+        out.push_str("| Score | Verdict | File | SHA-256 | Badges |\n|---|---|---|---|---|\n");
+        for r in &reports {
+            out.push_str(&format!(
+                "| {} | {} | `{}` | `{}` | {} |\n",
+                r.score,
+                r.verdict(),
+                r.name,
+                r.hashes.sha256,
+                r.badge_line()
+            ));
+        }
+        return Ok((out, worst));
     }
     let mut out = format!("{:>5} {:<10} {:<40} {:<34} {}\n", "score", "verdict", "file", "sha256", "badges");
     for r in &reports {

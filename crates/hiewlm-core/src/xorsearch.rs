@@ -278,6 +278,219 @@ pub fn search_buffer(
     hits
 }
 
+/// A candidate repeating XOR key recovered from a block.
+#[derive(Clone, Debug)]
+pub struct KeyCandidate {
+    pub key: Vec<u8>,
+    /// Fraction of the block that decodes to printable text (0..1) — the number
+    /// to show an analyst.
+    pub score: f32,
+    /// Average log-likelihood per byte under the plaintext model, minus what the
+    /// key itself costs to describe. Higher is better. Charging for the key is
+    /// what stops a long key from always winning: it has a free parameter per
+    /// byte, so it fits anything if you let it.
+    pub fit: f32,
+    /// The start of the decoded block, for eyeballing the answer.
+    pub preview: String,
+}
+
+impl KeyCandidate {
+    /// The key as a `crypt`/lens recipe (`xor deadbeef`).
+    pub fn recipe(&self) -> String {
+        let hex: String = self.key.iter().map(|b| format!("{b:02x}")).collect();
+        format!("xor {hex}")
+    }
+
+    /// The same recipe rotated so it lines up when applied at absolute file
+    /// offsets rather than from the block start.
+    ///
+    /// The lens indexes the key by file offset, but the key was recovered
+    /// relative to `block_start`; without this the decode is right only when the
+    /// block happens to begin on a key boundary.
+    pub fn recipe_at(&self, block_start: u64) -> String {
+        let n = self.key.len();
+        if n == 0 {
+            return "xor 00".into();
+        }
+        let shift = (block_start % n as u64) as usize;
+        let rotated: Vec<u8> = (0..n).map(|j| self.key[(j + n - shift) % n]).collect();
+        let hex: String = rotated.iter().map(|b| format!("{b:02x}")).collect();
+        format!("xor {hex}")
+    }
+}
+
+/// Relative frequency of a byte in the kind of plaintext that hides behind an
+/// XOR key: URLs, key=value configuration, Windows paths, NUL padding.
+///
+/// Flat "is it printable" scoring is not enough to pick a key — with a short
+/// column, many wrong keys also decode to printable bytes. Weighting by how
+/// *likely* each byte is separates the real key from the merely-printable ones.
+fn byte_weight(b: u8) -> f32 {
+    // The arms are deliberately ordered specific-to-general: the named bytes
+    // carry their own weight and the trailing printable range catches whatever
+    // is left. Rust takes the first match, which is exactly what is wanted.
+    #[allow(clippy::match_overlapping_arm)]
+    match b {
+        b' ' => 15.0,
+        b'e' => 12.0,
+        b't' => 9.0,
+        b'a' => 8.0,
+        b'o' => 7.5,
+        b'i' | b'n' => 7.0,
+        b's' => 6.5,
+        b'r' => 6.0,
+        b'h' => 5.0,
+        b'l' | b'd' => 4.0,
+        b'c' | b'u' => 3.0,
+        b'm' => 2.5,
+        b'p' | b'f' | b'g' | b'w' | b'y' => 2.0,
+        b'b' => 1.5,
+        b'v' => 1.0,
+        b'k' => 0.8,
+        b'x' => 0.3,
+        b'j' | b'q' | b'z' => 0.2,
+        b'0'..=b'9' => 2.0,
+        b'.' => 3.0,
+        b'/' => 2.0,
+        b':' | b'=' | b'-' => 1.5,
+        b'_' => 1.0,
+        b';' | b',' | b'\\' => 0.8,
+        b'%' | b'&' | b'?' => 0.5,
+        b'"' => 0.4,
+        b'@' | b'+' | b'(' | b')' | b'\'' | b'!' => 0.3,
+        b'*' | b'#' | b'$' => 0.2,
+        b'A'..=b'Z' => 0.6,
+        0x00 => 4.0,
+        b'\t' | b'\r' | b'\n' => 0.5,
+        0x20..=0x7e => 0.1,
+        // Anything else is not plaintext; the log of this is a heavy penalty.
+        _ => 0.0005,
+    }
+}
+
+/// Log-likelihood of a decoded byte under [`byte_weight`].
+fn log_likelihood(b: u8) -> f32 {
+    byte_weight(b).ln()
+}
+
+/// Share of a decoded block that looks like plaintext, for display.
+fn printable_fraction(data: &[u8]) -> f32 {
+    if data.is_empty() {
+        return 0.0;
+    }
+    let good = data
+        .iter()
+        .filter(|&&b| (0x20..0x7f).contains(&b) || b == 0 || b == b'\n' || b == b'\r' || b == b'\t')
+        .count();
+    good as f32 / data.len() as f32
+}
+
+/// Recover repeating-XOR keys from a block.
+///
+/// A single-byte key is the textbook case; real configuration blobs usually use
+/// a short repeating one. For every candidate length, each key column is chosen
+/// independently as the byte that decodes its column into the most plaintext —
+/// no frequency assumptions beyond "the answer looks like text or NUL padding".
+///
+/// Returns the best `top` candidates, longest-explaining first. Keys that are
+/// just a shorter key repeated are collapsed into the shorter one.
+pub fn infer_repeating_key(data: &[u8], max_len: usize, top: usize) -> Vec<KeyCandidate> {
+    if data.len() < 8 || max_len == 0 {
+        return Vec::new();
+    }
+    // Bounded so an accidental "select the whole file" stays interactive.
+    let data = &data[..data.len().min(64 * 1024)];
+    let mut candidates: Vec<KeyCandidate> = Vec::new();
+
+    // Each key column is chosen from its own samples, so a longer key always
+    // fits at least as well — it has more free parameters. Two guards keep that
+    // from making the answer "the longest key you allowed": a column needs real
+    // evidence behind it, and the key is charged for in the score (see `fit`).
+    const MIN_SAMPLES_PER_COLUMN: usize = 8;
+    let effective_max = max_len.min(data.len() / MIN_SAMPLES_PER_COLUMN).max(1);
+
+    for len in 1..=effective_max {
+        let mut key = Vec::with_capacity(len);
+        let mut total = 0.0f32;
+        let mut counted = 0usize;
+        for col in 0..len {
+            let column: Vec<u8> = data.iter().skip(col).step_by(len).copied().collect();
+            if column.is_empty() {
+                key.push(0);
+                continue;
+            }
+            let (best_k, best_score) = (0u16..256)
+                .map(|k| {
+                    let k = k as u8;
+                    let s: f32 = column.iter().map(|&b| log_likelihood(b ^ k)).sum();
+                    (k, s)
+                })
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .unwrap_or((0, 0.0));
+            key.push(best_k);
+            total += best_score;
+            counted += column.len();
+        }
+        if counted == 0 {
+            continue;
+        }
+        // Minimum-description-length: the average log-likelihood per byte, minus
+        // the ~ln(256) nats each key byte costs, amortised over the block. A
+        // longer key must earn its extra parameters.
+        const KEY_BYTE_COST: f32 = 5.545;
+        let fit = (total - KEY_BYTE_COST * len as f32) / counted as f32;
+        let decoded: Vec<u8> =
+            data.iter().enumerate().map(|(i, &b)| b ^ key[i % key.len()]).collect();
+        candidates.push(KeyCandidate {
+            key: shrink(&key),
+            fit,
+            score: printable_fraction(&decoded),
+            preview: decoded
+                .iter()
+                .take(72)
+                .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+                .collect(),
+        });
+    }
+
+    // Ties (within a whisker on the description length) go to the shorter key.
+    const MARGIN: f32 = 0.02;
+    let best = candidates.iter().map(|c| c.fit).fold(f32::MIN, f32::max);
+    let mut order: Vec<usize> = (0..candidates.len()).collect();
+    order.sort_by(|&a, &b| {
+        let (ca, cb) = (&candidates[a], &candidates[b]);
+        let near = |c: &KeyCandidate| c.fit >= best - MARGIN;
+        match (near(ca), near(cb)) {
+            (true, true) => ca.key.len().cmp(&cb.key.len()),
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            (false, false) => cb.fit.partial_cmp(&ca.fit).unwrap_or(std::cmp::Ordering::Equal),
+        }
+    });
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::with_capacity(top);
+    for i in order {
+        let c = &candidates[i];
+        if !c.key.is_empty() && seen.insert(c.key.clone()) {
+            out.push(c.clone());
+        }
+        if out.len() >= top {
+            break;
+        }
+    }
+    out
+}
+
+/// Collapse a key that is a shorter key repeated (`abab` -> `ab`).
+fn shrink(key: &[u8]) -> Vec<u8> {
+    for period in 1..=key.len() / 2 {
+        if key.len() % period == 0 && key.chunks(period).all(|c| c == &key[..period]) {
+            return key[..period].to_vec();
+        }
+    }
+    key.to_vec()
+}
+
 /// Recover the key from a region whose plaintext you already know
 /// (`known` must be what the region decodes to at `at`).
 pub fn key_from_known(data: &[u8], at: usize, known: &str) -> Vec<(Op, u8)> {
@@ -344,6 +557,89 @@ mod tests {
     fn key_recovered_from_known_plaintext() {
         let data: Vec<u8> = b"MZ\x90\x00".iter().map(|&b| b ^ 0x37).collect();
         assert!(key_from_known(&data, 0, "MZ").contains(&(Op::Xor, 0x37)));
+    }
+
+    /// A configuration blob of the size these actually are. Recovery is a
+    /// statistical argument: each key column is decided by its own samples, so
+    /// how much data there is decides how exactly the key comes back.
+    const CONFIG: &[u8] = b"host=c2.example.top;port=443;id=BOT-0007;interval=60;retry=5;\
+path=/gate.php;ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64);key=0123456789abcdef;\
+mutex=Global\\SessionLock77;persist=SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run;\
+drop=%APPDATA%\\svc.exe;fallback=http://backup.example.top/p.php;sleep=300;jitter=15;";
+
+    fn xored(plain: &[u8], key: &[u8]) -> Vec<u8> {
+        plain.iter().enumerate().map(|(i, &b)| b ^ key[i % key.len()]).collect()
+    }
+
+    #[test]
+    fn recovers_a_repeating_key_from_a_config_blob() {
+        let key = b"S3cr3t!";
+        let cands = infer_repeating_key(&xored(CONFIG, key), 20, 4);
+        let best = cands.first().expect("a candidate");
+        assert_eq!(best.key, key, "recovered {:?}", String::from_utf8_lossy(&best.key));
+        assert!(best.score > 0.95, "printable fraction {}", best.score);
+        assert!(best.preview.starts_with("host=c2.example.top"), "{}", best.preview);
+        assert_eq!(best.recipe(), "xor 53336372337421");
+    }
+
+    #[test]
+    fn recovers_a_long_key_without_inventing_a_longer_one() {
+        // The length is the part that must be exact — get it wrong and nothing
+        // decodes. With ~20 samples per column a stray byte can still be missed,
+        // so the assertion is "the right length, near-exact bytes, readable
+        // output", which is what the tool actually promises.
+        let key = b"longer-key-16byt";
+        let best = infer_repeating_key(&xored(CONFIG, key), 24, 1)
+            .into_iter()
+            .next()
+            .expect("candidate");
+        assert_eq!(best.key.len(), key.len(), "recovered a key of the wrong length");
+        let wrong = best.key.iter().zip(key).filter(|(a, b)| a != b).count();
+        assert!(wrong <= 1, "{wrong} key bytes wrong: {:?}", String::from_utf8_lossy(&best.key));
+        assert!(best.score > 0.95, "printable fraction {}", best.score);
+    }
+
+    #[test]
+    fn single_byte_key_is_not_padded_into_a_longer_one() {
+        // The danger with per-column fitting: a 1-byte key has one parameter and
+        // a 6-byte key has six, so the longer one always fits better unless it is
+        // charged for.
+        let plain = b"https://one.example.top/path?q=1&r=2 and some more plain text here";
+        let best = infer_repeating_key(&xored(plain, &[0x5a]), 8, 1)
+            .into_iter()
+            .next()
+            .expect("candidate");
+        assert_eq!(best.key, vec![0x5a]);
+    }
+
+    #[test]
+    fn short_block_still_decodes_to_text() {
+        // 64 bytes is too few samples per column to pin every key byte. The
+        // guarantee that survives is the useful one: the block decodes to
+        // something plainly textual, which is what the analyst reads before
+        // marking a bigger block and trying again.
+        let key = b"S3cr3t!";
+        let short = &xored(CONFIG, key)[..64];
+        let best = infer_repeating_key(short, 16, 3).into_iter().next().expect("candidate");
+        assert!(best.score > 0.9, "printable fraction {} — {}", best.score, best.preview);
+    }
+
+    #[test]
+    fn repeated_key_is_collapsed_to_its_period() {
+        assert_eq!(shrink(&[1, 2, 1, 2, 1, 2]), vec![1, 2]);
+        assert_eq!(shrink(&[1, 2, 3]), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn recipe_is_rotated_to_the_block_offset() {
+        let c =
+            KeyCandidate { key: vec![0xaa, 0xbb, 0xcc], score: 1.0, fit: 0.0, preview: String::new() };
+        // Applied from the block start, the key reads aa bb cc.
+        assert_eq!(c.recipe(), "xor aabbcc");
+        // A block starting at offset 1 must present the key rotated, so that the
+        // lens (which indexes by file offset) uses aa at offset 1.
+        assert_eq!(c.recipe_at(1), "xor ccaabb");
+        assert_eq!(c.recipe_at(3), "xor aabbcc");
     }
 
     #[test]

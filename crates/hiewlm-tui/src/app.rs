@@ -1174,6 +1174,57 @@ impl App {
         }
     }
 
+    /// Recover a repeating XOR key from the marked block.
+    ///
+    /// The single-byte hunt (`Alt+X`) finds the textbook case; a real config
+    /// blob is usually behind a short repeating key, which no amount of
+    /// searching for known plaintext will reveal. Here the key is *derived* from
+    /// the block, and picking a candidate puts it straight on the lens.
+    fn xor_key(&mut self) {
+        let Some((start, end)) = self.require_selection() else {
+            return;
+        };
+        let len = (end - start + 1) as usize;
+        if len < 16 {
+            self.set_status("Mark a bigger block — key recovery needs at least a few dozen bytes.");
+            return;
+        }
+        let mut data = vec![0u8; len.min(64 * 1024)];
+        // Read raw: this derives a new key, so any active lens must not apply.
+        self.buffer.read_at(FileOffset(start), &mut data);
+
+        let cands = hiewlm_core::xorsearch::infer_repeating_key(&data, 32, 8);
+        if cands.is_empty() {
+            self.set_status("No repeating XOR key explains this block as plaintext.");
+            return;
+        }
+        let items: Vec<(String, u64, String)> = cands
+            .iter()
+            .map(|c| {
+                let key_text: String = c
+                    .key
+                    .iter()
+                    .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+                    .collect();
+                let preview: String = c.preview.chars().take(56).collect();
+                (
+                    format!(
+                        "!{:>2}B  {:>3.0}%  {:<20} \"{key_text}\"  {preview}",
+                        c.key.len(),
+                        c.score * 100.0,
+                        c.recipe().trim_start_matches("xor ")
+                    ),
+                    start,
+                    // Rotated so the lens, which indexes by file offset, lines up
+                    // with the block the key was derived from.
+                    c.recipe_at(start),
+                )
+            })
+            .collect();
+        self.set_status("Enter puts that key on the lens · best-explaining first · Esc cancels");
+        self.dialog = Some(Dialog::XorHits { items, sel: 0, filter: String::new() });
+    }
+
     /// Hunt for plaintext hidden behind a single-byte XOR/ADD/ROL.
     fn xor_search(&mut self) {
         let hits = hiewlm_core::xorsearch::search_buffer(
@@ -3824,6 +3875,7 @@ impl App {
                 self.dialog = Some(Dialog::Lens { input: current });
             }
             Command::XorSearch => self.xor_search(),
+            Command::XorKey => self.xor_key(),
             Command::OpenBlockFill => {
                 if self.selection().is_some() {
                     self.dialog = Some(Dialog::BlockFill { input: String::new() });
@@ -4002,6 +4054,8 @@ pub enum Command {
     OpenLens,
     /// `Alt+X`: find plaintext hidden behind a single-byte transform.
     XorSearch,
+    /// `Alt+K`: recover a repeating XOR key from the marked block.
+    XorKey,
     BlockCopy,
     BlockMove,
     BlockInsert,
@@ -4353,6 +4407,7 @@ pub const PALETTE: &[(&str, &str, Command)] = &[
     ("strings with indicators", "s", Command::OpenStrings),
     ("yara scan", "R", Command::RunYara),
     ("xor search (find hidden plaintext)", "Alt+X", Command::XorSearch),
+    ("xor key from block (repeating key)", "Alt+K", Command::XorKey),
     ("view lens (decode without patching)", "L", Command::OpenLens),
     ("copy to system clipboard", "Y", Command::OpenCopyMenu),
     ("folder triage (rank samples)", "F", Command::FolderTriage),
@@ -4707,6 +4762,48 @@ mod tests {
         a.set_lens("");
         assert!(a.lens_label().is_none());
         assert_eq!(a.view_byte(0), encoded[0]);
+    }
+
+    #[test]
+    fn xor_key_recovers_a_repeating_key_and_sets_the_lens() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        // Key recovery is statistical: each key column is decided by its own
+        // samples, so the blob has to be the size a real configuration is.
+        let plain = b"host=c2.example.top;port=443;id=BOT-0007;interval=60;retry=5;path=/gate.php;\
+ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64);key=0123456789abcdef;mutex=Global-Lock77;\
+persist=SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run;drop=%APPDATA%\\svc.exe;\
+fallback=http://backup.example.top/p.php;sleep=300;jitter=15;campaign=summer;";
+        let key = b"S3cr3t!";
+        // Put the blob at an offset that is *not* a multiple of the key length,
+        // so the lens rotation is actually exercised.
+        let pad = 5u64;
+        let mut data = vec![0u8; pad as usize];
+        data.extend(plain.iter().enumerate().map(|(i, &b)| b ^ key[i % key.len()]));
+
+        let mut a = locked_app();
+        a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
+        a.mark = Some(pad);
+        a.cursor = a.max_offset();
+        a.apply(Command::XorKey);
+
+        assert!(matches!(a.dialog, Some(Dialog::XorHits { .. })), "expected candidates");
+        a.handle_key(KeyEvent::from(KeyCode::Enter));
+
+        let decoded: String =
+            (pad..pad + 19).map(|o| a.view_byte(o) as char).collect();
+        assert_eq!(decoded, "host=c2.example.top", "lens must decode at the block offset");
+        assert!(!a.buffer.is_dirty(), "the file itself is untouched");
+    }
+
+    #[test]
+    fn xor_key_needs_a_block_worth_analysing() {
+        let mut a = locked_app();
+        a.apply(Command::XorKey);
+        assert!(a.status.contains("Select a block"), "{}", a.status);
+        a.mark = Some(0);
+        a.cursor = 3;
+        a.apply(Command::XorKey);
+        assert!(a.status.contains("bigger block"), "{}", a.status);
     }
 
     #[test]

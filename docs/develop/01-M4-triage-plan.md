@@ -123,11 +123,17 @@ nên rủi ro vô ý đã hết:
 | Dồn `y`/`p`/`d` vào menu `b`, trả phím cho điều hướng | vẫn còn ở phím đơn, đã bị khoá ghi chặn |
 | Bỏ Rhai hoặc WASM plugin (hai cơ chế chồng nhau) | giữ nguyên cả hai, không đầu tư thêm |
 
-Ý tưởng cho M5 (chưa làm):
+---
 
-- Sidecar ghi chú (comment/bookmark/marker) khoá theo SHA-256 thay vì theo tên file —
-  mẫu hay bị đổi tên; hiện `*.hiewlm.markers` bám tên file.
-- Điểm nghi ngờ cho ELF/Mach-O ngang mức đang có với PE (hiện anomalies chủ yếu là PE).
-- Giải mã stack string (chuỗi dựng bằng lệnh `mov`) trong Code mode.
-- Lens nhiều tầng / suy khoá nhiều byte (hiện chỉ 1 byte).
-- Xuất báo cáo Markdown cho ticket.
+# M5 — "Không mất công phân tích, không mù nền tảng khác"
+
+Cùng quy tắc theo dõi như M4: đánh `[x]` ngay trong commit hoàn tất mục đó.
+
+| # | Mục | Trạng thái | Ghi chú |
+|---|---|---|---|
+| 5.1 | Ghi chú bền vững khoá theo nội dung: comment/bookmark/slot/marker lưu theo SHA-256, không theo tên file | [x] | store `$XDG_DATA_HOME/hiewlm/notes/<key>.toml`; tự nhập sidecar `.hiewlm.markers` cũ; file >64MB dùng khoá `part:` (size + 2 đầu) để không phải hash lại mỗi lần mở |
+| 5.2 | Bất thường ELF + Mach-O ngang tầm PE | [ ] | hiện anomalies gần như chỉ có PE → mẫu Linux/macOS bị "mù" |
+| 5.3 | Suy khoá XOR lặp nhiều byte trên block đã chọn | [ ] | khoá 1 byte đã có; blob config thật thường dùng khoá lặp |
+| 5.4 | Dựng lại stack string (chuỗi ghép bằng `mov`) trong Code mode | [ ] | cần thêm thông tin toán hạng vào `hiewlm-asm` |
+| 5.5 | Xuất báo cáo Markdown (CLI `--format markdown`, TUI copy/ghi file) | [ ] | để dán thẳng vào ticket |
+| 5.6 | Cập nhật help/README/design doc + test + clippy | [ ] | |

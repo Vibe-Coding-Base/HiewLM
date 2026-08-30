@@ -905,6 +905,103 @@ impl App {
         hex_bytes(&md5::Md5::digest(parts.join(",").as_bytes()))
     }
 
+    // -- Stack strings ---------------------------------------------------
+
+    /// Rebuild the strings a function assembles on its stack.
+    ///
+    /// `mov byte ptr [rbp-0x20], 'h'` repeated forty times leaves nothing for
+    /// `strings` to find — which is exactly why obfuscated code does it. Here the
+    /// stores are replayed into a model of the stack frame and the readable runs
+    /// are recovered.
+    fn open_stack_strings(&mut self) {
+        if !matches!(self.disasm_arch, Arch::X86 | Arch::X86_64) {
+            self.set_status("Stack strings need x86/x86-64.");
+            return;
+        }
+        let start = self.function_start_at_cursor();
+        let found = self.stack_strings(start, 4000);
+        if found.is_empty() {
+            self.set_status(format!(
+                "No stack-built strings in the function at {}.",
+                self.display_addr(start)
+            ));
+            return;
+        }
+        let items: Vec<(String, u64)> = found
+            .iter()
+            .map(|(off, slot, text)| {
+                (format!("!{}  [{slot:+#x}]  \"{text}\"", self.display_addr(*off)), *off)
+            })
+            .collect();
+        self.dialog = Some(Dialog::JumpList {
+            title: format!(
+                "Stack strings in the function at {} ({})",
+                self.display_addr(start),
+                items.len()
+            ),
+            items,
+            sel: 0,
+            filter: String::new(),
+        });
+        self.set_status("Enter jumps to the instruction that starts the string.");
+    }
+
+    /// The recovered function start at or before the cursor, else the cursor.
+    fn function_start_at_cursor(&self) -> u64 {
+        let cur = self.cursor_insn_start();
+        self.analyze().functions.range(..=cur).next_back().copied().unwrap_or(cur)
+    }
+
+    /// Replay a function's stack stores and return `(instruction offset, stack
+    /// slot, text)` for every readable run. ASCII and UTF-16LE both fall out of
+    /// the same byte model.
+    fn stack_strings(&self, start: u64, budget: usize) -> Vec<(u64, i64, String)> {
+        const MIN: usize = 4;
+        // slot -> (byte, offset of the instruction that wrote it)
+        let mut frame: BTreeMap<i64, (u8, u64)> = BTreeMap::new();
+        let mut off = start;
+        let mut left = budget;
+
+        while left > 0 && off < self.buffer.len() {
+            let Some(ins) = self.disasm_from(off, 1).into_iter().next() else { break };
+            left -= 1;
+            if let Some((disp, value, size)) = ins.stack_store {
+                for i in 0..size as i64 {
+                    let byte = (value >> (8 * i as u32)) as u8;
+                    frame.insert(disp + i, (byte, ins.offset));
+                }
+            }
+            if ins.flow == Flow::Ret {
+                break;
+            }
+            off = ins.offset + ins.len as u64;
+        }
+
+        // Contiguous slots form a run; a gap ends it.
+        let mut out = Vec::new();
+        let mut run: Vec<(i64, u8, u64)> = Vec::new();
+        let flush = |run: &mut Vec<(i64, u8, u64)>, out: &mut Vec<(u64, i64, String)>| {
+            if let Some(text) = decode_run(&run.iter().map(|r| r.1).collect::<Vec<_>>(), MIN) {
+                let first_insn = run.iter().map(|r| r.2).min().unwrap_or(0);
+                out.push((first_insn, run[0].0, text));
+            }
+            run.clear();
+        };
+        for (slot, (byte, insn)) in frame {
+            match run.last() {
+                Some(&(prev, _, _)) if slot == prev + 1 => run.push((slot, byte, insn)),
+                Some(_) => {
+                    flush(&mut run, &mut out);
+                    run.push((slot, byte, insn));
+                }
+                None => run.push((slot, byte, insn)),
+            }
+        }
+        flush(&mut run, &mut out);
+        out.sort_by_key(|(insn, _, _)| *insn);
+        out
+    }
+
     // -- Disassembly annotation -----------------------------------------
 
     /// What an instruction is really touching: the API it calls through the
@@ -1266,8 +1363,13 @@ impl App {
     fn copy_item(&mut self, idx: usize) {
         self.dialog = None;
         // Hashes and indicators come from the triage report; build it on demand.
-        if idx <= 3 || idx == 9 || idx == 10 {
+        if idx <= 3 || idx >= 9 {
             self.ensure_triage();
+        }
+        // Writing the report is a file operation, not a clipboard one.
+        if idx == 12 {
+            self.write_report();
+            return;
         }
         let sel = self.read_selection();
         let what: (String, String) = match idx {
@@ -1303,9 +1405,13 @@ impl App {
                     })
                     .unwrap_or_default(),
             ),
-            _ => (
+            10 => (
                 "triage report".into(),
                 self.triage.as_ref().map(hiewlm_triage::render::text).unwrap_or_default(),
+            ),
+            _ => (
+                "Markdown report".into(),
+                self.triage.as_ref().map(hiewlm_triage::render::markdown).unwrap_or_default(),
             ),
         };
         let (label, text) = what;
@@ -1316,6 +1422,25 @@ impl App {
         match crate::clipboard::copy(&text) {
             Ok(n) => self.set_status(format!("Copied {label} ({n} bytes) to the system clipboard.")),
             Err(e) => self.set_status(format!("Copy failed: {e}")),
+        }
+    }
+
+    /// Write the Markdown report beside the sample as `<file>.triage.md`.
+    ///
+    /// This creates a *new* file and never touches the sample, so it works while
+    /// the sample is locked — which is the whole point: writing up a case must
+    /// not require unlocking evidence.
+    fn write_report(&mut self) {
+        let Some(report) = self.triage.as_ref().map(hiewlm_triage::render::markdown) else {
+            self.set_status("No triage report yet (press 2).");
+            return;
+        };
+        let mut path = self.path.as_os_str().to_os_string();
+        path.push(".triage.md");
+        let path = PathBuf::from(path);
+        match fs::write(&path, report) {
+            Ok(()) => self.set_status(format!("Report written to {}", path.display())),
+            Err(e) => self.set_status(format!("Cannot write the report: {e}")),
         }
     }
 
@@ -3325,6 +3450,8 @@ impl App {
                     Char(c @ '1'..='9') => self.apply(Command::CopyItem(c as usize - '1' as usize)),
                     Char('0') => self.apply(Command::CopyItem(9)),
                     Char('r') | Char('R') => self.apply(Command::CopyItem(10)),
+                    Char('m') | Char('M') => self.apply(Command::CopyItem(11)),
+                    Char('w') | Char('W') => self.apply(Command::CopyItem(12)),
                     Esc => {}
                     _ => self.dialog = Some(Dialog::CopyMenu { selected }),
                 }
@@ -3876,6 +4003,7 @@ impl App {
             }
             Command::XorSearch => self.xor_search(),
             Command::XorKey => self.xor_key(),
+            Command::StackStrings => self.open_stack_strings(),
             Command::OpenBlockFill => {
                 if self.selection().is_some() {
                     self.dialog = Some(Dialog::BlockFill { input: String::new() });
@@ -4056,6 +4184,8 @@ pub enum Command {
     XorSearch,
     /// `Alt+K`: recover a repeating XOR key from the marked block.
     XorKey,
+    /// `Alt+S`: rebuild strings this function assembles on the stack.
+    StackStrings,
     BlockCopy,
     BlockMove,
     BlockInsert,
@@ -4320,8 +4450,13 @@ TRIAGE  (start here)
                                 url/ip/registry/lolbin/... — type to filter
   R                             YARA scan (rule file or folder)
   Alt+X                         find plaintext hidden behind a 1-byte key
+  Alt+K                         recover a repeating XOR key from the block
+  Alt+S                         rebuild strings this function builds on the
+                                stack (mov [rbp-x], 'h' ... — invisible to
+                                `strings`)
   L                             view lens: decode the VIEW, not the file
-  Y                             copy hash / block / IOC list to the clipboard
+  Y                             copy hash / block / IOC list / Markdown report
+                                to the clipboard, or write the report to a file
   F                             rank every sample in this folder
   O                             open another file
 
@@ -4395,6 +4530,9 @@ MISC
   q  or  0  or  F10            quit
   Esc                          clear filter/highlight/block, then go back
 
+Comments, bookmarks, slots and markers are saved automatically, keyed by the
+sample's SHA-256 — rename or move the file and they follow it.
+
 Read-only by default.  The target file is data, never executed.";
 
 /// Every command the palette can run: `(name, key hint, command)`.
@@ -4408,6 +4546,7 @@ pub const PALETTE: &[(&str, &str, Command)] = &[
     ("yara scan", "R", Command::RunYara),
     ("xor search (find hidden plaintext)", "Alt+X", Command::XorSearch),
     ("xor key from block (repeating key)", "Alt+K", Command::XorKey),
+    ("stack strings in this function", "Alt+S", Command::StackStrings),
     ("view lens (decode without patching)", "L", Command::OpenLens),
     ("copy to system clipboard", "Y", Command::OpenCopyMenu),
     ("folder triage (rank samples)", "F", Command::FolderTriage),
@@ -4456,6 +4595,33 @@ pub fn palette_matches(query: &str) -> Vec<&'static (&'static str, &'static str,
             words.iter().all(|w| hay.contains(w))
         })
         .collect()
+}
+
+/// A readable string from a run of stack bytes: UTF-16LE when every other byte
+/// is zero, otherwise ASCII. Both stop at the NUL terminator the code wrote.
+fn decode_run(bytes: &[u8], min: usize) -> Option<String> {
+    let printable = |b: u8| (0x20..0x7f).contains(&b);
+
+    // UTF-16LE first: an odd trailing byte cannot be part of a wide character.
+    let even = bytes.len() & !1;
+    let wide = &bytes[..even];
+    if !wide.is_empty()
+        && wide.chunks_exact(2).all(|c| c[1] == 0 && (printable(c[0]) || c[0] == 0))
+    {
+        let text: String = wide
+            .chunks_exact(2)
+            .map(|c| c[0])
+            .take_while(|&b| b != 0)
+            .map(|b| b as char)
+            .collect();
+        if text.chars().count() >= min {
+            return Some(text);
+        }
+    }
+
+    let text: String =
+        bytes.iter().copied().take_while(|&b| b != 0).map(|b| b as char).collect();
+    (text.chars().count() >= min && text.bytes().all(printable)).then_some(text)
 }
 
 /// Shorten a label to `n` characters for a fixed-width column.
@@ -4733,10 +4899,31 @@ mod tests {
     }
 
     #[test]
+    fn report_is_written_beside_the_sample_while_locked() {
+        let path = std::env::temp_dir().join("hiewlm_report_write.bin");
+        fs::write(&path, b"http://c2.example.top/gate.php and padding padding").unwrap();
+        let out = std::env::temp_dir().join("hiewlm_report_write.bin.triage.md");
+        let _ = fs::remove_file(&out);
+
+        let mut a = App::open(path.clone()).unwrap();
+        assert!(a.read_only, "the sample stays locked");
+        a.apply(Command::CopyItem(12));
+
+        let md = fs::read_to_string(&out).expect("the report file");
+        assert!(md.starts_with("# Triage — hiewlm_report_write.bin"), "{md}");
+        assert!(md.contains("SHA-256"));
+        assert!(!a.buffer.is_dirty(), "writing a report must not touch the sample");
+
+        let _ = fs::remove_file(&out);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
     fn copy_menu_labels_match_the_copy_actions() {
         let mut a = locked_app();
         a.apply(Command::OpenCopyMenu);
         assert!(matches!(a.dialog, Some(Dialog::CopyMenu { .. })));
+        assert_eq!(crate::ui::COPY_MENU_LABELS.len(), 13, "menu rows index copy_item");
         // Copying the address never needs a selection and never fails.
         a.apply(Command::CopyItem(8));
         assert!(a.dialog.is_none());
@@ -4762,6 +4949,60 @@ mod tests {
         a.set_lens("");
         assert!(a.lens_label().is_none());
         assert_eq!(a.view_byte(0), encoded[0]);
+    }
+
+    #[test]
+    fn rebuilds_a_string_assembled_on_the_stack() {
+        // The shape obfuscated code uses: the literal never exists in the file.
+        //   mov dword ptr [rbp-0x10], "http"
+        //   mov dword ptr [rbp-0x0c], "://e"
+        //   mov dword ptr [rbp-0x08], "vil."
+        //   mov dword ptr [rbp-0x04], "top\0"
+        //   ret
+        let mut data = Vec::new();
+        for (disp, word) in [
+            (0xf0u8, b"http"),
+            (0xf4u8, b"://e"),
+            (0xf8u8, b"vil."),
+            (0xfcu8, b"top\0"),
+        ] {
+            data.extend_from_slice(&[0xc7, 0x45, disp]);
+            data.extend_from_slice(word);
+        }
+        data.push(0xc3);
+
+        let mut a = locked_app();
+        a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
+        a.arch = Arch::X86_64;
+        a.bits = 64;
+        a.disasm_arch = Arch::X86_64;
+        a.disasm_bits = 64;
+
+        let found = a.stack_strings(0, 64);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].2, "http://evil.top");
+        assert_eq!(found[0].0, 0, "points at the first store");
+
+        // ...and the same thing through the command, as a jump list.
+        a.apply(Command::StackStrings);
+        match &a.dialog {
+            Some(Dialog::JumpList { items, title, .. }) => {
+                assert!(title.contains("Stack strings"), "{title}");
+                assert!(items[0].0.contains("http://evil.top"), "{}", items[0].0);
+            }
+            _ => panic!("expected the stack-strings list"),
+        }
+    }
+
+    #[test]
+    fn stack_string_run_decoding_handles_utf16_and_gaps() {
+        // Wide string, NUL-terminated.
+        let wide: Vec<u8> = "cmd.exe".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        assert_eq!(super::decode_run(&wide, 4).as_deref(), Some("cmd.exe"));
+        // Too short to be worth reporting.
+        assert_eq!(super::decode_run(b"ab\0\0", 4), None);
+        // Not text at all.
+        assert_eq!(super::decode_run(&[0x01, 0x02, 0x03, 0x04, 0x05], 4), None);
     }
 
     #[test]

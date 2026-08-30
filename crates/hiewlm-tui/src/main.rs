@@ -2,6 +2,7 @@
 //! See docs/develop/00-overall-design.md.
 
 mod app;
+mod clipboard;
 mod config;
 mod encoding;
 mod keymap;
@@ -26,6 +27,7 @@ use std::time::Duration;
 #[command(name = "hiewlm", version, about = "HIEW-like hex viewer/editor, cross-platform")]
 struct Cli {
     /// File to open (treated as passive data — its contents are never executed).
+    /// A directory opens the folder-triage queue instead, ranked worst-first.
     file: PathBuf,
 
     /// Unlock the file for editing. hiewLM is read-only by default: a sample is
@@ -37,7 +39,11 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let mut app = App::open(cli.file)?;
+    let mut app = if cli.file.is_dir() {
+        App::open_folder(cli.file)?
+    } else {
+        App::open(cli.file)?
+    };
     if cli.rw {
         app.read_only = false;
         app.set_status("UNLOCKED (--rw): writes allowed · Ctrl+W re-locks.");

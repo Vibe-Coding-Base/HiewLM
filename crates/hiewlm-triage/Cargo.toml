@@ -3,7 +3,9 @@ name = "hiewlm-triage"
 description = "hiewLM triage: one-screen verdict for a sample — hashes, anomalies, capabilities, IOCs."
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# The `yara` feature pulls in yara-x, which needs a newer compiler than the
+# rest of the workspace. Everything else here still builds on the workspace MSRV.
+rust-version = "1.82"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
@@ -17,6 +19,15 @@ sha1 = "0.10"
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# YARA scanning. yara-x is pure Rust (no libyara C dependency), which is what
+# lets it coexist with the workspace's `unsafe_code = deny` / no-native-loading
+# posture. Optional (it is a heavy dependency): enable with `--features yara`.
+yara-x = { version = "1.20", optional = true }
+
+[features]
+default = []
+yara = ["dep:yara-x"]
 
 [lints]
 workspace = true

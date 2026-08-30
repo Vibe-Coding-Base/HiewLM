@@ -15,16 +15,30 @@ pub enum Direction {
 pub struct Pattern {
     bytes: Vec<u8>,
     mask: Vec<bool>,
+    /// Compare ASCII letters without case. Malware strings are rarely typed the
+    /// way you remember them, so a case-blind text search saves a second try.
+    ci: bool,
 }
 
 impl Pattern {
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         let mask = vec![true; bytes.len()];
-        Self { bytes, mask }
+        Self { bytes, mask, ci: false }
     }
 
     pub fn from_text(text: &str) -> Self {
         Self::from_bytes(text.as_bytes().to_vec())
+    }
+
+    /// Case-insensitive ASCII text (the pattern is stored folded to lowercase).
+    pub fn from_text_ci(text: &str) -> Self {
+        let mut p = Self::from_bytes(text.as_bytes().to_ascii_lowercase());
+        p.ci = true;
+        p
+    }
+
+    pub fn is_case_insensitive(&self) -> bool {
+        self.ci
     }
 
     /// A hex string like "de ad ??" — `?`/`??` is a single-byte wildcard.
@@ -46,7 +60,7 @@ impl Pattern {
         if bytes.is_empty() {
             return Err(HexParseError);
         }
-        Ok(Self { bytes, mask })
+        Ok(Self { bytes, mask, ci: false })
     }
 
     fn split_pairs(tok: &str) -> Result<Vec<String>, HexParseError> {
@@ -64,8 +78,10 @@ impl Pattern {
     }
 
     /// The literal bytes, if the pattern has no wildcards (needed for replace).
+    /// A case-insensitive pattern has none: the bytes on disk are not what was
+    /// typed, so replacing them would corrupt the case.
     pub fn literal_bytes(&self) -> Option<&[u8]> {
-        if self.mask.iter().all(|&m| m) {
+        if !self.ci && self.mask.iter().all(|&m| m) {
             Some(&self.bytes)
         } else {
             None
@@ -86,11 +102,14 @@ impl Pattern {
         }
         let mut window = vec![0u8; self.bytes.len()];
         buf.read_at(FileOffset(at), &mut window);
+        let ci = self.ci;
         window
             .iter()
             .zip(&self.bytes)
             .zip(&self.mask)
-            .all(|((&got, &want), &active)| !active || got == want)
+            .all(|((&got, &want), &active)| {
+                !active || if ci { got.to_ascii_lowercase() == want } else { got == want }
+            })
     }
 }
 
@@ -197,6 +216,16 @@ mod tests {
         let b = buf(&[0xde, 0xad, 0xbe, 0xef]);
         let pat = Pattern::from_hex("de ?? be").unwrap();
         assert_eq!(find(&b, &pat, FileOffset(0), Direction::Forward), Some(FileOffset(0)));
+    }
+
+    #[test]
+    fn case_insensitive_text_matches_any_case() {
+        let b = buf(b"call VirtualAllocEx now");
+        let pat = Pattern::from_text_ci("virtualallocex");
+        assert_eq!(find(&b, &pat, FileOffset(0), Direction::Forward), Some(FileOffset(5)));
+        // ...and it is not offered for replacement, which would change the case.
+        assert!(pat.literal_bytes().is_none());
+        assert!(Pattern::from_text("VirtualAllocEx").literal_bytes().is_some());
     }
 
     #[test]

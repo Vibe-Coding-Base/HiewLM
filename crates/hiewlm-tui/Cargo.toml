@@ -20,8 +20,8 @@ hiewlm-plugin-zip = { path = "../hiewlm-plugin-zip" }
 hiewlm-plugin-pdf = { path = "../hiewlm-plugin-pdf" }
 hiewlm-asm = { path = "../hiewlm-asm" }
 anyhow.workspace = true
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 clap = { version = "4", features = ["derive"] }
 crc32fast = "1"
 md-5 = "0.10"
@@ -29,6 +29,12 @@ sha2 = "0.10"
 blake3 = "1"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+
+[features]
+default = []
+# Pass-through: `cargo build --features yara` here enables YARA scanning in the
+# triage engine (pure-Rust yara-x; heavy to compile, so it is opt-in).
+yara = ["hiewlm-triage/yara"]
 
 [lints]
 workspace = true

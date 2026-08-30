@@ -145,8 +145,21 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char('='), _, _, _) => Some(Command::OpenCalc),
         (Char('A'), _, _, _) => Some(Command::OpenAssemble),
         (Char('C'), _, _, _) => Some(Command::OpenCrypt),
+        // `C` rewrites the block; `L` only changes how it is displayed.
+        (Char('L'), _, _, _) => Some(Command::OpenLens),
+        (Char('R'), _, _, _) => Some(Command::RunYara),
+        (Char('O'), _, _, _) => Some(Command::OpenFile),
+        (Char('F'), _, _, _) => Some(Command::FolderTriage),
+        // The command palette: everything by name, for the keys you forget.
+        (Char(':'), _, _, _) => Some(Command::OpenPalette),
+        (Char('x'), _, true, _) => Some(Command::XorSearch),
+        (Char('X'), _, true, _) => Some(Command::XorSearch),
         (Char('K'), _, _, _) => Some(Command::SetSlotPrompt),
         (Char('S'), _, _, _) => Some(Command::ToggleSplitView),
+        // `y` yanks a block into hiewLM's own clipboard; `Y` yanks a fact out to
+        // the system clipboard (hash, block, indicator list).
+        (Char('Y'), _, _, _) => Some(Command::OpenCopyMenu),
+        (Char('c'), true, _, _) => Some(Command::OpenCopyMenu),
         (Char(c @ '1'..='8'), _, true, _) => Some(Command::JumpSlot(c as u8 - b'0')),
         (Char('G'), _, _, _) => Some(Command::OpenCfg),
         (Char('x'), _, _, _) if plain => Some(Command::MultiSearch),

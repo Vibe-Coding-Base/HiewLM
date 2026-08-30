@@ -192,9 +192,26 @@ fn capabilities(r: &TriageReport) -> Vec<(String, Option<u64>)> {
 }
 
 fn iocs(r: &TriageReport) -> Vec<(String, Option<u64>)> {
-    if r.indicators.is_empty() {
+    // Obfuscated strings come first: the sample told you they mattered.
+    let mut v: Vec<(String, Option<u64>)> = r
+        .hidden
+        .iter()
+        .map(|h| {
+            let preview: String = h.preview.chars().take(90).collect();
+            (
+                format!("{:08X} HIDDEN {:<14} {preview}   (lens: {})", h.offset, h.needle, h.recipe),
+                Some(h.offset),
+            )
+        })
+        .collect();
+    if r.indicators.is_empty() && v.is_empty() {
         return vec![("(no indicator strings found)".into(), None)];
     }
+    v.extend(indicator_rows(r));
+    v
+}
+
+fn indicator_rows(r: &TriageReport) -> Vec<(String, Option<u64>)> {
     r.indicators
         .iter()
         .map(|i| {

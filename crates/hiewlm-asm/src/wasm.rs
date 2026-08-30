@@ -255,6 +255,8 @@ pub fn decode(data: &[u8], base_off: u64, base_va: u64, max: usize) -> Vec<Insn>
                         tokens: vec![tok("db", TokenKind::Mnemonic), tok(" ", TokenKind::Text),
                                      tok(&format!("{op:#04x}"), TokenKind::Number)],
                         target: None,
+                        mem_target: None,
+                        imm_target: None,
                         flow: Flow::Seq,
                     });
                     at += 1;
@@ -401,6 +403,8 @@ pub fn decode(data: &[u8], base_off: u64, base_va: u64, max: usize) -> Vec<Insn>
             text,
             tokens,
             target: None,
+            mem_target: None,
+            imm_target: None,
             flow,
         });
         at += n;

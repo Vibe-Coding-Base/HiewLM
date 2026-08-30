@@ -2,8 +2,12 @@
 //! never executes or maps the target (design §22.1). Returns a unified
 //! [`ExecutableModel`] with arch/bits, entry point, and a file-offset ↔ VA map.
 
+pub mod elf_extra;
+pub mod macho_extra;
 pub mod pe_extra;
 
+pub use elf_extra::{parse as elf_details, ElfDetails};
+pub use macho_extra::{parse as macho_details, MachoDetails};
 pub use pe_extra::{parse as pe_details, PeDetails};
 
 use hiewlm_core::{

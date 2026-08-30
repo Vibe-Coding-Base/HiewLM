@@ -132,7 +132,7 @@ Cùng quy tắc theo dõi như M4: đánh `[x]` ngay trong commit hoàn tất m�
 | # | Mục | Trạng thái | Ghi chú |
 |---|---|---|---|
 | 5.1 | Ghi chú bền vững khoá theo nội dung: comment/bookmark/slot/marker lưu theo SHA-256, không theo tên file | [x] | store `$XDG_DATA_HOME/hiewlm/notes/<key>.toml`; tự nhập sidecar `.hiewlm.markers` cũ; file >64MB dùng khoá `part:` (size + 2 đầu) để không phải hash lại mỗi lần mở |
-| 5.2 | Bất thường ELF + Mach-O ngang tầm PE | [ ] | hiện anomalies gần như chỉ có PE → mẫu Linux/macOS bị "mù" |
+| 5.2 | Bất thường ELF + Mach-O ngang tầm PE | [x] | ELF: segment RWX, mất section header, stack +x, giãn bộ nhớ, entry ngoài LOAD, overlay, loader lạ. Mach-O: RWX/`__TEXT` ghi được, không có LC_CODE_SIGNATURE, cryptid, LC_UNIXTHREAD, dylib/rpath ở đường ghi được, overlay sau chữ ký; đi vào slice đầu của fat binary và re-base offset. Cột perms của Sections giờ lấy từ segment bao ngoài |
 | 5.3 | Suy khoá XOR lặp nhiều byte trên block đã chọn | [ ] | khoá 1 byte đã có; blob config thật thường dùng khoá lặp |
 | 5.4 | Dựng lại stack string (chuỗi ghép bằng `mov`) trong Code mode | [ ] | cần thêm thông tin toán hạng vào `hiewlm-asm` |
 | 5.5 | Xuất báo cáo Markdown (CLI `--format markdown`, TUI copy/ghi file) | [ ] | để dán thẳng vào ticket |

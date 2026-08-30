@@ -6,7 +6,41 @@ safe for viewing malware (it only reads data — the target file is never execut
 
 Full design: [docs/develop/00-overall-design.md](docs/develop/00-overall-design.md).
 
-## Status — M0, M1, M2, M3 done (except HEM shim & GUI)
+## Status — M0–M4 done (except HEM shim & GUI)
+
+M4 (triage-first — make initial malware classification fast):
+
+- **Triage screen** (`2` / `T` / F2): one keystroke for the whole verdict —
+  score and badges, MD5/SHA-1/SHA-256/CRC32/**ssdeep**/imphash/rich-hash/authentihash,
+  format, entropy, packer, sections with permissions and entropy, **PE anomalies**
+  (RWX sections, zero raw size, 10x memory expansion, entry point outside code,
+  overlay, TLS callbacks, broken checksum on a signed file), **capabilities**
+  inferred from the import table, **indicators** (URL/IP/registry/LOLBin/mutex/PDB…)
+  and an **entropy map**. Panes switch with ←→, typing filters, `Enter` jumps.
+  The verdict then rides along on the status line.
+- **`hiewlmc triage <file|dir>`**: the same report headless, `--json` for pipelines,
+  `--fail-on-suspicious` for CI. A **directory** is ranked worst-first — a work queue.
+- **Strings v2** (`s`): ASCII **and UTF-16LE**, each tagged with its indicator
+  categories, filterable by typing (`url`, `lolbin`, `registry`…).
+- **YARA** (`R`, `hiewlmc yara`): pure-Rust yara-x, so no native library is loaded.
+  Matches become a jump list and feed the triage verdict. Build with `--features yara`.
+- **Hidden strings**: triage brute-forces the single-byte transforms and reports
+  plaintext the sample took the trouble to hide (`http://…  (lens: xor 41)`) —
+  obfuscation is intent, so it also raises the score.
+- **XOR lens** (`L`) and **key hunt** (`Alt+X`): find plaintext hidden behind a
+  single-byte XOR/ADD/SUB/ROL, then **view the file decoded without patching it** —
+  hex, text *and* disassembly go through the lens; the bytes on disk never change.
+- **Annotated disassembly**: `call [rip+…]` shows the imported API it reaches
+  (including through the IAT), and data references show the string they point at.
+- **Copy out** (`Y`): hash, block (hex / C array / Python bytes / text), address,
+  the whole indicator list or the whole report — to the *system* clipboard via
+  OSC 52, so it works over SSH.
+- **Folder triage** (`F`): rank the samples next to this one and open any of them.
+- **Command palette** (`:`): every command by name, for the keys you don't recall.
+- **Real write lock**: the sample is read-only until `Ctrl+W` (or `--rw`). Evidence
+  does not get modified by a stray keystroke.
+
+## Earlier milestones
 
 Container plugins (ZIP · PDF):
 
@@ -101,7 +135,21 @@ The linker settings live in [.cargo/config.toml](.cargo/config.toml). Note that 
 distro/Homebrew Rust ships std for the host only, so cross-builds go through a
 `rustup` toolchain — the script picks one up automatically when it is installed.
 
-Basic keys: `F1` help · `Enter` cycle mode · `F3` edit · `F5` goto · `F7` find · `F9` save · `F10`/`Esc` quit.
+Basic keys: `1` help · `2` triage · `Enter` cycle mode · `3` edit · `5` goto · `7` find ·
+`9` save · `q` quit · `:` command palette.
+
+### YARA support
+
+YARA scanning uses [yara-x](https://github.com/VirusTotal/yara-x) (pure Rust — no
+libyara, nothing native is loaded at runtime). It is a heavy dependency, so it is
+opt-in:
+
+```sh
+cargo build --release --features yara      # hiewlm and hiewlmc
+```
+
+Point `yara_rules` in `config.toml` at your rule file or folder and `R` scans with
+it without prompting.
 
 ### Headless CLI (`hiewlmc`)
 
@@ -115,7 +163,7 @@ hiewlmc search  <file> PATTERN [--hex]       # exit 1 if no match
 hiewlmc replace <file> FIND WITH [--hex]     # writes, .bak backup
 hiewlmc patch   <file> ADDR "90 90 c3"       # writes, .bak backup
 hiewlmc hash    <file>                       # CRC32/MD5/SHA-256/BLAKE3
-hiewlmc strings <file> [--min N]
+hiewlmc strings <file> [--min N] [--no-utf16] [--ioc]
 hiewlmc entropy <file>                       # file + per-section
 hiewlmc packer  <file>                       # packer/protector detection
 hiewlmc script  <file> script.rhai           # automated patching (Rhai)
@@ -124,6 +172,11 @@ hiewlmc info    pid:1234                      # live process memory (Linux)
 
 hiewlmc asm     <file> ADDR "xor eax, eax"   # assemble + patch (--dry-run to preview)
 hiewlmc crypt   <file> "xor 5a, rol 3" [--at ADDR --count N]   # byte transforms
+hiewlmc triage  <file> [--json] [--fail-on-suspicious]   # one-screen verdict
+hiewlmc triage  <dir>  [--json]              # rank a folder of samples
+hiewlmc triage  <file> --yara rules.yar      # fold a YARA scan into the verdict
+hiewlmc yara    <file> rules.yar|rules_dir/  # scan only  (needs --features yara)
+hiewlmc strings <file> --ioc                 # indicators only (URL/IP/registry/…)
 hiewlmc plugins                              # list container plugins
 hiewlmc --plugin all container <file>        # ZIP/PDF structure + findings
 hiewlmc --plugin all container <f> --findings --fail-on-suspicious   # exit 1 if flagged
@@ -142,8 +195,9 @@ cargo clippy      # clean, no warnings
 
 | Crate | Role |
 |---|---|
-| `hiewlm-core` | Buffer (memmap + piece-table + journal), addressing, search, registry, crypt engine, container plugin API, struct templates — pure, no UI. |
-| `hiewlm-fmt` | Format detection (PE/ELF/Mach-O incl. fat, COFF, ar, NE/LE/LX/TE/NLM) → arch/bits/entry/VA map, imports/exports, header fields. |
+| `hiewlm-core` | Buffer (memmap + piece-table + journal), addressing, search, registry, crypt engine, container plugin API, struct templates, string/IOC extraction, import scoring, ssdeep, xor key hunting — pure, no UI. |
+| `hiewlm-fmt` | Format detection (PE/ELF/Mach-O incl. fat, COFF, ar, NE/LE/LX/TE/NLM) → arch/bits/entry/VA map, imports/exports, header fields; PE overlay/TLS/debug/Authenticode/anomalies. |
+| `hiewlm-triage` | The triage verdict: hashes, packer, capabilities, anomalies, indicators, entropy map, YARA — rendered as panes the TUI and CLI share. |
 | `hiewlm-asm` | Disassembly: x86/x86-64 (iced-x86, branch targets + flow), ARM/ARM64/MIPS/RISC-V/PPC/SPARC (Capstone), WASM bytecode; plus an x86 text assembler. |
 | `hiewlm-tui` | ratatui/crossterm UI, state machine, keymap, theme; the `hiewlm` binary. |
 | `hiewlm-cli` | Headless batch tool (`hiewlmc`): info/hex/disasm/asm/search/replace/patch/hash/strings/entropy/packer/script/plugin/container for scripts & CI. |
@@ -152,6 +206,10 @@ cargo clippy      # clean, no warnings
 | `hiewlm-plugin-pdf` | Container plugin: PDF object map + active-content (JS/launch/embedded) checks. |
 
 ## Roadmap
+
+**M4 (done)** — triage-first: see the top of this file. Progress and the remaining
+follow-ups live in [docs/develop/01-M4-triage-plan.md](docs/develop/01-M4-triage-plan.md).
+
 
 M0 (done) · M1 (done) ·
 M2 (done: diff + split view, multi-arch disasm incl. WASM, recursive analysis/xref,

@@ -27,11 +27,21 @@ use std::time::Duration;
 struct Cli {
     /// File to open (treated as passive data — its contents are never executed).
     file: PathBuf,
+
+    /// Unlock the file for editing. hiewLM is read-only by default: a sample is
+    /// evidence, and no keystroke may alter it until you say so (Ctrl+W in the
+    /// UI toggles the same lock).
+    #[arg(long)]
+    rw: bool,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut app = App::open(cli.file)?;
+    if cli.rw {
+        app.read_only = false;
+        app.set_status("UNLOCKED (--rw): writes allowed · Ctrl+W re-locks.");
+    }
 
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;

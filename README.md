@@ -21,7 +21,7 @@ M3 (extensibility & automation):
 - **Rhai scripting** (`hiewlmc script <file> script.rhai`): pure-Rust scripted patching with a buffer API (read/write/search).
 - **Headless CLI** (`hiewlmc`): info/hex/disasm/search/replace/patch/hash/strings/entropy/packer for scripts & CI.
 - **Process memory** (`pid:N`): read a live process on Linux via `/proc/pid/mem`.
-- **Packer detection** (`p` / `hiewlmc packer`): signature DB + entropy/imports heuristics.
+- **Packer detection** (shown in the `8` header Info pane and the `2` triage screen; `hiewlmc packer`): signature DB + entropy/imports heuristics.
 - **CFG view** (`G`): basic-block graph of the function at the cursor.
 - **Text assemble-at-cursor** (`A`, x86/x86-64): type `xor eax, eax`, see the encoding live, `Enter` patches it in — NOP-padded to the instruction it replaces, and refused outright if it would not fit. Also `hiewlmc asm <file> <at> "mov rax, rbx"`.
 - **Crypt engine** (`C`, `hiewlmc crypt`): XOR/ADD/SUB/AND/OR/ROL/ROR/NOT/NEG pipelines over a block — `xor dead, rol 3` — with repeating hex or ASCII keys. Tells you whether the recipe is invertible before you commit.

@@ -26,6 +26,9 @@ struct MarkerFile {
     markers: Vec<Marker>,
 }
 
+/// Rows a PgUp/PgDn moves inside a scrollable dialog list.
+const LIST_PAGE: usize = 10;
+
 /// Bytes read per instruction when disassembling a window (x86 max instruction len).
 const MAX_INSN_LEN: usize = 15;
 
@@ -178,9 +181,12 @@ pub enum Dialog {
         purpose: PickPurpose,
     },
     /// A selectable list of labelled offsets to jump to (names, xrefs, …).
-    JumpList { title: String, items: Vec<(String, u64)>, sel: usize },
+    /// `filter` narrows it as you type — these lists routinely hold thousands of
+    /// entries (strings, functions), and arrowing through them is not triage.
+    /// `sel` indexes the *filtered* view.
+    JumpList { title: String, items: Vec<(String, u64)>, sel: usize, filter: String },
     /// Multi-file search results; Enter opens the file at the match.
-    FileHits { title: String, items: Vec<(String, PathBuf, u64)>, sel: usize },
+    FileHits { title: String, items: Vec<(String, PathBuf, u64)>, sel: usize, filter: String },
     Message { title: String, body: String, scroll: usize },
 }
 
@@ -233,6 +239,9 @@ pub struct App {
     pub edit_col: EditCol,
     pub nibble: u8,
     pub insert_mode: bool,
+    /// The write lock. A malware sample is evidence: hiewLM opens it locked and
+    /// refuses every buffer-modifying command until the analyst unlocks with
+    /// Ctrl+W (or starts with `--rw`). This is a real guard, not a status flag.
     pub read_only: bool,
     pub dialog: Option<Dialog>,
     pub status: String,
@@ -462,6 +471,27 @@ impl App {
         sel
     }
 
+    /// Gate for every command that modifies the buffer. Returns false (and says
+    /// why) while the sample is locked, so a stray keystroke can never alter
+    /// evidence.
+    fn ensure_writable(&mut self) -> bool {
+        if self.read_only {
+            self.set_status("READ-ONLY: sample is locked · Ctrl+W unlocks (or start with --rw).");
+            return false;
+        }
+        true
+    }
+
+    fn toggle_writable(&mut self) {
+        self.read_only = !self.read_only;
+        if self.read_only {
+            self.editing = false;
+            self.set_status("LOCKED: read-only — the sample cannot be modified.");
+        } else {
+            self.set_status("UNLOCKED: writes allowed. Ctrl+W re-locks · F9 saves (.bak kept).");
+        }
+    }
+
     fn block_yank(&mut self) {
         if let Some(bytes) = self.read_selection() {
             let n = bytes.len();
@@ -473,6 +503,9 @@ impl App {
     }
 
     fn block_paste(&mut self) {
+        if !self.ensure_writable() {
+            return;
+        }
         if self.clipboard.is_empty() {
             self.set_status("Clipboard is empty (y to yank a block first).");
             return;
@@ -488,6 +521,9 @@ impl App {
     }
 
     fn block_delete(&mut self) {
+        if !self.ensure_writable() {
+            return;
+        }
         let Some((s, e)) = self.require_selection() else {
             return;
         };
@@ -516,6 +552,9 @@ impl App {
     /// Transform the selected block in place with a crypt recipe. The key index
     /// is block-relative, so a repeating key lines up with the block start.
     fn apply_crypt(&mut self, recipe: &hiewlm_core::crypt::Recipe) {
+        if !self.ensure_writable() {
+            return;
+        }
         let Some((s, e)) = self.require_selection() else {
             return;
         };
@@ -524,7 +563,6 @@ impl App {
         self.buffer.read_at(FileOffset(s), &mut data);
         recipe.apply(&mut data, 0);
         self.buffer.overwrite(FileOffset(s), &data);
-        self.read_only = false;
         let undo = if recipe.inverse().is_some() {
             " (reversible: re-apply the inverse, or Ctrl+Z)"
         } else {
@@ -540,6 +578,9 @@ impl App {
     /// A move deletes the source first, so the destination is rebased when it
     /// sits after the block — otherwise the bytes would land in the wrong place.
     fn block_copy_or_move(&mut self, is_move: bool) {
+        if !self.ensure_writable() {
+            return;
+        }
         let Some((s, e)) = self.require_selection() else {
             return;
         };
@@ -567,7 +608,6 @@ impl App {
             dest
         };
         self.buffer.insert(FileOffset(insert_at), &data);
-        self.read_only = false;
         self.mark = None;
         self.cursor = insert_at;
         self.set_status(format!(
@@ -580,6 +620,9 @@ impl App {
     /// Insert the clipboard (or a zero run) at the cursor, growing the file
     /// (HIEW Shift+F3).
     fn block_insert(&mut self) {
+        if !self.ensure_writable() {
+            return;
+        }
         let bytes = if self.clipboard.is_empty() {
             vec![0u8; 1]
         } else {
@@ -587,7 +630,6 @@ impl App {
         };
         let at = self.cursor;
         self.buffer.insert(FileOffset(at), &bytes);
-        self.read_only = false;
         self.set_status(format!(
             "Inserted {} byte(s) at {}{}",
             bytes.len(),
@@ -598,13 +640,15 @@ impl App {
 
     /// Insert a file's contents at the cursor (HIEW Ctrl+F2).
     fn read_file_into_buffer(&mut self, path: &std::path::Path) {
+        if !self.ensure_writable() {
+            return;
+        }
         match std::fs::read(path) {
             Ok(data) if data.is_empty() => self.set_status(format!("{} is empty.", path.display())),
             Ok(data) => {
                 let at = self.cursor;
                 self.buffer.insert(FileOffset(at), &data);
-                self.read_only = false;
-                self.set_status(format!(
+                        self.set_status(format!(
                     "Inserted {} bytes from {} at {}",
                     data.len(),
                     path.display(),
@@ -616,6 +660,9 @@ impl App {
     }
 
     fn block_fill(&mut self, pattern: &[u8]) {
+        if !self.ensure_writable() {
+            return;
+        }
         let Some((s, e)) = self.require_selection() else {
             return;
         };
@@ -956,6 +1003,9 @@ impl App {
         if needle.is_empty() {
             return;
         }
+        if !self.ensure_writable() {
+            return;
+        }
         let root = self.path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
         let mut files = 0usize;
         let mut total = 0usize;
@@ -1056,6 +1106,7 @@ impl App {
             title: format!("Matches in {} ({})", root.display(), hits.len()),
             items: hits,
             sel: 0,
+            filter: String::new(),
         });
     }
 
@@ -1287,6 +1338,7 @@ impl App {
             title: format!("Struct @ {} ({} bytes)", self.display_addr(base), tpl.total_size()),
             items,
             sel: 0,
+            filter: String::new(),
         });
     }
 
@@ -1469,10 +1521,18 @@ impl App {
             self.set_status("No strings found.");
             return;
         }
+        // Say so when the scan stopped early: a silently truncated list is worse
+        // than none, because the missing part is usually the appended payload.
+        let truncated = if items.len() >= 20_000 || cap < self.buffer.len() {
+            "  [TRUNCATED]"
+        } else {
+            ""
+        };
         self.dialog = Some(Dialog::JumpList {
-            title: format!("Strings ({})", items.len()),
+            title: format!("Strings ({}){truncated}", items.len()),
             items,
             sel: 0,
+            filter: String::new(),
         });
     }
 
@@ -1481,6 +1541,9 @@ impl App {
     fn nop_instruction(&mut self) {
         if !(self.mode == Mode::Code && self.code_supported()) {
             self.set_status("NOP works in Code mode.");
+            return;
+        }
+        if !self.ensure_writable() {
             return;
         }
         let start = self.cursor_insn_start();
@@ -1493,7 +1556,6 @@ impl App {
         };
         let filler = if filler.len() == ins.len { filler } else { vec![0x90u8; ins.len] };
         self.buffer.overwrite(FileOffset(ins.offset), &filler);
-        self.read_only = false;
         self.set_status(format!("NOP'd {} byte(s) at {}", ins.len, self.display_addr(ins.offset)));
     }
 
@@ -1522,6 +1584,10 @@ impl App {
         if text.trim().is_empty() {
             return;
         }
+        if !self.ensure_writable() {
+            self.dialog = None;
+            return;
+        }
         let start = self.cursor_insn_start();
         let (bytes, slot) = match self.assemble_preview(text) {
             Ok(v) => v,
@@ -1542,7 +1608,6 @@ impl App {
         let mut patch = bytes.clone();
         patch.resize(slot, 0x90);
         self.buffer.overwrite(FileOffset(start), &patch);
-        self.read_only = false;
         let pad = slot - bytes.len();
         self.set_status(format!(
             "Assembled {} byte(s){} at {}",
@@ -1574,6 +1639,7 @@ impl App {
             title,
             items,
             sel: 0,
+            filter: String::new(),
         });
     }
 
@@ -1769,7 +1835,7 @@ impl App {
             })
             .collect::<Vec<_>>();
         let title = format!("Xrefs to {} ({})", self.display_addr(self.cursor), items.len());
-        self.dialog = Some(Dialog::JumpList { title, items, sel: 0 });
+        self.dialog = Some(Dialog::JumpList { title, items, sel: 0, filter: String::new() });
     }
 
     /// Jump to `off`, remembering the current spot for Backspace.
@@ -1807,6 +1873,7 @@ impl App {
             title: format!("History ({})", items.len()),
             items,
             sel: 0,
+            filter: String::new(),
         });
     }
 
@@ -2181,12 +2248,14 @@ impl App {
     // -- Editing -----------------------------------------------------
 
     fn enter_edit(&mut self) {
+        if !self.ensure_writable() {
+            return;
+        }
         if self.buffer.is_empty() {
             self.set_status("Empty file — nothing to edit.");
             return;
         }
         self.editing = true;
-        self.read_only = false;
         self.nibble = 0;
         if self.mode == Mode::Code {
             self.edit_col = EditCol::Hex;
@@ -2228,13 +2297,19 @@ impl App {
     }
 
     fn insert_zero_byte(&mut self) {
+        if !self.ensure_writable() {
+            return;
+        }
         self.buffer.insert(FileOffset(self.cursor), &[0]);
         self.editing = true;
-        self.read_only = false;
         self.set_status("Inserted one 0x00 byte.");
     }
 
     fn save(&mut self) -> Result<()> {
+        if self.read_only {
+            self.set_status("READ-ONLY: nothing written · Ctrl+W unlocks.");
+            return Ok(());
+        }
         if !self.buffer.is_dirty() {
             self.set_status("No changes to save.");
             return Ok(());
@@ -2581,8 +2656,14 @@ impl App {
                 }
             }
             Dialog::BlockMenu { selected } => match key.code {
-                Up => self.dialog = Some(Dialog::BlockMenu { selected: (selected + 3) % 4 }),
-                Down | Tab => self.dialog = Some(Dialog::BlockMenu { selected: (selected + 1) % 4 }),
+                Up => {
+                    let n = BLOCK_MENU_CMDS.len();
+                    self.dialog = Some(Dialog::BlockMenu { selected: (selected + n - 1) % n })
+                }
+                Down | Tab => {
+                    let n = BLOCK_MENU_CMDS.len();
+                    self.dialog = Some(Dialog::BlockMenu { selected: (selected + 1) % n })
+                }
                 Enter => self.apply(BLOCK_MENU_CMDS[selected]),
                 Char('w') | Char('W') => self.apply(Command::OpenBlockWrite),
                 Char('f') | Char('F') => self.apply(Command::OpenBlockFill),
@@ -2592,6 +2673,7 @@ impl App {
                 Char('c') | Char('C') => self.apply(Command::BlockCopy),
                 Char('m') | Char('M') => self.apply(Command::BlockMove),
                 Char('i') | Char('I') => self.apply(Command::BlockInsert),
+                Char('n') | Char('N') => self.apply(Command::NopInstruction),
                 Esc => {}
                 _ => self.dialog = Some(Dialog::BlockMenu { selected }),
             },
@@ -2672,18 +2754,47 @@ impl App {
                 }
                 _ => self.dialog = Some(Dialog::NameBookmark { input }),
             },
-            Dialog::FileHits { title, items, sel } => {
-                let len = items.len().max(1);
+            Dialog::FileHits { title, items, sel, mut filter } => {
+                let view =
+                    filter_indices(&items, |it: &(String, PathBuf, u64)| it.0.as_str(), &filter);
+                let last = view.len().saturating_sub(1);
+                let mut sel = sel;
+                let mut open = None;
+                let mut close = false;
                 match key.code {
-                    Up => self.dialog = Some(Dialog::FileHits { title, items, sel: sel.saturating_sub(1) }),
-                    Down => self.dialog = Some(Dialog::FileHits { title, items, sel: (sel + 1).min(len - 1) }),
+                    Up => sel = sel.saturating_sub(1),
+                    Down => sel = (sel + 1).min(last),
+                    PageUp => sel = sel.saturating_sub(LIST_PAGE),
+                    PageDown => sel = (sel + LIST_PAGE).min(last),
+                    Home => sel = 0,
+                    End => sel = last,
                     Enter => {
-                        if let Some((_, path, off)) = items.get(sel).cloned() {
-                            self.reload(path, off);
-                        }
+                        open = view.get(sel).map(|&i| {
+                            let (_, path, off) = &items[i];
+                            (path.clone(), *off)
+                        });
+                        close = true;
                     }
-                    Esc => {}
-                    _ => self.dialog = Some(Dialog::FileHits { title, items, sel }),
+                    Backspace => {
+                        filter.pop();
+                        sel = 0;
+                    }
+                    Char(c) => {
+                        filter.push(c);
+                        sel = 0;
+                    }
+                    Esc if !filter.is_empty() => {
+                        filter.clear();
+                        sel = 0;
+                    }
+                    Esc => close = true,
+                    _ => {}
+                }
+                if !close {
+                    self.dialog = Some(Dialog::FileHits { title, items, sel, filter });
+                }
+                if let Some((path, off)) = open {
+                    self.reload(path, off);
                 }
             }
             Dialog::FilePicker { dir, entries, sel, purpose } => {
@@ -2717,20 +2828,45 @@ impl App {
                     _ => self.dialog = Some(Dialog::FilePicker { dir, entries, sel, purpose }),
                 }
             }
-            Dialog::JumpList { title, items, sel } => {
-                let len = items.len().max(1);
+            Dialog::JumpList { title, items, sel, mut filter } => {
+                let view = filter_indices(&items, |it: &(String, u64)| it.0.as_str(), &filter);
+                let last = view.len().saturating_sub(1);
+                let mut sel = sel;
+                let mut jump = None;
+                let mut close = false;
                 match key.code {
-                    Up => self.dialog = Some(Dialog::JumpList { title, items, sel: sel.saturating_sub(1) }),
-                    Down => {
-                        self.dialog = Some(Dialog::JumpList { title, items, sel: (sel + 1).min(len - 1) })
-                    }
+                    Up => sel = sel.saturating_sub(1),
+                    Down => sel = (sel + 1).min(last),
+                    PageUp => sel = sel.saturating_sub(LIST_PAGE),
+                    PageDown => sel = (sel + LIST_PAGE).min(last),
+                    Home => sel = 0,
+                    End => sel = last,
                     Enter => {
-                        if let Some(&(_, off)) = items.get(sel) {
-                            self.goto_offset(off);
-                        }
+                        jump = view.get(sel).map(|&i| items[i].1);
+                        close = true;
                     }
-                    Esc => {}
-                    _ => self.dialog = Some(Dialog::JumpList { title, items, sel }),
+                    Backspace => {
+                        filter.pop();
+                        sel = 0;
+                    }
+                    // Typing filters the list — that is the only way a list of
+                    // 20k strings is usable at triage speed.
+                    Char(c) => {
+                        filter.push(c);
+                        sel = 0;
+                    }
+                    Esc if !filter.is_empty() => {
+                        filter.clear();
+                        sel = 0;
+                    }
+                    Esc => close = true,
+                    _ => {}
+                }
+                if !close {
+                    self.dialog = Some(Dialog::JumpList { title, items, sel, filter });
+                }
+                if let Some(off) = jump {
+                    self.goto_offset(off);
                 }
             }
             Dialog::Header { pane, sel, mut filter } => {
@@ -2985,6 +3121,7 @@ impl App {
                 let s = if self.insert_mode { "insert" } else { "overwrite" };
                 self.set_status(format!("Input mode: {s}"));
             }
+            Command::ToggleWritable => self.toggle_writable(),
             Command::ToggleAddrMode => {
                 self.addr_mode = match self.addr_mode {
                     AddrMode::Offset => AddrMode::Va,
@@ -3117,6 +3254,8 @@ pub enum Command {
     ToggleTheme,
     CycleEncoding,
     ToggleInsert,
+    /// Ctrl+W: lock / unlock the sample for writing (locked at startup).
+    ToggleWritable,
     ToggleAddrMode,
     EnterEdit,
     CancelEdit,
@@ -3158,7 +3297,7 @@ pub(crate) const DISASM_OPTIONS: [(&str, Option<(Arch, u8)>); 11] = [
 ];
 
 /// Block-menu entries, in display order (see [`Dialog::BlockMenu`] rendering).
-pub(crate) const BLOCK_MENU_CMDS: [Command; 8] = [
+pub(crate) const BLOCK_MENU_CMDS: [Command; 9] = [
     Command::OpenBlockWrite,
     Command::OpenBlockRead,
     Command::BlockCopy,
@@ -3167,6 +3306,7 @@ pub(crate) const BLOCK_MENU_CMDS: [Command; 8] = [
     Command::OpenBlockFill,
     Command::BlockFillZero,
     Command::BlockDelete,
+    Command::NopInstruction,
 ];
 
 fn mode_index(m: Mode) -> usize {
@@ -3390,6 +3530,33 @@ MISC
 
 Read-only by default.  The target file is data, never executed.";
 
+/// Indices of the entries whose label contains `filter` (case-insensitive).
+/// Shared by every scrollable list so filtering behaves identically everywhere.
+pub fn filter_indices<'a, T: 'a>(
+    items: &'a [T],
+    label: impl Fn(&'a T) -> &'a str,
+    filter: &str,
+) -> Vec<usize> {
+    if filter.is_empty() {
+        return (0..items.len()).collect();
+    }
+    let needle = filter.to_lowercase();
+    items
+        .iter()
+        .enumerate()
+        .filter(|(_, it)| label(it).to_lowercase().contains(&needle))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The visible rows of a [`Dialog::JumpList`] under its filter.
+pub fn jump_view<'a>(items: &'a [(String, u64)], filter: &str) -> Vec<&'a (String, u64)> {
+    filter_indices(items, |it: &(String, u64)| it.0.as_str(), filter)
+        .into_iter()
+        .map(|i| &items[i])
+        .collect()
+}
+
 /// Case-insensitive substring filter for header pane rows.
 fn apply_header_filter(
     raw: Vec<(String, Option<u64>)>,
@@ -3406,10 +3573,51 @@ fn apply_header_filter(
 mod tests {
     use super::*;
 
+    /// An app unlocked for writing — most tests exercise editing commands, and
+    /// the real UI is locked until Ctrl+W (see `locked_by_default_*` below).
     fn app() -> App {
+        let mut a = locked_app();
+        a.read_only = false;
+        a
+    }
+
+    /// An app in its real startup state: the sample is locked.
+    fn locked_app() -> App {
         let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
         a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(b"0123456789ABCDEF".to_vec())));
         a
+    }
+
+    #[test]
+    fn locked_by_default_refuses_every_write() {
+        let mut a = locked_app();
+        let before = a.buffer.to_vec();
+
+        a.apply(Command::EnterEdit);
+        assert!(!a.editing, "edit mode must be refused while locked");
+        a.mark = Some(0);
+        a.cursor = 3;
+        a.apply(Command::BlockDelete);
+        a.apply(Command::BlockFillZero);
+        a.apply(Command::BlockInsert);
+        a.mode = Mode::Code;
+        a.apply(Command::NopInstruction);
+        assert_eq!(a.buffer.to_vec(), before, "a locked sample must not change");
+        assert!(!a.buffer.is_dirty());
+    }
+
+    #[test]
+    fn ctrl_w_unlocks_and_relocks() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut a = locked_app();
+        let ctrl_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+        a.handle_key(ctrl_w);
+        assert!(!a.read_only);
+        a.apply(Command::EnterEdit);
+        assert!(a.editing);
+        a.handle_key(ctrl_w);
+        assert!(a.read_only);
+        assert!(!a.editing, "re-locking must leave edit mode");
     }
 
     #[test]
@@ -3507,6 +3715,7 @@ mod tests {
             0x90, 0xc3,
         ];
         let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
+        a.read_only = false;
         a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
         a.arch = Arch::X86_64;
         a.bits = 64;
@@ -3582,6 +3791,7 @@ mod tests {
         // xor eax,eax; test eax,eax; jz +2; inc eax; ret
         let data = vec![0x31, 0xc0, 0x85, 0xc0, 0x74, 0x02, 0xff, 0xc0, 0xc3];
         let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
+        a.read_only = false;
         a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
         a.arch = Arch::X86_64;
         a.bits = 64;
@@ -4048,7 +4258,7 @@ mod tests {
     fn block_menu_labels_match_command_order() {
         // Enter indexes BLOCK_MENU_CMDS by the rendered row, so a mismatch
         // would silently run the wrong operation.
-        assert_eq!(BLOCK_MENU_CMDS.len(), 8);
+        assert_eq!(BLOCK_MENU_CMDS.len(), crate::ui::BLOCK_MENU_LABELS.len());
     }
 
     #[test]
@@ -4444,6 +4654,7 @@ mod tests {
         std::fs::write(&path, b"AAAA").unwrap();
 
         let mut a = App::open(path.clone()).unwrap();
+        a.read_only = false;
         a.handle_key(KeyEvent::from(KeyCode::F(3))); // enter edit (hex)
         assert!(a.editing);
         a.handle_key(KeyEvent::from(KeyCode::Char('4')));

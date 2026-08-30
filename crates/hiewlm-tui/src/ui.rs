@@ -46,13 +46,13 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
             Dialog::Header { pane, sel, filter } => {
                 draw_header(f, area, app, *pane, *sel, filter, theme)
             }
-            Dialog::JumpList { title, items, sel } => {
-                draw_jump_list(f, area, title, items, *sel, theme)
+            Dialog::JumpList { title, items, sel, filter } => {
+                draw_jump_list(f, area, title, items, *sel, filter, theme)
             }
-            Dialog::FileHits { title, items, sel } => {
+            Dialog::FileHits { title, items, sel, filter } => {
                 let labels: Vec<(String, u64)> =
                     items.iter().map(|(l, _, o)| (l.clone(), *o)).collect();
-                draw_jump_list(f, area, title, &labels, *sel, theme)
+                draw_jump_list(f, area, title, &labels, *sel, filter, theme)
             }
             Dialog::FilePicker { dir, entries, sel, .. } => {
                 draw_file_picker(f, area, dir, entries, *sel, theme)
@@ -103,32 +103,42 @@ fn draw_file_picker(
     f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
 }
 
-/// A centered, scrollable list of labelled entries (names, xrefs).
+/// A centered, scrollable list of labelled entries (names, xrefs, strings).
+/// Typing filters it; the title shows the live filter and the match count.
+#[allow(clippy::too_many_arguments)]
 fn draw_jump_list(
     f: &mut Frame,
     area: Rect,
     title: &str,
     items: &[(String, u64)],
     sel: usize,
+    filter: &str,
     theme: &Theme,
 ) {
-    let width = 76.min(area.width.saturating_sub(2)).max(24);
-    let height = 20.min(area.height.saturating_sub(2)).max(6);
+    let width = 92.min(area.width.saturating_sub(2)).max(24);
+    let height = 26.min(area.height.saturating_sub(2)).max(6);
     let rect = centered(area, width, height);
     f.render_widget(Clear, rect);
 
+    let view = crate::app::jump_view(items, filter);
     let inner = height.saturating_sub(2) as usize;
     let first = if sel >= inner { sel - inner + 1 } else { 0 };
     let mut lines = Vec::with_capacity(inner);
-    if items.is_empty() {
-        lines.push(Line::from(Span::raw("  (none)")));
+    if view.is_empty() {
+        let msg = if filter.is_empty() { "  (none)" } else { "  (no match)" };
+        lines.push(Line::from(Span::raw(msg)));
     }
-    for (i, (label, _)) in items.iter().enumerate().skip(first).take(inner) {
+    for (i, (label, _)) in view.iter().enumerate().skip(first).take(inner) {
         let style = if i == sel { theme.selection() } else { theme.dialog() };
         lines.push(Line::from(Span::styled(format!(" {label}"), style)));
     }
+    let filt = if filter.is_empty() {
+        String::new()
+    } else {
+        format!("  [/{filter}]  {}/{}", view.len(), items.len())
+    };
     let block = Block::default()
-        .title(format!(" {title}  (↑↓ · Enter jump · Esc) "))
+        .title(format!(" {title}{filt}  (type=filter · ↑↓ PgUp/Dn · Enter jump · Esc) "))
         .borders(Borders::ALL)
         .style(theme.dialog());
     f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
@@ -197,7 +207,9 @@ fn draw_header(
 
 fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let name = app.path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-    let rw = if app.read_only { "RO" } else { "RW" };
+    // The lock is a safety property, so it is spelled out rather than abbreviated
+    // away: RW means a keystroke can now change the sample.
+    let rw = if app.read_only { "ro" } else { "RW!" };
     let ins = if app.insert_mode { "ins" } else { "ovr" };
     let dirty = if app.buffer.is_dirty() { " *" } else { "" };
     let edit = if app.editing { " EDIT" } else { "" };
@@ -525,6 +537,20 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     f.render_widget(Paragraph::new(Line::from(spans)).style(theme.bar()), area);
 }
 
+/// Block-menu rows, in display order. Enter indexes `BLOCK_MENU_CMDS` by the
+/// rendered row, so the two lists must stay the same length and order.
+pub const BLOCK_MENU_LABELS: [&str; 9] = [
+    "w  Write block to file",
+    "r  Read file in at cursor",
+    "c  Copy block to bookmark (+)",
+    "m  Move block to bookmark (+)",
+    "i  Insert clipboard at cursor",
+    "f  Fill pattern",
+    "z  Zero fill",
+    "d  Delete",
+    "n  NOP out instruction (Alt+F2)",
+];
+
 fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
     let (title, body, height): (String, Vec<Line>, u16) = match dialog {
         Dialog::Goto { input } => (
@@ -600,18 +626,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
             ("Color block".into(), lines, 12)
         }
         Dialog::BlockMenu { selected } => {
-            // Order must match BLOCK_MENU_CMDS — Enter indexes into it.
-            let names = [
-                "w  Write block to file",
-                "r  Read file in at cursor",
-                "c  Copy block to bookmark (+)",
-                "m  Move block to bookmark (+)",
-                "i  Insert clipboard at cursor",
-                "f  Fill pattern",
-                "z  Zero fill",
-                "d  Delete",
-            ];
-            let lines = names
+            let lines = BLOCK_MENU_LABELS
                 .iter()
                 .enumerate()
                 .map(|(i, n)| {
@@ -619,7 +634,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
                     Line::from(format!("{marker}{n}"))
                 })
                 .collect();
-            ("Block".into(), lines, 10)
+            ("Block".into(), lines, BLOCK_MENU_LABELS.len() as u16 + 2)
         }
         Dialog::BlockWrite { input } => (
             "Write block to file".into(),

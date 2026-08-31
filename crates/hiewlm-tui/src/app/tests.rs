@@ -1816,7 +1816,7 @@ fn edit_and_save_roundtrip() {
 }
 
 #[test]
-fn ctrl_q_quits_even_when_a_dialog_is_filtering() {
+fn ctrl_c_and_f10_quit_even_when_a_dialog_is_filtering() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let mut a = app();
     // The folder queue and every filterable list treat a bare letter as filter
@@ -1825,8 +1825,9 @@ fn ctrl_q_quits_even_when_a_dialog_is_filtering() {
     a.handle_key(KeyEvent::from(KeyCode::Char('q')));
     assert!(!a.should_quit, "a bare q still filters, as it must");
 
-    a.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
-    assert!(a.should_quit, "Ctrl+Q must quit from inside a dialog");
+    // Ctrl+C, not Ctrl+Q: 0x11 is XON and the terminal keeps it.
+    a.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    assert!(a.should_quit, "Ctrl+C must quit from inside a dialog");
 
     let mut b = app();
     b.apply(Command::OpenStrings);

@@ -2787,9 +2787,16 @@ impl App {
             return;
         }
         // Quit from anywhere, including a dialog. Five dialogs treat a bare
-        // letter as filter input — which is right — so `q` typed at the folder
-        // queue lands in the filter and looks like the program has hung.
-        if (ctrl && key.code == KeyCode::Char('q')) || key.code == KeyCode::F(10) {
+        // letter as filter input — which is right, you may be searching for
+        // `qemu` — so `q` at the folder queue lands in the filter and looks like
+        // the program has hung.
+        //
+        // Ctrl+C rather than Ctrl+Q: 0x11 is XON, and the terminal's flow
+        // control eats it before the program ever sees it. Ctrl+Q is accepted
+        // too, for the terminals where it does arrive.
+        let quit_key = matches!(key.code, KeyCode::F(10))
+            || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('q')));
+        if quit_key {
             self.should_quit = true;
             return;
         }

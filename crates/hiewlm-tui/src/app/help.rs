@@ -108,7 +108,7 @@ MISC
   Ctrl+.  Ctrl+P  Ctrl+L       record / play / loop macro (stops on search-fail)
   ?  or  1                     this help
   V                            about: version, author, build features
-  Ctrl+Q  or  F10              quit from anywhere, even inside a dialog
+  Ctrl+C  or  F10              quit from anywhere, even inside a dialog
   q  or  0  or  F10            quit
   Esc                          clear filter/highlight/block, then go back
 

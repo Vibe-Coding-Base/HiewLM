@@ -63,8 +63,8 @@ All notable changes to hiewLM. The format follows
   rule; a 23 MB PDF took 2.5 s. One case-insensitive pass over the file for the
   whole rule table takes 250 ms.
 - `q` inside a filterable popup types into the filter, which is correct but left
-  no way to quit from the folder queue. `Ctrl+Q` and `F10` now quit from
-  anywhere.
+  no way to quit from the folder queue. `Ctrl+C` and `F10` now quit from
+  anywhere — not `Ctrl+Q`, whose 0x11 is XON and never reaches the program.
 - PDF name markers matched inside longer names: `/AA` matched 278 times inside
   `/AAAAAA+ArialMT` in one real document, reporting auto-run actions that were
   not there. A name must now end at a delimiter.

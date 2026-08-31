@@ -98,7 +98,7 @@ The keys worth knowing on day one:
 | `Alt+X` | find plaintext hidden behind a single-byte key, and read it decoded |
 | `Y` | copy a hash, a block or the whole report to the system clipboard |
 | `:` | command palette — every command by name |
-| `1` | help |
+| `1` / `V` | help / about |
 
 The sample is **read-only until you unlock it** with `Ctrl+W` (or `--rw`).
 Evidence should not change because of a stray keystroke.

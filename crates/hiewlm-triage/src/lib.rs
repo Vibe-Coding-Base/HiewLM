@@ -184,6 +184,8 @@ pub struct TriageReport {
     pub badges: Vec<String>,
     /// Set when the scan hit its byte/result limits.
     pub truncated: bool,
+    /// The file was too large for this pass and was not analysed at all.
+    pub skipped: bool,
 }
 
 /// Knobs for [`analyze`].
@@ -199,6 +201,19 @@ pub struct Options {
     /// Bytes searched for plaintext hidden behind a single-byte key
     /// (0 disables the hunt).
     pub max_xor_bytes: u64,
+    /// Compute every hash, or only the SHA-256 the caller displays.
+    ///
+    /// A folder pass ranks files; it does not need MD5, SHA-1, CRC32 and an
+    /// ssdeep digest of every one of them to do it.
+    pub full_hashes: bool,
+    /// Files larger than this are listed but not analysed (0 = no limit).
+    ///
+    /// A full report reads and hashes the whole file, which is right for one
+    /// sample and ruinous for a folder: the six largest files in a Downloads
+    /// directory took forty seconds between them. A folder pass sets a limit and
+    /// says plainly which files it skipped, rather than reporting the hash of a
+    /// prefix as though it were the file's.
+    pub max_file_bytes: u64,
 }
 
 impl Default for Options {
@@ -209,6 +224,8 @@ impl Default for Options {
             max_indicators: 400,
             map_cells: 64,
             max_xor_bytes: 32 * 1024 * 1024,
+            max_file_bytes: 0,
+            full_hashes: true,
         }
     }
 }
@@ -259,17 +276,35 @@ pub fn analyze(
         ..Default::default()
     };
 
+    // Too large for this pass: say so, instead of spending a minute on it or
+    // reporting the hash of a prefix as though it were the file's.
+    if opts.max_file_bytes > 0 && buf.len() > opts.max_file_bytes {
+        r.skipped = true;
+        r.truncated = true;
+        r.format = "not scanned".into();
+        r.extra.push((
+            "Skipped".into(),
+            format!(
+                "{} is over this pass's {} limit — open it directly for a full report",
+                human(buf.len()),
+                human(opts.max_file_bytes)
+            ),
+        ));
+        return r;
+    }
+
     // Whole-file bytes are needed by the format parsers; bounded like they are.
     let cap = buf.len().min(256 * 1024 * 1024) as usize;
     let mut bytes = vec![0u8; cap];
     buf.read_at(FileOffset(0), &mut bytes);
     r.truncated = (cap as u64) < buf.len();
 
-    r.hashes = hashes(buf, &bytes);
+    r.hashes = hashes(buf, &bytes, opts.full_hashes);
     r.entropy = range_entropy(buf, 0, buf.len());
     r.map = entropy_map(buf, opts.map_cells);
 
-    let model = hiewlm_fmt::detect(buf);
+    // The bytes are already in hand; `detect` would read the file a second time.
+    let model = hiewlm_fmt::detect_bytes(&bytes);
     // Exactly one of these claims the bytes; each contributes the structural
     // checks that make sense for its format.
     let pe = hiewlm_fmt::pe_details(&bytes);
@@ -569,7 +604,7 @@ fn packer(
     rep.likelihood
 }
 
-fn hashes(buf: &EditBuffer, bytes: &[u8]) -> Hashes {
+fn hashes(buf: &EditBuffer, bytes: &[u8], full: bool) -> Hashes {
     use md5::Digest;
     let mut crc = crc32fast::Hasher::new();
     let mut md5 = md5::Md5::new();
@@ -581,11 +616,20 @@ fn hashes(buf: &EditBuffer, bytes: &[u8]) -> Hashes {
     while off < buf.len() {
         let n = ((buf.len() - off) as usize).min(chunk.len());
         buf.read_at(FileOffset(off), &mut chunk[..n]);
-        crc.update(&chunk[..n]);
-        md5.update(&chunk[..n]);
-        sha1.update(&chunk[..n]);
         sha256.update(&chunk[..n]);
+        if full {
+            crc.update(&chunk[..n]);
+            md5.update(&chunk[..n]);
+            sha1.update(&chunk[..n]);
+        }
         off += n as u64;
+    }
+    if !full {
+        // Identity only: the folder view shows a SHA-256 and nothing else.
+        return Hashes {
+            sha256: hex(&sha256.finalize()),
+            ..Default::default()
+        };
     }
     Hashes {
         crc32: format!("{:08X}", crc.finalize()),
@@ -773,6 +817,10 @@ fn hex(bytes: &[u8]) -> String {
 impl TriageReport {
     /// How urgent this sample is, in words.
     pub fn verdict(&self) -> &'static str {
+        // A file nobody looked at must never read as "low".
+        if self.skipped {
+            return "not scanned";
+        }
         match self.score {
             0..=19 => "low",
             20..=39 => "notable",

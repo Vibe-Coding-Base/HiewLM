@@ -115,6 +115,10 @@ enum Cmd {
         /// Print recovered macro source in full.
         #[arg(long)]
         macros: bool,
+        /// Print every hit behind a finding that matched more than once — the
+        /// 300 URLs, not just the fact that there are 300.
+        #[arg(long)]
+        matches: bool,
         /// Exit 1 when anything is flagged suspicious.
         #[arg(long)]
         fail_on_suspicious: bool,
@@ -259,9 +263,10 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
         Cmd::Office {
             file,
             macros,
+            matches,
             fail_on_suspicious,
         } => {
-            let (text, suspicious) = cmd_office(&file, macros)?;
+            let (text, suspicious) = cmd_office(&file, macros, matches)?;
             print!("{text}");
             return Ok(if suspicious && fail_on_suspicious {
                 ExitCode::from(1)
@@ -1034,7 +1039,7 @@ fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String
     Ok(s)
 }
 
-fn cmd_office(file: &Path, show_macros: bool) -> Result<(String, bool)> {
+fn cmd_office(file: &Path, show_macros: bool, show_matches: bool) -> Result<(String, bool)> {
     let (buf, _) = open(file)?;
     let data = read_all(&buf);
     let doc = hiewlm_office::parse(&data)
@@ -1086,6 +1091,27 @@ fn cmd_office(file: &Path, show_macros: bool) -> Result<(String, bool)> {
         match f.offset {
             Some(o) => out.push_str(&format!("[{}] {} ({o:#x})\n", f.severity, f.message)),
             None => out.push_str(&format!("[{}] {}\n", f.severity, f.message)),
+        }
+    }
+
+    let multi: Vec<&hiewlm_office::MatchGroup> = doc
+        .match_groups
+        .iter()
+        .filter(|g| g.hits.len() > 1)
+        .collect();
+    if !multi.is_empty() {
+        out.push_str("\n== Matches ==\n");
+        for g in &multi {
+            out.push_str(&format!("{} — {} occurrences\n", g.label, g.hits.len()));
+            if show_matches {
+                for (off, text) in &g.hits {
+                    let text: String = text.chars().take(140).collect();
+                    out.push_str(&format!("  {off:08X}  {text}\n"));
+                }
+            }
+        }
+        if !show_matches {
+            out.push_str("(--matches prints every occurrence)\n");
         }
     }
 
@@ -1234,7 +1260,14 @@ fn cmd_triage(
         ..Default::default()
     };
     if path.is_dir() {
-        return triage_dir(path, plugins, format, min_score, &opts, yara);
+        return triage_dir(
+            path,
+            plugins,
+            format,
+            min_score,
+            &folder_options(&opts),
+            yara,
+        );
     }
     let mut report = triage_one(path, plugins, &opts)?;
     apply_yara(&mut report, path, yara)?;
@@ -1245,6 +1278,20 @@ fn cmd_triage(
     };
     let score = report.score;
     Ok((format!("{text}\n"), score))
+}
+
+/// A folder pass ranks files; it does not need to hash a 1.5 GB video, or read
+/// eight megabytes of strings out of every PDF, to do that.
+fn folder_options(base: &hiewlm_triage::Options) -> hiewlm_triage::Options {
+    hiewlm_triage::Options {
+        max_file_bytes: 64 * 1024 * 1024,
+        full_hashes: false,
+        max_string_bytes: 2 * 1024 * 1024,
+        max_xor_bytes: 1024 * 1024,
+        max_indicators: 40,
+        map_cells: 24,
+        ..*base
+    }
 }
 
 fn triage_one(

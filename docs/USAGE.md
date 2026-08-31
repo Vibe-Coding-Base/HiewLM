@@ -86,7 +86,9 @@ appear in `strings` output at all.
   member *is* (its magic number), not what its extension claims.
 - **Findings** — what the structure means: a remote template, an auto-updating
   embedded object, a member whose name uses a right-to-left override, a central
-  directory that disagrees with the local headers.
+  directory that disagrees with the local headers. A finding backed by several
+  hits says `[Enter: 1874 matches]`; `Enter` opens the list, each entry showing
+  the text it matched — the URLs themselves, not just that there are 1874.
 - **Macros** — VBA source, *decompressed*, with its keywords grouped by what they
   do: auto-exec, execution, download, memory, persistence, obfuscation, evasion,
   lure.
@@ -211,7 +213,12 @@ or `%APPDATA%\hiewlm\notes\`).
 | `:` | command palette |
 | `Ctrl+.` `Ctrl+P` `Ctrl+L` | record / play / loop a macro |
 | `1` `?` | help |
+| `V` | about: version, author, build features, rule counts |
 | `q` `0` | quit |
+| `Ctrl+Q` `F10` | quit from anywhere, including inside a dialog |
+
+`q` inside a filterable popup types into the filter, which is what you want when
+you are searching for `qemu`. `Ctrl+Q` and `F10` always quit.
 
 In any popup: type to filter, `↑↓` and PgUp/PgDn to scroll, `←→` to scroll
 sideways (Shift+`←→` in the header and triage views, whose arrows switch panes),
@@ -224,7 +231,7 @@ sideways (Shift+`←→` in the header and triage views, whose arrows switch pan
 ```
 hiewlmc triage  <file|dir> [--format text|json|markdown] [--yara RULES]
                            [--fail-on-suspicious] [--min-score N]
-hiewlmc office  <file> [--macros] [--fail-on-suspicious]
+hiewlmc office  <file> [--macros] [--matches] [--fail-on-suspicious]
 hiewlmc info    <file>
 hiewlmc hex     <file> [--at ADDR] [--count N]
 hiewlmc disasm  <file> [--at ADDR] [--count N] [--arch x64]
@@ -303,13 +310,20 @@ injection | WriteProcessMemory | strong | writes into another process
 
 ## Workflows
 
-**Sorting a folder of samples.** `hiewlmc triage ~/incoming --format markdown`
+**Sorting a folder of samples.** The folder pass is deliberately bounded: files
+over 64 MB are listed as `not scanned` rather than hashed in full, and it uses
+fewer bytes for strings and hashes than a single-file report does. Ranking does
+not need a SHA-1 of a 1.5 GB video, and the pass runs before the UI is
+interactive.
+
+ `hiewlmc triage ~/incoming --format markdown`
 gives a ranked table to paste into a ticket; `hiewlm ~/incoming` opens the same
 ranking as a queue you can walk with `Enter`.
 
 **A document arrived by email.** Open it, press `2` for the verdict, then `Enter`
 to Doc mode. Findings tells you whether it fetches a remote template or runs a
-macro on open; Macros gives you the source. Nothing is fetched or run.
+macro on open, and `Enter` on a finding opens every occurrence behind it; Macros
+gives you the source. Nothing is fetched or run.
 
 **An archive arrived by email.** Doc mode lists members with what each one really
 is. A `.jpg` that is a PE, a name with a right-to-left override, or a local header

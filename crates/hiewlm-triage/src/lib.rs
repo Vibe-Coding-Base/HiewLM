@@ -167,6 +167,13 @@ pub struct TriageReport {
     pub yara: Vec<YaraHit>,
     pub container_kind: Option<String>,
     pub container_findings: Vec<ReportFinding>,
+    /// Set when the file is an Office document (OLE2, OOXML or RTF).
+    pub doc_format: Option<String>,
+    pub doc_findings: Vec<ReportFinding>,
+    /// Deduplicated keywords from every recovered VBA module.
+    pub macro_keywords: Vec<String>,
+    /// External references — remote templates and remote objects.
+    pub external_refs: Vec<String>,
     /// 0..100 triage priority.
     pub score: u8,
     /// Short badges for the status line: `PACKED`, `OVERLAY+128K`, `UNSIGNED`…
@@ -411,6 +418,17 @@ pub fn analyze(
         ));
     }
 
+    // Office documents: structure, macros and external references.
+    if let Some(doc) = hiewlm_office::parse(&bytes) {
+        r.doc_format = Some(doc.format.clone());
+        r.doc_findings = doc.findings.iter().map(ReportFinding::from).collect();
+        r.macro_keywords = doc.macro_keywords();
+        r.external_refs = doc.external.clone();
+        if r.format == "raw" {
+            r.format = doc.kind.label().to_string();
+        }
+    }
+
     if let Some(c) = container {
         r.container_kind = Some(c.kind.clone());
         r.container_findings = c.findings.iter().map(ReportFinding::from).collect();
@@ -645,6 +663,23 @@ fn score(r: &mut TriageReport) {
     s += (strong_iocs as u32 * 2).min(12);
     if strong_iocs > 0 {
         r.badges.push(format!("IOC{strong_iocs}"));
+    }
+    // A document that runs code on open is the whole verdict.
+    let doc_suspicious = r.doc_findings.iter().filter(|f| f.severity == "suspicious").count();
+    if doc_suspicious > 0 {
+        // A document that auto-updates an object, carries a DDE field and names
+        // Equation.3 is not "notable" — every one of those is the payload path.
+        s += (doc_suspicious as u32 * 8).min(40);
+    }
+    if !r.macro_keywords.is_empty() {
+        r.badges.push("MACRO".into());
+        let auto = r.macro_keywords.iter().any(|k| k.starts_with("auto-exec:"));
+        let exec = r.macro_keywords.iter().any(|k| k.starts_with("execution:"));
+        s += if auto && exec { 30 } else { 12 };
+    }
+    if !r.external_refs.is_empty() {
+        s += 20;
+        r.badges.push(format!("EXTREF{}", r.external_refs.len()));
     }
     if !r.hidden.is_empty() {
         // Obfuscation is intent: a URL behind an XOR key is not an accident.

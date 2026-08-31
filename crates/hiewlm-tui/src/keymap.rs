@@ -20,7 +20,37 @@ pub fn map_main(app: &App, key: KeyEvent) -> Option<Command> {
             return Some(cmd);
         }
     }
+    // The document view is a navigable list, so the arrows and Enter belong to
+    // it rather than to byte navigation and mode cycling.
+    if app.mode == Mode::Doc && app.doc_supported() {
+        if let Some(cmd) = map_doc(key) {
+            return Some(cmd);
+        }
+    }
     map_view(key)
+}
+
+fn map_doc(key: KeyEvent) -> Option<Command> {
+    use KeyCode::*;
+    let plain = !key.modifiers.contains(KeyModifiers::CONTROL)
+        && !key.modifiers.contains(KeyModifiers::ALT);
+    if !plain {
+        return None;
+    }
+    match key.code {
+        Up => Some(Command::DocMove(-1)),
+        Down => Some(Command::DocMove(1)),
+        PageUp => Some(Command::DocPageMove(-1)),
+        PageDown => Some(Command::DocPageMove(1)),
+        Home => Some(Command::DocMove(-1_000_000)),
+        End => Some(Command::DocMove(1_000_000)),
+        Right | Tab => Some(Command::DocPane(1)),
+        Left | BackTab => Some(Command::DocPane(-1)),
+        Char('>') => Some(Command::HScroll(8)),
+        Char('<') => Some(Command::HScroll(-8)),
+        Enter => Some(Command::DocActivate),
+        _ => None,
+    }
 }
 
 fn map_code_extra(key: KeyEvent) -> Option<Command> {

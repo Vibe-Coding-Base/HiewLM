@@ -1,5 +1,5 @@
 //! hiewLM — a cross-platform, HIEW-flavored binary viewer/editor.
-//! See docs/develop/00-overall-design.md.
+//! See docs/DESIGN.md.
 
 mod app;
 mod clipboard;

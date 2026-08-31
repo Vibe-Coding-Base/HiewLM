@@ -1001,7 +1001,8 @@ both consume, so the interactive screen and the JSON a pipeline reads can never
 disagree. Two rules kept it honest: every signal is *listed* but only strong
 signals *score* (otherwise every compiled program looks armed), and the sample is
 locked against writing until the analyst says otherwise (evidence must not change
-by accident). Progress and remaining follow-ups: `docs/develop/01-M4-triage-plan.md`.
+by accident). The decisions that came out of that milestone are recorded in
+`DEVELOPMENT.md` under "Decisions and non-goals".
 
 ---
 
@@ -1291,7 +1292,7 @@ trait ViewMode {
 
 ### 24.5 Long-term project health
 
-- ADRs (Architecture Decision Records) in `docs/develop/adr/` for each major decision
+- ADRs (Architecture Decision Records) in `docs/adr/` for each major decision
   (choosing TUI, choosing the piece-table, choosing WASM…).
 - The public API has **compatibility checks** (cargo-semver-checks) before a release.
 - Each crate has a README stating its responsibility boundary; the dependency diagram

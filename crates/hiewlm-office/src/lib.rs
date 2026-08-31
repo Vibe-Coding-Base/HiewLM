@@ -11,6 +11,8 @@
 //! remote template target is *reported*, never resolved.
 
 pub mod cfb;
+pub mod pdf;
+pub mod rules;
 pub mod ooxml;
 pub mod rtf;
 pub mod vba;
@@ -25,6 +27,7 @@ pub enum DocKind {
     /// OOXML package: `.docx`, `.xlsx`, `.pptx`.
     Ooxml,
     Rtf,
+    Pdf,
 }
 
 impl DocKind {
@@ -33,6 +36,7 @@ impl DocKind {
             DocKind::Ole => "OLE2 compound document",
             DocKind::Ooxml => "OOXML package",
             DocKind::Rtf => "RTF document",
+            DocKind::Pdf => "PDF document",
         }
     }
 }
@@ -98,27 +102,13 @@ pub fn parse(bytes: &[u8]) -> Option<Document> {
     if rtf::is_rtf(bytes) {
         return parse_rtf(bytes);
     }
+    if pdf::is_pdf(bytes) {
+        return parse_pdf(bytes);
+    }
     None
 }
 
 // ── OLE ──────────────────────────────────────────────────────────────────────
-
-/// Stream and storage names that only ever appear for a reason.
-const OLE_MARKERS: &[(&str, Severity, &str)] = &[
-    ("macros", Severity::Suspicious, "VBA macro storage"),
-    ("_vba_project", Severity::Suspicious, "VBA project"),
-    ("vbaproject", Severity::Suspicious, "VBA project"),
-    ("objectpool", Severity::Suspicious, "embedded OLE objects"),
-    ("ole10native", Severity::Suspicious, "embedded native payload (Packager)"),
-    ("package", Severity::Suspicious, "embedded package — often the dropped file"),
-    ("equation native", Severity::Suspicious, "Equation Editor object (CVE-2017-11882 vector)"),
-    ("encryptedpackage", Severity::Suspicious, "encrypted document — content hidden from scanners"),
-    ("macrosheet", Severity::Suspicious, "Excel 4.0 macro sheet"),
-    ("worddocument", Severity::Info, "Word document body"),
-    ("workbook", Severity::Info, "Excel workbook body"),
-    ("powerpoint document", Severity::Info, "PowerPoint document body"),
-    ("summaryinformation", Severity::Info, "document metadata"),
-];
 
 fn parse_ole(bytes: &[u8]) -> Option<Document> {
     let c = cfb::parse(bytes)?;
@@ -158,16 +148,14 @@ fn parse_ole(bytes: &[u8]) -> Option<Document> {
 
     for e in &c.entries {
         let lower = e.name.to_ascii_lowercase();
-        for (marker, severity, meaning) in OLE_MARKERS {
-            if lower.contains(marker) {
-                let f = Finding {
-                    severity: *severity,
-                    message: format!("{}: {meaning}", e.path),
-                    offset: e.file_off,
-                };
-                if !doc.findings.iter().any(|x| x.message == f.message) {
-                    doc.findings.push(f);
-                }
+        for r in rules::all_matches("ole", &lower) {
+            let f = Finding {
+                severity: r.severity,
+                message: format!("{}: {}", e.path, r.note),
+                offset: e.file_off,
+            };
+            if !doc.findings.iter().any(|x| x.message == f.message) {
+                doc.findings.push(f);
             }
         }
     }
@@ -256,27 +244,14 @@ fn parse_ooxml(bytes: &[u8]) -> Option<Document> {
     }
 
     // Part names that are themselves the finding.
-    const PART_MARKERS: &[(&str, &str)] = &[
-        ("vbaProject.bin", "VBA macro project"),
-        ("vbaData.xml", "VBA data"),
-        ("macrosheets/", "Excel 4.0 macro sheet (XLM)"),
-        ("xl/macrosheet", "Excel 4.0 macro sheet (XLM)"),
-        ("activeX/", "ActiveX control"),
-        ("embeddings/", "embedded object"),
-        ("oleObject", "embedded OLE object"),
-        ("customXml/", "custom XML part"),
-        ("printerSettings", "printer settings blob"),
-    ];
     for p in &pkg.parts {
-        for (needle, meaning) in PART_MARKERS {
-            if p.name.contains(needle) {
-                doc.findings.push(Finding {
-                    severity: Severity::Suspicious,
-                    message: format!("{}: {meaning}", p.name),
-                    offset: Some(p.file_off),
-                });
-                break;
-            }
+        let lower = p.name.to_ascii_lowercase();
+        if let Some(r) = rules::first_match("ooxml", &lower) {
+            doc.findings.push(Finding {
+                severity: r.severity,
+                message: format!("{}: {}", p.name, r.note),
+                offset: Some(p.file_off),
+            });
         }
     }
 
@@ -325,15 +300,53 @@ fn parse_rtf(bytes: &[u8]) -> Option<Document> {
         );
     }
     for class in &r.object_classes {
-        let known_bad = class.starts_with("Equation")
-            || class.eq_ignore_ascii_case("Package")
-            || class.starts_with("Word.Document")
-            || class.starts_with("OLE2Link");
+        let lower = class.to_ascii_lowercase();
+        let hit = rules::first_match("rtf", &lower);
         doc.findings.push(Finding {
-            severity: if known_bad { Severity::Suspicious } else { Severity::Info },
-            message: format!("object class: {class}"),
+            severity: hit.map(|h| h.severity).unwrap_or(Severity::Info),
+            message: match hit {
+                Some(h) => format!("object class: {class} — {}", h.note),
+                None => format!("object class: {class}"),
+            },
             offset: None,
         });
+    }
+    Some(doc)
+}
+
+// ── PDF ──────────────────────────────────────────────────────────────────────
+
+fn parse_pdf(bytes: &[u8]) -> Option<Document> {
+    let p = pdf::parse(bytes)?;
+    let mut doc = Document {
+        kind: DocKind::Pdf,
+        format: format!("PDF document (PDF-{})", p.version),
+        nodes: Vec::new(),
+        findings: p.findings.clone(),
+        metadata: p.metadata.clone(),
+        macros: Vec::new(),
+        external: Vec::new(),
+    };
+    for o in &p.objects {
+        let label = if o.kind.is_empty() {
+            format!("{} {} obj", o.number, o.generation)
+        } else {
+            format!("{} {} obj  /{}", o.number, o.generation, o.kind)
+        };
+        doc.nodes.push(Node {
+            path: label,
+            kind: "object",
+            size: 0,
+            depth: 0,
+            file_off: Some(o.offset),
+            detail: String::new(),
+        });
+    }
+    // A remote action is an external reference like any other.
+    for f in &p.findings {
+        if f.message.starts_with("/GoToR") || f.message.starts_with("/SubmitForm") {
+            doc.external.push(f.message.clone());
+        }
     }
     Some(doc)
 }
@@ -360,24 +373,22 @@ fn finish_macros(doc: &mut Document) {
         });
     }
     let keywords = doc.macro_keywords();
-    let auto = keywords.iter().any(|k| k.starts_with("auto-exec:"));
+    let auto = keywords.iter().any(|k| k.starts_with("autoexec:"));
     let exec = keywords.iter().any(|k| k.starts_with("execution:"));
     if auto && exec {
         doc.findings.push(Finding::suspicious(
             "macro runs on open AND executes a program — this is the payload path",
         ));
     }
-    for group in ["auto-exec", "execution", "download", "obfuscation", "memory"] {
+    for group in rules::VBA_GROUPS {
+        let short = group.strip_prefix("vba-").unwrap_or(group);
         let found: Vec<&str> = keywords
             .iter()
-            .filter(|k| k.starts_with(&format!("{group}:")))
+            .filter(|k| k.starts_with(&format!("{short}:")))
             .map(|k| k.split_once(':').map(|(_, v)| v).unwrap_or(k))
             .collect();
         if !found.is_empty() {
-            doc.findings.push(Finding::suspicious(format!(
-                "macro {group}: {}",
-                found.join(", ")
-            )));
+            doc.findings.push(Finding::suspicious(format!("macro {short}: {}", found.join(", "))));
         }
     }
 }
@@ -395,6 +406,19 @@ mod tests {
         assert!(d.findings.iter().any(|f| f.message.contains("Equation.3")));
         // Every node has a file offset, so the structure view can navigate.
         assert!(d.nodes.iter().all(|n| n.file_off.is_some()));
+    }
+
+    #[test]
+    fn a_pdf_with_auto_run_javascript_is_recognised() {
+        let bytes = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog /OpenAction << /S /JavaScript /JS (x) >> >>\nendobj\n%%EOF";
+        let d = parse(bytes).expect("document");
+        assert_eq!(d.kind, DocKind::Pdf);
+        assert!(d.format.starts_with("PDF document (PDF-1.7"), "{}", d.format);
+        assert!(d.findings.iter().any(|f| f.message.contains("runs on open")));
+        // The object map is navigable, which is the point of showing it here.
+        assert_eq!(d.nodes.len(), 1);
+        assert_eq!(d.nodes[0].file_off, Some(9));
+        assert!(d.nodes[0].path.contains("/Catalog"));
     }
 
     #[test]

@@ -20,7 +20,6 @@ hiewlm-office = { path = "../hiewlm-office" }
 hiewlm-asm = { path = "../hiewlm-asm" }
 hiewlm-plugin = { path = "../hiewlm-plugin", optional = true }
 hiewlm-plugin-zip = { path = "../hiewlm-plugin-zip" }
-hiewlm-plugin-pdf = { path = "../hiewlm-plugin-pdf" }
 anyhow.workspace = true
 clap = { version = "4", features = ["derive"] }
 crc32fast = "1"

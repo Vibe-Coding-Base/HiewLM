@@ -26,6 +26,7 @@ const BUILTIN: &[(&str, &str)] = &[
     ("apis", include_str!("../data/apis.txt")),
     ("packers", include_str!("../data/packers.txt")),
     ("indicators", include_str!("../data/indicators.txt")),
+    ("documents", include_str!("../data/documents.txt")),
 ];
 
 /// Where run-time overrides are looked for: `$HIEWLM_RULES_DIR`, else

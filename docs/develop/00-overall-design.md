@@ -619,11 +619,12 @@ mechanism for *untrusted, user-supplied* extensions.
       DOS timestamp, encryption flag; local-header offset so F12 jumps into the member.
       Flags path traversal, dropper extensions, zip-bomb ratios, SFX/appended-ZIP stubs,
       members whose local header is missing or past EOF.
-- [x] `hiewlm-plugin-pdf` — header (including data prepended before `%PDF-`, a polyglot
-      trick), indirect-object map with `/Type`, trailer/`startxref`, incremental updates.
-      Flags `/JavaScript`, `/JS`, `/OpenAction`, `/AA`, `/Launch`, `/EmbeddedFile`,
-      `/RichMedia`, `/JBIG2Decode`, `/SubmitForm`, `/GoToR`, `/XFA`. Streams are **not**
-      decompressed, so objects inside `/ObjStm` are not enumerated — reported explicitly
+- [x] PDF moved out of the plugin registry into `hiewlm-office` (M6), where it gets the
+      document view instead of a member list: header (including data prepended before
+      `%PDF-`, a polyglot trick), indirect-object map with `/Type`, incremental updates,
+      `#hex`-escaped name obfuscation, and the active-content names from the rule table.
+      Streams are **not** decompressed, so objects inside `/ObjStm` are not enumerated —
+      reported explicitly
       rather than left as a silent blind spot.
 
 Activation: `hiewlmc --plugin zip|pdf|all …` (off unless named), `hiewlmc plugins` to list,

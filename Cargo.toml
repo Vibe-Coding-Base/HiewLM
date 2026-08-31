@@ -12,7 +12,6 @@ members = [
     "crates/hiewlm-cli",
     "crates/hiewlm-plugin",
     "crates/hiewlm-plugin-zip",
-    "crates/hiewlm-plugin-pdf",
 ]
 
 [workspace.package]

@@ -11,6 +11,7 @@ pub struct Hit {
     pub what: String,
     pub offset: u64,
     pub detail: String,
+    pub severity: hiewlm_core::Severity,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -24,19 +25,6 @@ pub fn is_rtf(bytes: &[u8]) -> bool {
     let head = &bytes[..bytes.len().min(16)];
     head.starts_with(b"{\\rt")
 }
-
-/// Control words worth reporting, with what they mean.
-const CONTROL_WORDS: &[(&str, &str)] = &[
-    ("\\objdata", "embedded object payload (hex-encoded)"),
-    ("\\objupdate", "object updates itself on open — no click required"),
-    ("\\objautlink", "auto-linked object"),
-    ("\\objocx", "embedded OCX control"),
-    ("\\objemb", "embedded object"),
-    ("\\objlink", "linked object (can be remote)"),
-    ("\\objhtml", "HTML object"),
-    ("\\datastore", "data store (used to smuggle payloads)"),
-    ("\\pntext", "list text (used for control-word obfuscation)"),
-];
 
 /// Case-insensitive search for an ASCII needle.
 fn find_ci(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
@@ -53,15 +41,17 @@ pub fn parse(bytes: &[u8]) -> Option<Rtf> {
     }
     let mut r = Rtf::default();
 
-    for (word, meaning) in CONTROL_WORDS {
+    // Control words and literals both come from the rule table.
+    for rule in crate::rules::rules("rtf") {
         let mut from = 0usize;
         let mut count = 0;
-        while let Some(at) = find_ci(bytes, word.as_bytes(), from) {
+        while let Some(at) = find_ci(bytes, rule.value.as_bytes(), from) {
             if count == 0 {
                 r.hits.push(Hit {
-                    what: (*word).to_string(),
+                    what: rule.value.clone(),
                     offset: at as u64,
-                    detail: (*meaning).to_string(),
+                    detail: rule.note.clone(),
+                    severity: rule.severity,
                 });
             }
             count += 1;
@@ -99,24 +89,8 @@ pub fn parse(bytes: &[u8]) -> Option<Rtf> {
         }
     }
 
-    // An embedded compound file shows up as its magic, hex-encoded in \objdata.
-    if let Some(at) = find_ci(bytes, b"d0cf11e0", 0) {
-        r.hits.push(Hit {
-            what: "OLE header in hex".into(),
-            offset: at as u64,
-            detail: "an embedded compound file (the payload) starts here".into(),
-        });
-    }
-    // DDE fields, the macro-less execution route.
-    for needle in ["DDEAUTO", "DDE "] {
-        if let Some(at) = find_ci(bytes, needle.as_bytes(), 0) {
-            r.hits.push(Hit {
-                what: needle.trim().to_string(),
-                offset: at as u64,
-                detail: "DDE field — executes without macros".into(),
-            });
-        }
-    }
+    // The hex-encoded OLE and MZ headers are rules in the table like everything
+    // else, so there is nothing special-cased here any more.
     r.hits.sort_by_key(|h| h.offset);
     Some(r)
 }
@@ -131,7 +105,7 @@ mod tests {
         let r = parse(doc).expect("rtf");
         assert!(r.hits.iter().any(|h| h.what == "\\objupdate"));
         assert!(r.hits.iter().any(|h| h.what == "\\objdata"));
-        assert!(r.hits.iter().any(|h| h.what == "OLE header in hex"));
+        assert!(r.hits.iter().any(|h| h.what == "d0cf11e0"), "{:?}", r.hits);
         assert_eq!(r.object_classes, vec!["Equation.3".to_string()]);
     }
 

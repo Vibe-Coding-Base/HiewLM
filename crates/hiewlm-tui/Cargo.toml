@@ -18,7 +18,6 @@ hiewlm-fmt = { path = "../hiewlm-fmt" }
 hiewlm-triage = { path = "../hiewlm-triage" }
 hiewlm-office = { path = "../hiewlm-office" }
 hiewlm-plugin-zip = { path = "../hiewlm-plugin-zip" }
-hiewlm-plugin-pdf = { path = "../hiewlm-plugin-pdf" }
 hiewlm-asm = { path = "../hiewlm-asm" }
 anyhow.workspace = true
 ratatui = "0.30"

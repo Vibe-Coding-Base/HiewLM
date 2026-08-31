@@ -152,6 +152,8 @@ Cùng quy tắc: đánh `[x]` ngay trong commit hoàn tất mục đó.
 | 6.5 | Tách `app.rs` (6355 dòng) thành module | [x] | `app/` gồm mod.rs 3233 + dialogs 581 + hunt 300 + triageview 180 + analysis 165 + help 165 + docview 137 + tests 1570. Dùng `impl super::App` ở module con — không phải nới rộng visibility ra ngoài crate |
 | 6.6 | Popup cuộn được cả ngang lẫn dọc (hiện text dài bị cắt cụt) | [x] | `←→` trong list/message popup, `Shift+←→` trong pane view (vì `←→` đã dùng để đổi pane), `<`/`>` trong Doc mode; mở popup mới thì về lề trái |
 | 6.7 | Cập nhật docs + test + clippy | [x] | 20 test binary xanh, clippy sạch |
+| 6.8 | Chuyển signature của Doc mode ra `data/documents.txt` + làm giàu | [x] | **210** chỉ dấu: OLE, OOXML, RTF, PDF, và 8 nhóm từ khoá VBA (autoexec/execution/download/memory/persistence/obfuscation/evasion/lure) |
+| 6.9 | Đưa PDF vào module document, bỏ `hiewlm-plugin-pdf` | [x] | PDF giờ có cây object + Doc mode thay vì danh sách member; thêm phát hiện tên bị escape `#hex`, nhiều header `%PDF-`, bản sửa đổi tăng dần. `--plugin pdf` vẫn nhận để không vỡ script cũ |
 
 ## Ghi chú về câu hỏi "tách thành .dll"
 

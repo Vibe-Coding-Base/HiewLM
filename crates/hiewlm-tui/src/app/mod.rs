@@ -463,7 +463,6 @@ impl App {
         let container = if format == Format::Raw {
             let mut reg = hiewlm_core::ContainerRegistry::new();
             reg.register(Box::new(hiewlm_plugin_zip::ZipPlugin));
-            reg.register(Box::new(hiewlm_plugin_pdf::PdfPlugin));
             reg.enable(&cfg.plugins());
             let cap = buffer.len().min(256 * 1024 * 1024) as usize;
             let mut data = vec![0u8; cap];

@@ -1,0 +1,236 @@
+# hiewLM — document indicator table (OLE2, OOXML, RTF, PDF, VBA).
+#
+#   kind | value | severity | note
+#
+# severity is `suspicious` or `info`. Matching is case-insensitive substring.
+#
+# kind:
+#   ole        a stream or storage name inside an OLE2 compound file
+#   ooxml      a part name inside an OOXML package
+#   rtf        an RTF control word or literal
+#   pdf        a PDF name object or literal
+#   vba-*      a VBA source keyword, grouped by what it means:
+#              vba-autoexec, vba-execution, vba-download, vba-obfuscation,
+#              vba-memory, vba-persistence, vba-evasion, vba-lure
+#
+# Copy to <config>/hiewlm/rules/documents.txt to replace it wholesale.
+
+# ── OLE2 compound documents ───────────────────────────────────────────────────
+ole | Macros | suspicious | VBA macro storage
+ole | _VBA_PROJECT | suspicious | VBA project
+ole | VBA/ | suspicious | VBA module storage
+ole | vbaProject | suspicious | VBA project
+ole | \x03VBFrame | suspicious | UserForm — often used to hide payload strings
+ole | ObjectPool | suspicious | embedded OLE objects
+ole | Ole10Native | suspicious | embedded native payload (Packager) — the dropped file
+ole | Package | suspicious | embedded package — often the dropped file
+ole | Equation Native | suspicious | Equation Editor object (CVE-2017-11882 / CVE-2018-0802)
+ole | Equation.3 | suspicious | Equation Editor object class
+ole | MSDraw | suspicious | embedded drawing object (historically exploited)
+ole | OLE2Link | suspicious | OLE2Link object (CVE-2017-0199)
+ole | otkloadr | suspicious | VB runtime loader — ASLR-bypass helper in exploit documents
+ole | EncryptedPackage | suspicious | encrypted document — content hidden from scanners
+ole | EncryptionInfo | suspicious | encryption header
+ole | DataSpaces | suspicious | agile encryption container
+ole | _SX_DB_CUR | suspicious | Excel 4.0 macro sheet
+ole | Ctls | suspicious | ActiveX controls
+ole | MsoDataStore | info | custom XML data store
+ole | WordDocument | info | Word document body
+ole | 1Table | info | Word table stream
+ole | 0Table | info | Word table stream
+ole | Workbook | info | Excel workbook body
+ole | Book | info | Excel workbook body (BIFF5)
+ole | PowerPoint Document | info | PowerPoint document body
+ole | Pictures | info | PowerPoint picture stream
+ole | Current User | info | PowerPoint user stream
+ole | SummaryInformation | info | document metadata
+ole | CompObj | info | object compatibility record
+ole | Contents | info | embedded object contents
+
+# ── OOXML packages ────────────────────────────────────────────────────────────
+ooxml | vbaProject.bin | suspicious | VBA macro project
+ooxml | vbaData.xml | suspicious | VBA data
+ooxml | macrosheets/ | suspicious | Excel 4.0 macro sheet (XLM) — runs without VBA
+ooxml | xl/macrosheet | suspicious | Excel 4.0 macro sheet (XLM)
+ooxml | activeX/ | suspicious | ActiveX control
+ooxml | embeddings/ | suspicious | embedded object
+ooxml | oleObject | suspicious | embedded OLE object
+ooxml | externalLinks/ | suspicious | external workbook link — can carry DDE
+ooxml | subDocument | suspicious | sub-document reference (can be remote)
+ooxml | .wmf | suspicious | WMF image (historically exploited image parser)
+ooxml | .emf | suspicious | EMF image (historically exploited image parser)
+ooxml | .eps | suspicious | EPS image (CVE-2017-0261 / CVE-2017-0262 vector)
+ooxml | AndroidManifest.xml | suspicious | this is an APK, not an Office document
+ooxml | classes.dex | suspicious | this is an APK, not an Office document
+ooxml | META-INF/MANIFEST.MF | suspicious | this is a JAR, not an Office document
+ooxml | customXml/ | info | custom XML part
+ooxml | printerSettings | info | printer settings blob
+ooxml | docProps/ | info | document properties
+ooxml | theme/ | info | theme part
+
+# ── RTF ───────────────────────────────────────────────────────────────────────
+rtf | \objdata | suspicious | embedded object payload (hex-encoded)
+rtf | \objupdate | suspicious | object updates itself on open — no click required
+rtf | \objautlink | suspicious | auto-linked object
+rtf | \objocx | suspicious | embedded OCX control
+rtf | \objlink | suspicious | linked object (can be remote)
+rtf | \objhtml | suspicious | HTML object
+rtf | \objemb | suspicious | embedded object
+rtf | \datastore | suspicious | data store — used to smuggle payloads
+rtf | \*\template | suspicious | remote template reference
+rtf | \wmetafile | suspicious | embedded metafile (historically exploited)
+rtf | \pntext | info | list text — a common control-word obfuscation carrier
+rtf | \bin | info | binary run — used to break up \objdata
+rtf | DDEAUTO | suspicious | DDE field — executes without macros
+rtf | DDE | suspicious | DDE field — executes without macros
+rtf | d0cf11e0 | suspicious | embedded compound file (the payload) in hex
+rtf | 4d5a9000 | suspicious | embedded PE header (MZ) in hex
+rtf | Equation.3 | suspicious | Equation Editor object class
+rtf | OLE2Link | suspicious | OLE2Link object (CVE-2017-0199)
+rtf | otkloadr | suspicious | VB runtime loader — ASLR-bypass helper
+rtf | Package | suspicious | Packager object — drops a file
+rtf | \fldinst | info | field instruction (DDE and links live here)
+
+# ── PDF ───────────────────────────────────────────────────────────────────────
+pdf | /JavaScript | suspicious | JavaScript action
+pdf | /JS | suspicious | JavaScript entry
+pdf | /OpenAction | suspicious | runs automatically when the document opens
+pdf | /AA | suspicious | additional (auto-triggered) actions
+pdf | /Launch | suspicious | launches an external application
+pdf | /EmbeddedFile | suspicious | embedded file payload
+pdf | /EmbeddedFiles | suspicious | embedded file name tree
+pdf | /Filespec | suspicious | file specification — points at an embedded or remote file
+pdf | /RichMedia | suspicious | embedded rich media (Flash)
+pdf | /JBIG2Decode | suspicious | JBIG2 decoder (CVE-2009-0658, and the FORCEDENTRY chain)
+pdf | /GoToE | suspicious | go-to-embedded action
+pdf | /GoToR | suspicious | remote go-to action
+pdf | /SubmitForm | suspicious | submits data to a remote endpoint
+pdf | /ImportData | suspicious | imports data from a file
+pdf | /XFA | suspicious | XFA form (script-capable)
+pdf | /U3D | suspicious | 3D content (historically exploited)
+pdf | /PRC | suspicious | 3D content (historically exploited)
+pdf | /Movie | suspicious | movie action (legacy, exploited)
+pdf | /Sound | suspicious | sound action (legacy, exploited)
+pdf | app.launchURL | suspicious | JavaScript opening a URL
+pdf | this.exportDataObject | suspicious | JavaScript dropping an embedded file
+pdf | util.printf | suspicious | JavaScript printf (CVE-2008-2992 heap spray)
+pdf | eval( | suspicious | JavaScript eval in the document
+pdf | unescape( | suspicious | JavaScript unescape — heap-spray shaping
+pdf | String.fromCharCode | suspicious | JavaScript string building — obfuscation
+pdf | /ObjStm | info | compressed object stream — hides objects from naive scanners
+pdf | /XRefStm | info | cross-reference stream
+pdf | /Encrypt | info | encrypted document
+pdf | /AcroForm | info | interactive form
+pdf | /URI | info | external link
+pdf | /Linearized | info | linearized for web view
+pdf | /Producer | info | producer metadata
+pdf | /Creator | info | creator metadata
+
+# ── VBA: what the macro does ──────────────────────────────────────────────────
+vba-autoexec | AutoOpen | suspicious | runs when the document opens
+vba-autoexec | AutoClose | suspicious | runs when the document closes
+vba-autoexec | AutoExec | suspicious | runs on start
+vba-autoexec | AutoNew | suspicious | runs for a new document
+vba-autoexec | AutoExit | suspicious | runs on exit
+vba-autoexec | Auto_Open | suspicious | runs when the workbook opens
+vba-autoexec | Auto_Close | suspicious | runs when the workbook closes
+vba-autoexec | Document_Open | suspicious | runs when the document opens
+vba-autoexec | Document_Close | suspicious | runs when the document closes
+vba-autoexec | Document_New | suspicious | runs for a new document
+vba-autoexec | DocumentBeforeClose | suspicious | runs before closing
+vba-autoexec | Workbook_Open | suspicious | runs when the workbook opens
+vba-autoexec | Workbook_Activate | suspicious | runs when the workbook activates
+vba-autoexec | Workbook_BeforeClose | suspicious | runs before closing
+vba-autoexec | Workbook_SheetChange | suspicious | runs on any sheet change
+vba-autoexec | Worksheet_Activate | suspicious | runs when the sheet activates
+vba-autoexec | Worksheet_Change | suspicious | runs on a cell change
+vba-autoexec | Worksheet_SelectionChange | suspicious | runs on selection
+vba-autoexec | Class_Initialize | suspicious | runs when the class is created
+vba-autoexec | UserForm_Initialize | suspicious | runs when the form loads
+vba-autoexec | UserForm_Activate | suspicious | runs when the form activates
+vba-autoexec | Frame_Layout | suspicious | runs on form layout — a quiet auto-run
+vba-autoexec | App_WorkbookOpen | suspicious | application-level open handler
+vba-autoexec | Application.OnTime | suspicious | schedules delayed execution
+vba-execution | Shell | suspicious | runs a program
+vba-execution | VBA.Shell | suspicious | runs a program
+vba-execution | WScript.Shell | suspicious | shell object
+vba-execution | Shell.Application | suspicious | shell automation object
+vba-execution | ShellExecute | suspicious | runs a program
+vba-execution | CreateObject | suspicious | instantiates an automation object
+vba-execution | GetObject | suspicious | binds an automation object
+vba-execution | Application.Run | suspicious | runs another macro
+vba-execution | .Exec( | suspicious | executes a command line
+vba-execution | .Run( | suspicious | runs a command
+vba-execution | winmgmts: | suspicious | WMI — process creation and discovery
+vba-execution | Win32_Process | suspicious | WMI process creation
+vba-execution | Win32_ProcessStartup | suspicious | WMI hidden-window startup
+vba-execution | DDEInitiate | suspicious | DDE execution
+vba-execution | powershell | suspicious | PowerShell command line
+vba-execution | cmd.exe | suspicious | command shell
+vba-execution | mshta | suspicious | mshta execution
+vba-execution | rundll32 | suspicious | rundll32 execution
+vba-execution | regsvr32 | suspicious | regsvr32 execution
+vba-execution | certutil | suspicious | certutil (download or decode)
+vba-execution | schtasks | suspicious | scheduled task creation
+vba-execution | ScriptControl | suspicious | script engine inside VBA
+vba-download | URLDownloadToFile | suspicious | downloads a file
+vba-download | XMLHTTP | suspicious | HTTP request object
+vba-download | ServerXMLHTTP | suspicious | HTTP request object
+vba-download | MSXML2 | suspicious | XML/HTTP component
+vba-download | WinHttp | suspicious | HTTP request object
+vba-download | WinHttpRequest | suspicious | HTTP request object
+vba-download | ADODB.Stream | suspicious | writes downloaded bytes to disk
+vba-download | SaveToFile | suspicious | writes a file
+vba-download | .responseBody | suspicious | reads the HTTP response body
+vba-download | Start-BitsTransfer | suspicious | BITS transfer
+vba-download | http:// | suspicious | URL in macro source
+vba-download | https:// | suspicious | URL in macro source
+vba-download | CopyHere | suspicious | shell copy — unpacks an archive
+vba-obfuscation | Chr( | info | character-code string building
+vba-obfuscation | ChrW( | info | character-code string building
+vba-obfuscation | Chr$( | info | character-code string building
+vba-obfuscation | StrReverse | suspicious | reversed strings
+vba-obfuscation | StrConv | info | string conversion
+vba-obfuscation | Xor | suspicious | XOR — decoding an embedded blob
+vba-obfuscation | Base64 | suspicious | base64 decoding
+vba-obfuscation | Execute | suspicious | executes generated code
+vba-obfuscation | ExecuteGlobal | suspicious | executes generated code
+vba-obfuscation | Eval( | suspicious | evaluates generated code
+vba-obfuscation | CallByName | suspicious | calls a method by name
+vba-obfuscation | Environ( | info | environment lookup
+vba-obfuscation | Array( | info | array literal — common in decoders
+vba-obfuscation | Join( | info | string joining — common in decoders
+vba-obfuscation | Mid( | info | substring — common in decoders
+vba-memory | VirtualAlloc | suspicious | allocates executable memory
+vba-memory | VirtualProtect | suspicious | makes memory executable
+vba-memory | RtlMoveMemory | suspicious | copies shellcode into place
+vba-memory | CreateThread | suspicious | starts a thread on the shellcode
+vba-memory | CreateRemoteThread | suspicious | injects into another process
+vba-memory | WriteProcessMemory | suspicious | writes into another process
+vba-memory | CallWindowProc | suspicious | calls an address as code
+vba-memory | DispCallFunc | suspicious | calls an arbitrary function pointer
+vba-memory | EnumSystemLanguageGroups | suspicious | callback used to execute shellcode
+vba-memory | EnumDateFormats | suspicious | callback used to execute shellcode
+vba-memory | SetTimer | suspicious | timer callback used to execute code
+vba-memory | Declare PtrSafe Function | suspicious | declares a Win32 API import
+vba-memory | Declare Function | suspicious | declares a Win32 API import
+vba-persistence | RegWrite | suspicious | writes a registry value
+vba-persistence | CurrentVersion\Run | suspicious | Run-key persistence
+vba-persistence | \Startup | suspicious | startup-folder persistence
+vba-persistence | SpecialFolders | suspicious | locates the startup folder
+vba-persistence | .lnk | suspicious | shortcut — persistence or lure
+vba-persistence | Scripting.FileSystemObject | suspicious | filesystem automation
+vba-evasion | On Error Resume Next | info | errors suppressed — common in droppers
+vba-evasion | Application.DisplayAlerts | info | suppresses prompts
+vba-evasion | Application.ScreenUpdating | info | hides what it is doing
+vba-evasion | Application.RecentFiles.Count | suspicious | sandbox check (a real user has recent files)
+vba-evasion | Win32_ComputerSystem | suspicious | VM fingerprinting
+vba-evasion | VIRTUAL | suspicious | VM name check
+vba-evasion | VMware | suspicious | VM name check
+vba-evasion | VirtualBox | suspicious | VM name check
+vba-evasion | Application.Wait | info | delay — outwaits a sandbox
+vba-evasion | Sleep | info | delay — outwaits a sandbox
+vba-evasion | Environ("username") | suspicious | analyst-username check
+vba-lure | Enable Content | suspicious | lure text asking the user to enable macros
+vba-lure | Enable Editing | suspicious | lure text asking the user to leave protected view
+vba-lure | macros must be enabled | suspicious | lure text

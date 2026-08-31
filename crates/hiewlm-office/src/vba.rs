@@ -91,55 +91,16 @@ pub fn decompress(data: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Keywords that decide whether a macro is worth reading in full. Split by what
-/// they mean, because "has macros" is not a verdict and "AutoOpen + Shell" is.
-const AUTO_EXEC: &[&str] = &[
-    "AutoOpen", "AutoClose", "AutoExec", "AutoNew", "AutoExit",
-    "Document_Open", "Document_Close", "Document_New", "DocumentBeforeClose",
-    "Workbook_Open", "Workbook_Activate", "Workbook_BeforeClose", "Auto_Open", "Auto_Close",
-];
-
-const EXECUTION: &[&str] = &[
-    "Shell", "WScript.Shell", "CreateObject", "GetObject", "Application.Run",
-    "ShellExecute", "VBA.CreateObject", "Wscript.Shell", "cmd.exe", "powershell",
-    "mshta", "rundll32", "regsvr32", "certutil", "WMI", "Win32_Process", "Create(",
-];
-
-const DOWNLOAD: &[&str] = &[
-    "URLDownloadToFile", "XMLHTTP", "WinHttp", "ServerXMLHTTP", "MSXML2",
-    "ADODB.Stream", "http://", "https://", "SaveToFile", "Open \"GET\"",
-];
-
-const OBFUSCATION: &[&str] = &[
-    "Chr(", "ChrW(", "StrReverse", "Xor ", "Base64", "Environ(", "Split(",
-    "Execute", "ExecuteGlobal", "Eval(", "CallByName", "Replace(",
-];
-
-const MEMORY: &[&str] = &[
-    "VirtualAlloc", "RtlMoveMemory", "CreateThread", "Declare PtrSafe Function",
-    "Declare Function", "CallWindowProc", "EnumWindows",
-];
-
-/// Every keyword group, with the label used in findings.
-fn keyword_groups() -> [(&'static str, &'static [&'static str]); 5] {
-    [
-        ("auto-exec", AUTO_EXEC),
-        ("execution", EXECUTION),
-        ("download", DOWNLOAD),
-        ("obfuscation", OBFUSCATION),
-        ("memory", MEMORY),
-    ]
-}
-
-/// The suspicious keywords present in a macro source, as `group:keyword`.
+/// The suspicious keywords present in a macro source, as `group:keyword`
+/// (`autoexec:AutoOpen`). Groups and keywords come from the rule table, so an
+/// analyst can add their family's giveaway without rebuilding.
 pub fn scan_keywords(source: &str) -> Vec<String> {
     let lower = source.to_ascii_lowercase();
     let mut out = Vec::new();
-    for (group, words) in keyword_groups() {
-        for w in words {
-            if lower.contains(&w.to_ascii_lowercase()) {
-                out.push(format!("{group}:{w}"));
-            }
+    for group in crate::rules::VBA_GROUPS {
+        let short = group.strip_prefix("vba-").unwrap_or(group);
+        for r in crate::rules::all_matches(group, &lower) {
+            out.push(format!("{short}:{}", r.value));
         }
     }
     out
@@ -220,9 +181,23 @@ mod tests {
     fn keyword_scan_groups_what_it_finds() {
         let src = "Sub AutoOpen()\n Shell \"powershell -enc AAA\"\n End Sub";
         let k = scan_keywords(src);
-        assert!(k.iter().any(|x| x == "auto-exec:AutoOpen"), "{k:?}");
+        assert!(k.iter().any(|x| x == "autoexec:AutoOpen"), "{k:?}");
         assert!(k.iter().any(|x| x.starts_with("execution:")));
         assert!(scan_keywords("Sub Nothing()\nEnd Sub").is_empty());
+    }
+
+    #[test]
+    fn keyword_groups_cover_the_modern_shapes() {
+        // A dropper that allocates memory, checks for a sandbox and asks the
+        // user to enable content should light up four different groups.
+        let src = "Private Declare PtrSafe Function VirtualAlloc Lib \"kernel32\" \n\
+                   If Application.RecentFiles.Count < 3 Then Exit Sub\n\
+                   MsgBox \"Please Enable Content to view this invoice\"\n\
+                   Set h = CreateObject(\"MSXML2.XMLHTTP\")";
+        let k = scan_keywords(src);
+        for group in ["memory:", "evasion:", "lure:", "download:", "execution:"] {
+            assert!(k.iter().any(|x| x.starts_with(group)), "missing {group} in {k:?}");
+        }
     }
 
     #[test]

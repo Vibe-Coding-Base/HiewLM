@@ -757,18 +757,6 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
                 .collect();
             ("Disassemble as (1-8)".into(), lines, 10)
         }
-        Dialog::Replace { input, kind } => {
-            let k = kind.label();
-            (
-                format!("Replace across folder ({k})"),
-                vec![
-                    Line::from(format!("Replacement: {input}_")),
-                    Line::from(""),
-                    Line::from(Span::raw("Tab hex/text · Enter replace-all (.bak backups) · Esc")),
-                ],
-                5,
-            )
-        }
         Dialog::ColorMenu { selected } => {
             let mut names: Vec<String> = (0..8)
                 .map(|i| format!("{}  {}", i + 1, Theme::marker_name(i)))

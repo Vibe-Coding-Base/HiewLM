@@ -95,7 +95,7 @@ M2 (beyond HIEW):
 - **Structure viewer** (`t`): a Kaitai-flavoured template DSL — `meta endian be`, per-field `le`/`be`, arrays (`u32[4]`), lengths that reference an earlier field (`char[namelen]`), `enum { 2=EXEC }` maps and `= value` validation. See `examples/elf_header.tpl`.
 - **PEStudio-like header** (`8`/`F8`): decoded header struct fields (magic, subsystem, decoded Characteristics/DllCharacteristics flags, alignments, versions…), **file + per-section entropy**, and a **Resources** pane (type/name/lang/size) with **`Enter` to extract** a resource to a file. Panes filter as you type.
 - **Data inspector** (`i`): int/float values at the cursor in both endians. **Block hashes** (`h`): CRC32/MD5/SHA-256/BLAKE3 over the selection or whole file (streamed).
-- **Named bookmarks** (`k`, unlimited) and **multi-file search** (`x`) across the folder — both listed with `Enter` to jump/open.
+- **Named bookmarks** (`k`, unlimited) and **multi-file search** (`x`) across the folder — both listed with `Enter` to jump/open. Rewriting a whole folder is a CLI-only operation (`hiewlmc replace <dir> --recursive`): it is deliberate work, not something a keystroke away from the keys you press all day.
 - **Themes** (`\`): HIEW Classic / dark / light. **Text encodings** (`E`): ASCII / CP437 / Latin-1.
 - File chooser: `c` (diff) and `t` (template) open a navigable **file browser**.
 
@@ -182,6 +182,7 @@ hiewlmc disasm  <file> [--at .VA] [--count N] [--arch x64]
 hiewlmc hex     <file> [--at ADDR] [--count N]
 hiewlmc search  <file> PATTERN [--hex]       # exit 1 if no match
 hiewlmc replace <file> FIND WITH [--hex]     # writes, .bak backup
+hiewlmc replace <dir>  FIND WITH --recursive # every file under the folder
 hiewlmc patch   <file> ADDR "90 90 c3"       # writes, .bak backup
 hiewlmc hash    <file>                       # CRC32/MD5/SHA-256/BLAKE3
 hiewlmc strings <file> [--min N] [--no-utf16] [--ioc]
@@ -238,7 +239,7 @@ progress and the remaining decisions live in
 
 M0 (done) · M1 (done) ·
 M2 (done: diff + split view, multi-arch disasm incl. WASM, recursive analysis/xref,
-more parsers incl. NLM, Kaitai-flavoured struct viewer, hashes, multi-file replace,
+more parsers incl. NLM, Kaitai-flavoured struct viewer, hashes, multi-file search,
 themes, data inspector, PEStudio-like header) ·
 **M3 (done: WASM plugins, container plugins (ZIP/PDF), Rhai scripting, headless CLI,
 process memory, packer detection, CFG view, text assembler)** — deferred: HEM native-DLL

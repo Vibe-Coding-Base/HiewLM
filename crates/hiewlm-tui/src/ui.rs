@@ -38,6 +38,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
         Mode::Hex => draw_hex(f, chunks[1], app, theme),
         Mode::Text => draw_text(f, chunks[1], app, theme),
         Mode::Code => draw_code(f, chunks[1], app, theme),
+        Mode::Doc => draw_doc(f, chunks[1], app, theme),
     }
     draw_fnbar(f, chunks[2], app, theme);
 
@@ -57,6 +58,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
                     &labels,
                     *sel,
                     filter,
+                    app.hscroll,
                     theme,
                 )
             }
@@ -69,21 +71,21 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
                     pane.label(),
                     tabs.join(" ")
                 );
-                draw_pane_list(f, area, &title, &entries, *sel, filter, theme)
+                draw_pane_list(f, area, &title, &entries, *sel, filter, app.hscroll, theme)
             }
             Dialog::JumpList { title, items, sel, filter } => {
-                draw_jump_list(f, area, title, items, *sel, filter, theme)
+                draw_jump_list(f, area, title, items, *sel, filter, app.hscroll, theme)
             }
             Dialog::FileHits { title, items, sel, filter } => {
                 let labels: Vec<(String, u64)> =
                     items.iter().map(|(l, _, o)| (l.clone(), *o)).collect();
-                draw_jump_list(f, area, title, &labels, *sel, filter, theme)
+                draw_jump_list(f, area, title, &labels, *sel, filter, app.hscroll, theme)
             }
             Dialog::FilePicker { dir, entries, sel, .. } => {
                 draw_file_picker(f, area, dir, entries, *sel, theme)
             }
             Dialog::Message { title, body, scroll } => {
-                draw_message(f, area, title, body, *scroll, theme)
+                draw_message(f, area, title, body, *scroll, app.hscroll, theme)
             }
             Dialog::Calc { input } => draw_calc(f, area, app, input, theme),
             Dialog::Assemble { input } => draw_assemble(f, area, app, input, theme),
@@ -138,6 +140,7 @@ fn draw_jump_list(
     items: &[(String, u64)],
     sel: usize,
     filter: &str,
+    hscroll: usize,
     theme: &Theme,
 ) {
     let width = 92.min(area.width.saturating_sub(2)).max(24);
@@ -169,10 +172,15 @@ fn draw_jump_list(
         format!("  [/{filter}]  {}/{}", view.len(), items.len())
     };
     let block = Block::default()
-        .title(format!(" {title}{filt}  (type=filter · ↑↓ PgUp/Dn · Enter jump · Esc) "))
+        .title(format!(
+            " {title}{filt}  (type=filter · ↑↓ PgUp/Dn · ←→ scroll · Enter jump · Esc) "
+        ))
         .borders(Borders::ALL)
         .style(theme.dialog());
-    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+    f.render_widget(
+        Paragraph::new(lines).block(block).style(theme.dialog()).scroll((0, hscroll as u16)),
+        rect,
+    );
 }
 
 /// The command palette: type words, pick a command.
@@ -220,6 +228,7 @@ fn draw_pane_list(
     entries: &[(String, Option<u64>)],
     sel: usize,
     filter: &str,
+    hscroll: usize,
     theme: &Theme,
 ) {
     let width = 110.min(area.width.saturating_sub(2)).max(24);
@@ -248,10 +257,15 @@ fn draw_pane_list(
     }
     let filt = if filter.is_empty() { String::new() } else { format!("[/{filter}] ") };
     let block = Block::default()
-        .title(format!("{title}{filt} (←→ pane · type=filter · Enter jump · Esc) "))
+        .title(format!(
+            "{title}{filt} (←→ pane · Shift+←→ scroll · type=filter · Enter jump · Esc) "
+        ))
         .borders(Borders::ALL)
         .style(theme.dialog());
-    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+    f.render_widget(
+        Paragraph::new(lines).block(block).style(theme.dialog()).scroll((0, hscroll as u16)),
+        rect,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -356,6 +370,63 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     );
     let para = Paragraph::new(Line::from(Span::styled(pad_line(&text, area.width), theme.status())));
     f.render_widget(para, area);
+}
+
+/// The document view: a Cerbero-style structure browser in the main window.
+///
+/// One line per node, the selected one highlighted, panes across the top. Rows
+/// carrying a file offset are navigable with Enter, which is the reason to show
+/// structure inside a hex editor at all.
+fn draw_doc(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+    let Some(doc) = &app.document else {
+        let lines = vec![
+            Line::from(""),
+            Line::from(Span::raw("  Not an Office document.")),
+            Line::from(Span::raw("  Doc mode reads OLE2 (.doc/.xls/.ppt), OOXML (.docx/.xlsx/.pptx) and RTF.")),
+        ];
+        f.render_widget(Paragraph::new(lines).style(theme.base()), area);
+        return;
+    };
+
+    let rows = app.doc_rows();
+    let body_height = area.height.saturating_sub(1) as usize;
+    let first = if app.doc_sel >= body_height && body_height > 0 {
+        app.doc_sel - body_height + 1
+    } else {
+        0
+    };
+
+    // Pane bar, with the active pane highlighted.
+    let mut tabs: Vec<Span> = vec![Span::styled(
+        format!(" {} ", doc.format),
+        theme.status(),
+    )];
+    for p in crate::app::DocPane::ALL {
+        let style = if p == app.doc_pane { theme.selection() } else { theme.bar() };
+        tabs.push(Span::styled(format!(" {} ", p.label()), style));
+    }
+    let flagged = doc.suspicious_count();
+    if flagged > 0 {
+        tabs.push(Span::styled(format!("  {flagged} SUSPICIOUS "), theme.warn()));
+    }
+
+    let mut lines = vec![Line::from(tabs)];
+    for (i, (label, jump)) in rows.iter().enumerate().skip(first).take(body_height) {
+        let style = if i == app.doc_sel {
+            theme.selection()
+        } else if is_warn_row(label) {
+            theme.warn()
+        } else if jump.is_some() {
+            Style::default().fg(theme.fg)
+        } else {
+            Style::default().fg(theme.ascii_other)
+        };
+        lines.push(Line::from(Span::styled(label.clone(), style)));
+    }
+    f.render_widget(
+        Paragraph::new(lines).style(theme.base()).scroll((0, app.hscroll as u16)),
+        area,
+    );
 }
 
 fn draw_hex(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
@@ -654,6 +725,8 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     const HEX_EXTRA: &[(&str, &str)] =
         &[("*", "Mark"), ("b", "Blk"), ("s", "Str"), ("R", "Yara"), ("Y", "Copy")];
     const TEXT_EXTRA: &[(&str, &str)] = &[("E", "Enc"), ("s", "Str"), ("*", "Mark")];
+    const DOC_EXTRA: &[(&str, &str)] =
+        &[("←→", "Pane"), ("↑↓", "Row"), ("Enter", "Goto"), ("<>", "Scroll")];
     const TAIL: &[(&str, &str)] = &[("F12", "Names"), ("q", "Quit")];
 
     let mut owned: Vec<(&str, &str)>;
@@ -664,6 +737,7 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         owned.extend_from_slice(match app.mode {
             Mode::Code => CODE_EXTRA,
             Mode::Text => TEXT_EXTRA,
+            Mode::Doc => DOC_EXTRA,
             Mode::Hex => HEX_EXTRA,
         });
         owned.extend_from_slice(TAIL);
@@ -932,7 +1006,16 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
 
 /// A scrollable read-only text box (help / inspector / hashes), sized to its
 /// content and clamped to the screen.
-fn draw_message(f: &mut Frame, area: Rect, title: &str, body: &str, scroll: usize, theme: &Theme) {
+#[allow(clippy::too_many_arguments)]
+fn draw_message(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    body: &str,
+    scroll: usize,
+    hscroll: usize,
+    theme: &Theme,
+) {
     let lines: Vec<&str> = body.lines().collect();
     let content_w = lines
         .iter()
@@ -953,10 +1036,16 @@ fn draw_message(f: &mut Frame, area: Rect, title: &str, body: &str, scroll: usiz
         .map(|s| Line::from(s.to_string()))
         .collect();
 
-    let bar = if max_scroll > 0 {
-        format!("  [{}/{}] ↑↓ scroll", scroll + 1, max_scroll + 1)
-    } else {
-        String::new()
+    // A line wider than the box is the common case for a report or a long
+    // string, so say that sideways scrolling exists rather than truncating
+    // silently.
+    let widest = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let clipped = widest + 2 > width as usize;
+    let bar = match (max_scroll > 0, clipped) {
+        (true, true) => format!("  [{}/{}] ↑↓ ←→ scroll", scroll + 1, max_scroll + 1),
+        (true, false) => format!("  [{}/{}] ↑↓ scroll", scroll + 1, max_scroll + 1),
+        (false, true) => "  ←→ scroll".to_string(),
+        (false, false) => String::new(),
     };
     let rect = centered(area, width, height);
     f.render_widget(Clear, rect);
@@ -964,7 +1053,10 @@ fn draw_message(f: &mut Frame, area: Rect, title: &str, body: &str, scroll: usiz
         .title(format!(" {title}{bar}  (Esc) "))
         .borders(Borders::ALL)
         .style(theme.dialog());
-    f.render_widget(Paragraph::new(view).block(block).style(theme.dialog()), rect);
+    f.render_widget(
+        Paragraph::new(view).block(block).style(theme.dialog()).scroll((0, hscroll as u16)),
+        rect,
+    );
 }
 
 /// The 64-bit calculator (Alt+=): live evaluation shown in hex/dec/oct/bin.

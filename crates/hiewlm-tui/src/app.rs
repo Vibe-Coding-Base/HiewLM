@@ -38,15 +38,21 @@ pub enum Mode {
     Hex,
     Code,
     Text,
+    /// Document structure: OLE storages, OOXML parts, RTF objects, macros.
+    /// Only reachable when a document parser claimed the file.
+    Doc,
 }
 
 impl Mode {
-    /// HIEW's cycle: Hex -> Code -> Text -> Hex (the Enter key).
+    /// HIEW's cycle: Hex -> Code -> Text -> (Doc) -> Hex (the Enter key).
+    /// Doc is in the cycle only for files that have a structure to show; the
+    /// caller skips it otherwise.
     fn next(self) -> Self {
         match self {
             Mode::Hex => Mode::Code,
             Mode::Code => Mode::Text,
-            Mode::Text => Mode::Hex,
+            Mode::Text => Mode::Doc,
+            Mode::Doc => Mode::Hex,
         }
     }
 
@@ -55,6 +61,7 @@ impl Mode {
             Mode::Hex => "hex",
             Mode::Code => "code",
             Mode::Text => "text",
+            Mode::Doc => "doc",
         }
     }
 }
@@ -138,6 +145,39 @@ impl HeaderPane {
             HeaderPane::Exports => "Exports",
             HeaderPane::Resources => "Resources",
         }
+    }
+}
+
+/// Panes of the document view, in tab order.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DocPane {
+    Structure,
+    Findings,
+    Macros,
+    Info,
+}
+
+impl DocPane {
+    pub const ALL: [DocPane; 4] =
+        [DocPane::Structure, DocPane::Findings, DocPane::Macros, DocPane::Info];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DocPane::Structure => "Structure",
+            DocPane::Findings => "Findings",
+            DocPane::Macros => "Macros",
+            DocPane::Info => "Info",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|&p| p == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+
+    pub fn prev(self) -> Self {
+        let i = Self::ALL.iter().position(|&p| p == self).unwrap_or(0);
+        Self::ALL[(i + Self::ALL.len() - 1) % Self::ALL.len()]
     }
 }
 
@@ -232,6 +272,14 @@ pub struct App {
     /// Parsed container structure (ZIP/PDF), when a container plugin claimed
     /// the file. Members are listed by F12 instead of recovered functions.
     pub container: Option<hiewlm_core::Container>,
+    /// Parsed document structure, when the file is an Office document.
+    pub document: Option<hiewlm_office::Document>,
+    pub doc_pane: DocPane,
+    pub doc_sel: usize,
+    /// Horizontal scroll for every list-shaped view and popup. Long lines used
+    /// to be truncated at the panel edge, which silently hid the end of exactly
+    /// the strings worth reading.
+    pub hscroll: usize,
     /// Content key (SHA-256 of the sample) the persistent notes hang off, so
     /// renaming or moving the file never loses an hour of annotation.
     notes_key: String,
@@ -408,6 +456,15 @@ impl App {
             None
         };
 
+        // Documents are parsed up front: it is cheap, and whether a file is a
+        // macro-bearing document decides the whole session.
+        let document = {
+            let cap = buffer.len().min(64 * 1024 * 1024) as usize;
+            let mut data = vec![0u8; cap];
+            buffer.read_at(FileOffset(0), &mut data);
+            hiewlm_office::parse(&data)
+        };
+
         let ready = match &restored {
             Some(summary) => format!("Notes restored: {summary}  ·  1/? help · 2 triage · q quit"),
             None => String::new(),
@@ -463,6 +520,10 @@ impl App {
             search_history: Vec::new(),
             search_hist_pos: 0,
             default_yara_rules: cfg.yara_rules.clone(),
+            document,
+            doc_pane: DocPane::Structure,
+            doc_sel: 0,
+            hscroll: 0,
             lens: None,
             triage: None,
             file_entropy: None,
@@ -907,6 +968,134 @@ impl App {
             })
             .collect();
         hex_bytes(&md5::Md5::digest(parts.join(",").as_bytes()))
+    }
+
+    // -- Document view ---------------------------------------------------
+
+    pub fn doc_supported(&self) -> bool {
+        self.document.is_some()
+    }
+
+    /// The rows of the current document pane: label plus an optional offset to
+    /// navigate to, the same shape every other list in hiewLM uses.
+    pub fn doc_rows(&self) -> Vec<(String, Option<u64>)> {
+        let Some(d) = &self.document else {
+            return vec![("(not a document)".into(), None)];
+        };
+        match self.doc_pane {
+            DocPane::Structure => {
+                if d.nodes.is_empty() {
+                    return vec![("(no structure)".into(), None)];
+                }
+                d.nodes
+                    .iter()
+                    .map(|n| {
+                        let indent = "  ".repeat(n.depth.min(8));
+                        let size = if n.size > 0 { format!("{:>9}", n.size) } else { "         ".into() };
+                        let detail = if n.detail.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  {}", n.detail)
+                        };
+                        let warn = matches!(n.kind, "macro" | "object");
+                        (
+                            format!(
+                                "{}{:<8} {size}  {indent}{}{detail}",
+                                if warn { "!" } else { " " },
+                                n.kind,
+                                n.path
+                            ),
+                            n.file_off,
+                        )
+                    })
+                    .collect()
+            }
+            DocPane::Findings => {
+                if d.findings.is_empty() {
+                    return vec![("(nothing flagged)".into(), None)];
+                }
+                d.findings
+                    .iter()
+                    .map(|f| {
+                        let warn = f.severity == hiewlm_core::Severity::Suspicious;
+                        (
+                            format!("{}[{}] {}", if warn { "!" } else { " " }, f.severity, f.message),
+                            f.offset,
+                        )
+                    })
+                    .collect()
+            }
+            DocPane::Macros => {
+                if d.macros.is_empty() {
+                    return vec![("(no VBA macros)".into(), None)];
+                }
+                let mut rows = Vec::new();
+                for m in &d.macros {
+                    rows.push((format!("── {} ──", m.path), None));
+                    if !m.keywords.is_empty() {
+                        rows.push((format!("!  keywords: {}", m.keywords.join(", ")), None));
+                    }
+                    for line in m.source.lines() {
+                        rows.push((format!("   {line}"), None));
+                    }
+                    rows.push((String::new(), None));
+                }
+                rows
+            }
+            DocPane::Info => {
+                let mut rows = vec![
+                    (format!("{:<16} {}", "Format", d.format), None),
+                    (format!("{:<16} {}", "Container", d.kind.label()), None),
+                    (format!("{:<16} {}", "Nodes", d.nodes.len()), None),
+                    (
+                        format!("{:<16} {} ({} suspicious)", "Findings", d.findings.len(), d.suspicious_count()),
+                        None,
+                    ),
+                    (format!("{:<16} {}", "VBA modules", d.macros.len()), None),
+                ];
+                for (k, v) in &d.metadata {
+                    rows.push((format!("{k:<16} {v}"), None));
+                }
+                if d.external.is_empty() {
+                    rows.push((format!("{:<16} none", "External refs"), None));
+                } else {
+                    rows.push((format!("{:<16}", "External refs"), None));
+                    for e in &d.external {
+                        rows.push((format!("!  {e}"), None));
+                    }
+                }
+                rows
+            }
+        }
+    }
+
+    /// Scroll sideways, in columns. Bounded so it cannot scroll into nothing.
+    pub fn hscroll_by(&mut self, delta: i64) {
+        const MAX: i64 = 4096;
+        self.hscroll = (self.hscroll as i64 + delta).clamp(0, MAX) as usize;
+        if self.hscroll == 0 && delta < 0 {
+            self.set_status("Left edge.");
+        }
+    }
+
+    fn doc_move(&mut self, delta: i64) {
+        let last = self.doc_rows().len().saturating_sub(1) as i64;
+        self.doc_sel = (self.doc_sel as i64 + delta).clamp(0, last) as usize;
+    }
+
+    fn doc_activate(&mut self) {
+        let rows = self.doc_rows();
+        match rows.get(self.doc_sel) {
+            Some((label, Some(off))) => {
+                let (off, label) = (*off, label.clone());
+                self.record_jump();
+                self.mode = Mode::Hex;
+                self.move_to(off);
+                self.set_status(format!("→ {}  {}", self.display_addr(off), label.trim()));
+            }
+            Some(_) => self.set_status("This row is not a location in the file."),
+            None => {}
+        }
     }
 
     // -- Stack strings ---------------------------------------------------
@@ -3130,6 +3319,12 @@ impl App {
         self.status = msg.into();
     }
 
+    /// Every dialog opens at the left edge; carrying a scroll offset from the
+    /// previous popup into a new one is never what the user meant.
+    fn reset_hscroll(&mut self) {
+        self.hscroll = 0;
+    }
+
     // -- Key dispatch ------------------------------------------------
 
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -3170,6 +3365,14 @@ impl App {
         match dialog {
             Dialog::Message { title, body, scroll } => match key.code {
                 Esc | Enter | Char('q') => {}
+                Left => {
+                    self.hscroll_by(-8);
+                    self.dialog = Some(Dialog::Message { title, body, scroll });
+                }
+                Right => {
+                    self.hscroll_by(8);
+                    self.dialog = Some(Dialog::Message { title, body, scroll });
+                }
                 Up => self.dialog = Some(Dialog::Message { title, body, scroll: scroll.saturating_sub(1) }),
                 Down => self.dialog = Some(Dialog::Message { title, body, scroll: scroll + 1 }),
                 PageUp => self.dialog = Some(Dialog::Message { title, body, scroll: scroll.saturating_sub(10) }),
@@ -3439,6 +3642,8 @@ impl App {
                     PageDown => sel = (sel + LIST_PAGE).min(last),
                     Home => sel = 0,
                     End => sel = last,
+                    Left => self.hscroll_by(-8),
+                    Right => self.hscroll_by(8),
                     Enter => {
                         chosen = view.get(sel).map(|&i| {
                             let (_, off, recipe) = &items[i];
@@ -3525,6 +3730,9 @@ impl App {
                     PageDown => sel = (sel + LIST_PAGE).min(last),
                     Home => sel = 0,
                     End => sel = last,
+                    // Long lines are read by scrolling, not by guessing.
+                    Left => self.hscroll_by(-8),
+                    Right => self.hscroll_by(8),
                     Enter => {
                         open = view.get(sel).map(|&i| {
                             let (_, path, off) = &items[i];
@@ -3598,6 +3806,9 @@ impl App {
                     PageDown => sel = (sel + LIST_PAGE).min(last),
                     Home => sel = 0,
                     End => sel = last,
+                    // Long lines are read by scrolling, not by guessing.
+                    Left => self.hscroll_by(-8),
+                    Right => self.hscroll_by(8),
                     Enter => {
                         jump = view.get(sel).map(|&i| items[i].1);
                         close = true;
@@ -3633,6 +3844,8 @@ impl App {
                 let mut activate = false;
                 let mut close = false;
                 match key.code {
+                    Right if key.modifiers.contains(KeyModifiers::SHIFT) => self.hscroll_by(8),
+                    Left if key.modifiers.contains(KeyModifiers::SHIFT) => self.hscroll_by(-8),
                     Tab | Right => {
                         pane = pane.next();
                         sel = 0;
@@ -3676,6 +3889,16 @@ impl App {
                 let len = self.header_entries(pane, &filter).len().max(1);
                 match key.code {
                     // Panes switch with arrows/Tab so letters stay free for filtering.
+                    // Left/Right belong to the panes here, so Shift+arrows
+                    // scroll a long row sideways.
+                    Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        self.hscroll_by(8);
+                        self.dialog = Some(Dialog::Header { pane, sel, filter });
+                    }
+                    Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        self.hscroll_by(-8);
+                        self.dialog = Some(Dialog::Header { pane, sel, filter });
+                    }
                     Tab | Right => {
                         self.dialog = Some(Dialog::Header { pane: pane.next(), sel: 0, filter })
                     }
@@ -3710,6 +3933,9 @@ impl App {
     // -- Command dispatch --------------------------------------------
 
     pub fn apply(&mut self, cmd: Command) {
+        // A popup opens at the left edge: carrying the previous one's sideways
+        // scroll into it is never what the user meant.
+        let had_dialog = self.dialog.is_some();
         match cmd {
             Command::Quit => self.should_quit = true,
             Command::Escape => {
@@ -3732,6 +3958,10 @@ impl App {
             }
             Command::CycleMode => {
                 self.mode = self.mode.next();
+                // Doc is only in the cycle for files that have one.
+                if self.mode == Mode::Doc && !self.doc_supported() {
+                    self.mode = self.mode.next();
+                }
                 if self.mode == Mode::Code && self.code_supported() {
                     self.enter_code();
                 }
@@ -3741,6 +3971,11 @@ impl App {
                 self.set_status("Pick mode: 1 Hex · 2 Code · 3 Text · Enter/arrows · Esc");
             }
             Command::SetMode(m) => {
+                if m == Mode::Doc && !self.doc_supported() {
+                    self.dialog = None;
+                    self.set_status("Not an Office document (no OLE, OOXML or RTF structure).");
+                    return;
+                }
                 self.mode = m;
                 self.dialog = None;
                 if self.mode == Mode::Code && self.code_supported() {
@@ -3889,6 +4124,14 @@ impl App {
             Command::XorSearch => self.xor_search(),
             Command::XorKey => self.xor_key(),
             Command::StackStrings => self.open_stack_strings(),
+            Command::DocMove(d) => self.doc_move(d),
+            Command::DocPageMove(d) => self.doc_move(d * LIST_PAGE as i64),
+            Command::DocPane(d) => {
+                self.doc_pane = if d > 0 { self.doc_pane.next() } else { self.doc_pane.prev() };
+                self.doc_sel = 0;
+            }
+            Command::DocActivate => self.doc_activate(),
+            Command::HScroll(d) => self.hscroll_by(d),
             Command::OpenBlockFill => {
                 if self.selection().is_some() {
                     self.dialog = Some(Dialog::BlockFill { input: String::new() });
@@ -4023,6 +4266,9 @@ impl App {
                 }
             }
         }
+        if !had_dialog && self.dialog.is_some() {
+            self.reset_hscroll();
+        }
         self.ensure_visible();
     }
 }
@@ -4070,6 +4316,13 @@ pub enum Command {
     XorKey,
     /// `Alt+S`: rebuild strings this function assembles on the stack.
     StackStrings,
+    /// Document view: move the selection, switch pane, follow a node.
+    DocMove(i64),
+    DocPageMove(i64),
+    DocPane(i64),
+    DocActivate,
+    /// Scroll the current list or popup sideways.
+    HScroll(i64),
     BlockCopy,
     BlockMove,
     BlockInsert,
@@ -4176,11 +4429,12 @@ fn mode_index(m: Mode) -> usize {
         Mode::Hex => 0,
         Mode::Code => 1,
         Mode::Text => 2,
+        Mode::Doc => 3,
     }
 }
 
 pub fn mode_at(i: usize) -> Mode {
-    [Mode::Hex, Mode::Code, Mode::Text][i % 3]
+    [Mode::Hex, Mode::Code, Mode::Text, Mode::Doc][i % 4]
 }
 
 /// A number with HIEW-style base prefix/suffix: hex by default; `0x`/`h` hex,
@@ -4603,6 +4857,37 @@ mod tests {
         let mut a = app();
         a.handle_key(KeyEvent::from(KeyCode::Char('m')));
         assert!(matches!(a.dialog, Some(Dialog::ModeMenu { .. })));
+    }
+
+    #[test]
+    fn long_rows_scroll_sideways_instead_of_being_cut_off() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        let mut a = app();
+        // A string far wider than any popup.
+        let long: String = "A".repeat(400);
+        a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(
+            format!("\0{long}\0").into_bytes(),
+        )));
+        a.apply(Command::OpenStrings);
+        assert!(matches!(a.dialog, Some(Dialog::JumpList { .. })));
+        assert_eq!(a.hscroll, 0, "a popup opens at the left edge");
+
+        a.handle_key(KeyEvent::from(KeyCode::Right));
+        a.handle_key(KeyEvent::from(KeyCode::Right));
+        assert_eq!(a.hscroll, 16);
+        a.handle_key(KeyEvent::from(KeyCode::Left));
+        assert_eq!(a.hscroll, 8);
+        // It cannot scroll off the left edge.
+        for _ in 0..5 {
+            a.handle_key(KeyEvent::from(KeyCode::Left));
+        }
+        assert_eq!(a.hscroll, 0);
+
+        // Opening the next popup starts from the left again.
+        a.handle_key(KeyEvent::from(KeyCode::Right));
+        a.handle_key(KeyEvent::from(KeyCode::Esc));
+        a.apply(Command::Help);
+        assert_eq!(a.hscroll, 0);
     }
 
     #[test]

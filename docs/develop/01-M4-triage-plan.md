@@ -151,7 +151,7 @@ Cùng quy tắc: đánh `[x]` ngay trong commit hoàn tất mục đó.
 | 6.4 | Module parse Office (OLE/CFB + OOXML) + mode mới trên TUI | [x] | crate `hiewlm-office`: OLE2/CFB, OOXML (có inflate), RTF, giải nén VBA (MS-OVBA). Mode `Doc` trong TUI (4 pane, Enter nhảy tới offset), `hiewlmc office`, và findings được đưa vào triage |
 | 6.5 | Tách `app.rs` (6355 dòng) thành module | [x] | `app/` gồm mod.rs 3233 + dialogs 581 + hunt 300 + triageview 180 + analysis 165 + help 165 + docview 137 + tests 1570. Dùng `impl super::App` ở module con — không phải nới rộng visibility ra ngoài crate |
 | 6.6 | Popup cuộn được cả ngang lẫn dọc (hiện text dài bị cắt cụt) | [x] | `←→` trong list/message popup, `Shift+←→` trong pane view (vì `←→` đã dùng để đổi pane), `<`/`>` trong Doc mode; mở popup mới thì về lề trái |
-| 6.7 | Cập nhật docs + test + clippy | [ ] | |
+| 6.7 | Cập nhật docs + test + clippy | [x] | 20 test binary xanh, clippy sạch |
 
 ## Ghi chú về câu hỏi "tách thành .dll"
 

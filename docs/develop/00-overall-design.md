@@ -985,6 +985,7 @@ Maps HiewGate's spirit but safely:
 | **M3** (ecosystem) | WASM/Lua plugins, CLI batch, HEM shim, GUI wrapper, process memory, packer detect, CFG view | An extensible, community platform. |
 | **M4** (triage-first) | Triage screen + `hiewlmc triage`, strings/IOC extraction, import capability scoring, PE anomalies (overlay/TLS/debug/Authenticode), ssdeep, YARA, XOR lens & key hunt, annotated disassembly, folder queue, command palette, real write lock | Fast initial malware classification, not just inspection. |
 | **M5** (keep the work) | Notes keyed by content hash, ELF/Mach-O structural checks, repeating-XOR key recovery, stack-string reconstruction, Markdown reports | Analysis survives the session, and non-Windows samples get the same scrutiny. |
+| **M6** (documents & packaging) | Office analysis (OLE2/OOXML/RTF + VBA decompression) as a fourth view mode, detection rules in overridable data files, opt-in heavy dependencies, `app.rs` split by concern, popups that scroll sideways | Documents get the same treatment as executables, and the rules are maintainable by an analyst rather than only by a compiler. |
 
 Principle: each milestone is a usable release; the core is always separated from the
 UI to avoid technical debt when adding a GUI.

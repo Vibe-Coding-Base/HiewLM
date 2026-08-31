@@ -16,6 +16,8 @@ TRIAGE  (start here)
   R                             YARA scan (rule file or folder)
   Alt+X                         find plaintext hidden behind a 1-byte key
   Alt+K                         recover a repeating XOR key from the block
+  Rules for the API, packer and indicator tables live in data files:
+  see `hiewlmc rules` for what is loaded and how to override it.
   Alt+S                         rebuild strings this function builds on the
                                 stack (mov [rbp-x], 'h' ... — invisible to
                                 `strings`)
@@ -35,8 +37,11 @@ NAVIGATE
   H                             jump history
 
 VIEW
-  Enter                         cycle Hex / Code / Text
+  Enter                         cycle Hex / Code / Text / Doc
   m  or  4                      mode menu
+  In every popup: type to filter, up/down to scroll, and left/right to
+  scroll sideways when a line is wider than the box (Shift+arrows in the
+  header and triage views, whose arrows switch panes).
   Alt+A                         toggle offset / VA
   \\                             cycle theme
   E                             cycle text encoding
@@ -76,6 +81,15 @@ CODE  (disassembly)
   ;                             add / edit comment
   Instructions are annotated with the API they call and the string they
   point at, and are disassembled through the lens when one is set.
+
+DOCUMENT  (Office files: OLE2 .doc/.xls/.ppt, OOXML .docx/..., RTF)
+  Enter or 4                    Doc mode, when the file is a document
+  arrows                        left/right switch pane, up/down move
+  Enter                         jump to that part's bytes
+  < / >                         scroll a long row sideways
+  Panes: Structure (storages, parts, objects) · Findings · Macros
+  (decompressed VBA source and its keywords) · Info (metadata,
+  external references such as a remote template).
 
 ANALYSIS
   8  or  F8                     header view (info / sections / imports /

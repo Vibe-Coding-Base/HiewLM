@@ -100,6 +100,14 @@ enum Cmd {
         #[arg(long, default_value_t = 32)]
         max_len: usize,
     },
+    /// Show the detection rule tables: how many rules are loaded, where they
+    /// came from, and how to override them.
+    Rules {
+        /// Print a table's contents instead of the summary (apis, packers,
+        /// indicators) — the starting point for your own copy.
+        #[arg(long)]
+        dump: Option<String>,
+    },
     /// List the container plugins compiled in.
     Plugins,
     /// Hex + ASCII dump.
@@ -234,6 +242,7 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
     use std::process::ExitCode;
     let out = match cmd {
         Cmd::Plugins => cmd_plugins()?,
+        Cmd::Rules { dump } => cmd_rules(dump.as_deref())?,
         Cmd::Xorkey { file, at, count, max_len } => cmd_xorkey(&file, &at, count, max_len)?,
         Cmd::Yara { file, rules, fail_on_match } => {
             let (text, matched) = cmd_yara(&file, &rules)?;
@@ -854,6 +863,40 @@ fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String
     Ok(s)
 }
 
+fn cmd_rules(dump: Option<&str>) -> Result<String> {
+    use hiewlm_core::ruledata;
+    if let Some(name) = dump {
+        return ruledata::builtin(name)
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("no such table '{name}'; try: {}", ruledata::builtin_names().join(", ")));
+    }
+    let mut out = String::new();
+    for name in ruledata::builtin_names() {
+        let rows = ruledata::table(name, 2).len();
+        let src = match ruledata::override_path(name) {
+            Some(p) => format!("{}", p.display()),
+            None => "built in".to_string(),
+        };
+        out.push_str(&format!("{name:<12} {rows:>5} rules   {src}\n"));
+    }
+    out.push_str(&format!(
+        "\nAPI rules parsed: {}\nPacker rules parsed: {}\n",
+        hiewlm_core::apiscore::rule_count(),
+        hiewlm_core::packer::rule_count()
+    ));
+    for (kind, n) in hiewlm_core::strings::vocab_counts() {
+        out.push_str(&format!("  {kind:<10} {n}\n"));
+    }
+    match ruledata::rules_dir() {
+        Some(d) => out.push_str(&format!(
+            "\nOverride a table by putting <name>.txt in {}\n(`hiewlmc rules --dump apis > apis.txt` gives you a starting point).\n",
+            d.display()
+        )),
+        None => out.push_str("\nNo config directory found for rule overrides.\n"),
+    }
+    Ok(out)
+}
+
 fn cmd_xorkey(file: &Path, at: &str, count: u64, max_len: usize) -> Result<String> {
     let (buf, model) = open(file)?;
     let start = parse_addr(at, &model)?;
@@ -1084,7 +1127,8 @@ fn packer_report(
             }
         })
         .collect();
-    hiewlm_core::packer::detect(&entry, &sections, m.imports.len())
+    // `data` is the whole image: build markers can be anywhere in it.
+    hiewlm_core::packer::detect(&entry, &sections, m.imports.len(), &data)
 }
 
 fn cmd_packer(file: &Path) -> Result<String> {

@@ -1,0 +1,108 @@
+# hiewLM — packer, protector, installer and runtime identification.
+#
+#   type | kind | name | value
+#
+# type:
+#   sig      value is an entry-point byte pattern, `??` is a wildcard byte
+#   section  value is a section-name substring, matched case-insensitively
+#   marker   value is ASCII text that appears anywhere in the file
+#
+# kind tells the analyst what the match *means*, which decides how much it
+# should worry them:
+#   packer     compresses the real image (UPX, ASPack)
+#   protector  actively resists analysis (Themida, VMProtect)
+#   obfuscator transforms managed code (ConfuserEx, .NET Reactor)
+#   installer  a self-extracting installer (NSIS, Inno, SFX archives)
+#   runtime    a language runtime bundle, benign in itself (PyInstaller, Go)
+#
+# A `runtime` match is not suspicious on its own — but knowing a sample is a
+# PyInstaller bundle changes what you do next, which is the whole point.
+
+# ── Entry-point signatures ────────────────────────────────────────────────────
+sig | packer    | UPX                | 60 BE ?? ?? ?? ?? 8D BE
+sig | packer    | UPX                | 60 BE ?? ?? ?? ?? 8D BD
+sig | packer    | FSG                | 87 25 ?? ?? ?? ?? 61 94
+sig | packer    | ASPack             | 60 E8 03 00 00 00 E9 EB
+sig | packer    | ASPack             | 60 E8 ?? ?? ?? ?? 5D 81 ED
+sig | packer    | PECompact          | B8 ?? ?? ?? ?? 50 64 FF 35
+sig | packer    | MEW                | E9 ?? ?? ?? ?? ?? ?? 00 00
+sig | packer    | Petite             | B8 ?? ?? ?? ?? 66 9C 60 50
+sig | packer    | MPRESS             | 60 E8 00 00 00 00 58 05
+sig | protector | Themida/WinLicense | B8 ?? ?? ?? ?? 60 0B C0 74
+sig | protector | tElock             | 60 E8 00 00 00 00 58 83 C0
+sig | packer    | NsPack             | 9C 60 E8 00 00 00 00 5D 83 ED
+sig | protector | ASProtect          | 60 E8 03 00 00 00 E9 EB 04
+
+# ── Section names ─────────────────────────────────────────────────────────────
+section | packer    | UPX                | UPX
+section | packer    | ASPack             | .aspack
+section | packer    | ASPack             | .adata
+section | packer    | NsPack             | .nsp
+section | packer    | NsPack             | nsp0
+section | packer    | MPRESS             | .MPRESS
+section | packer    | PECompact          | PEC
+section | packer    | Petite             | .petite
+section | packer    | MEW                | .MEW
+section | packer    | FSG                | FSG!
+section | protector | Themida/WinLicense | .themida
+section | protector | Themida/WinLicense | .winlice
+section | protector | VMProtect          | .vmp
+section | protector | Enigma             | .enigma
+section | protector | ASProtect          | .aspr
+section | protector | SVKProtector       | .svkp
+section | protector | PELock             | PELOCKnt
+section | protector | Obsidium           | .obsidium
+section | packer    | Upack              | .ByDwing
+section | packer    | yoda's Protector   | .yP
+section | packer    | yoda's Crypter     | .y0da
+section | packer    | WWPack             | .WWP32
+section | packer    | Neolite            | .neolite
+section | packer    | Shrinker           | .shrink
+section | packer    | kkrunchy           | kkrunchy
+section | packer    | MaskPE             | .MaskPE
+section | packer    | RLPack             | .packed
+section | packer    | Crinkler           | .crinkler
+section | protector | Armadillo          | .adata1
+section | packer    | Molebox            | .mbox
+
+# ── Build / runtime markers ───────────────────────────────────────────────────
+marker | packer    | UPX                    | $Info: This file is packed with the UPX
+marker | packer    | UPX                    | UPX!
+marker | protector | Themida/WinLicense     | Themida
+marker | protector | VMProtect              | VMProtect
+marker | protector | Enigma                 | The Enigma Protector
+marker | protector | Obsidium               | Obsidium
+marker | runtime   | PyInstaller (Python)   | PyInstaller
+marker | runtime   | PyInstaller (Python)   | _MEIPASS
+marker | runtime   | PyInstaller (Python)   | PYZ-00.pyz
+marker | runtime   | py2exe (Python)        | PY2EXE_VERBOSE
+marker | runtime   | Nuitka (Python)        | Nuitka
+marker | runtime   | AutoIt                 | AU3!EA06
+marker | runtime   | AutoIt                 | >>>AUTOIT SCRIPT<<<
+marker | runtime   | AutoIt                 | AutoIt v3
+marker | runtime   | Go                     | Go build ID:
+marker | runtime   | Go                     | go:buildid
+marker | runtime   | Rust                   | rustc version
+marker | runtime   | Delphi                 | SOFTWARE\Borland\Delphi
+marker | runtime   | Electron               | electron.asar
+marker | runtime   | Node.js (pkg/nexe)     | pkg/prelude/bootstrap.js
+marker | runtime   | PowerShell (PS2EXE)    | PS2EXE
+marker | runtime   | Bat To Exe Converter   | Bat To Exe Converter
+marker | runtime   | MinGW                  | Mingw-w64 runtime failure
+marker | installer | Nullsoft (NSIS)        | Nullsoft Install System
+marker | installer | Nullsoft (NSIS)        | NullsoftInst
+marker | installer | Inno Setup             | Inno Setup
+marker | installer | Inno Setup             | JR.Inno.Setup
+marker | installer | InstallShield          | InstallShield
+marker | installer | Advanced Installer     | Advanced Installer
+marker | installer | WinRAR SFX             | WinRAR SFX
+marker | installer | 7-Zip SFX              | 7-Zip
+marker | installer | WinZip SFX             | WinZip Self-Extractor
+marker | obfuscator | ConfuserEx            | ConfuserEx v
+marker | obfuscator | .NET Reactor          | .NET Reactor
+marker | obfuscator | SmartAssembly         | SmartAssembly
+marker | obfuscator | Eazfuscator.NET       | Eazfuscator.NET
+marker | obfuscator | Dotfuscator           | DotfuscatorAttribute
+marker | obfuscator | Babel                 | BabelObfuscatorAttribute
+marker | obfuscator | Obfuscar              | ObfuscarAttribute
+marker | obfuscator | Agile.NET             | Agile.NET

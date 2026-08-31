@@ -342,10 +342,59 @@ pub fn classify(s: &str) -> Vec<Kind> {
     kinds
 }
 
-const SCHEMES: [&str; 8] = ["http://", "https://", "ftp://", "ftps://", "ws://", "wss://", "file://", "ldap://"];
+/// The indicator vocabulary, loaded once from `data/indicators.txt` (or the
+/// user's rules directory). Grouped by the `kind` column.
+struct Vocab {
+    schemes: Vec<String>,
+    tlds: Vec<String>,
+    file_exts: Vec<String>,
+    lolbins: Vec<String>,
+    commands: Vec<String>,
+    reg_roots: Vec<String>,
+}
+
+fn vocab() -> &'static Vocab {
+    static VOCAB: std::sync::OnceLock<Vocab> = std::sync::OnceLock::new();
+    VOCAB.get_or_init(|| {
+        let mut v = Vocab {
+            schemes: Vec::new(),
+            tlds: Vec::new(),
+            file_exts: Vec::new(),
+            lolbins: Vec::new(),
+            commands: Vec::new(),
+            reg_roots: Vec::new(),
+        };
+        for row in crate::ruledata::table("indicators", 2) {
+            let value = row[1].to_ascii_lowercase();
+            match row[0].as_str() {
+                "scheme" => v.schemes.push(value),
+                "tld" => v.tlds.push(value),
+                "fileext" => v.file_exts.push(value),
+                "lolbin" => v.lolbins.push(value),
+                "command" => v.commands.push(value),
+                "regroot" => v.reg_roots.push(value),
+                _ => {}
+            }
+        }
+        v
+    })
+}
+
+/// Counts of each vocabulary, for `hiewlmc rules`.
+pub fn vocab_counts() -> Vec<(&'static str, usize)> {
+    let v = vocab();
+    vec![
+        ("scheme", v.schemes.len()),
+        ("tld", v.tlds.len()),
+        ("fileext", v.file_exts.len()),
+        ("lolbin", v.lolbins.len()),
+        ("command", v.commands.len()),
+        ("regroot", v.reg_roots.len()),
+    ]
+}
 
 fn has_url(lower: &str) -> bool {
-    SCHEMES.iter().any(|s| lower.contains(s)) || lower.starts_with("www.")
+    vocab().schemes.iter().any(|s| lower.contains(s.as_str())) || lower.starts_with("www.")
 }
 
 /// The first dotted-quad in `s` whose octets are all in range, ignoring version
@@ -441,28 +490,9 @@ fn is_domain(lower: &str) -> bool {
         return false;
     }
     let tld = labels[labels.len() - 1];
-    TLDS.contains(&tld) && !FILE_EXTS.contains(&tld)
+    let v = vocab();
+    v.tlds.iter().any(|t| t == tld) && !v.file_exts.iter().any(|e| e == tld)
 }
-
-/// Top-level domains worth recognising: the generic ones plus the country codes
-/// that show up in malware infrastructure. Not exhaustive by design — a closed
-/// list is what keeps the IOC pane signal instead of noise.
-const TLDS: [&str; 97] = [
-    "com", "net", "org", "info", "biz", "xyz", "top", "site", "online", "club", "shop", "store",
-    "icu", "vip", "cc", "tv", "io", "co", "me", "app", "dev", "cloud", "space", "website", "fun",
-    "live", "life", "world", "today", "digital", "network", "systems", "tech", "tools", "link",
-    "click", "download", "stream", "host", "press", "pro", "monster", "quest", "cyou", "sbs",
-    "rest", "cfd", "bar", "buzz", "one", "ws", "su", "ru", "ua", "by", "kz", "cn", "hk", "tw",
-    "jp", "kr", "in", "id", "vn", "th", "my", "sg", "ph", "au", "nz", "uk", "de", "fr", "nl",
-    "it", "es", "pt", "pl", "cz", "sk", "ro", "bg", "gr", "tr", "se", "no", "fi", "dk", "ch",
-    "at", "be", "ie", "br", "mx", "ar", "za", "ng",
-];
-
-/// Extensions that make a dotted token a filename rather than a hostname.
-const FILE_EXTS: [&str; 24] = [
-    "dll", "exe", "sys", "ocx", "bin", "dat", "tmp", "log", "txt", "ini", "cfg", "xml", "json",
-    "png", "jpg", "gif", "ico", "cur", "bmp", "pdb", "lib", "obj", "res", "manifest",
-];
 
 fn is_module(lower: &str) -> bool {
     matches!(
@@ -473,29 +503,18 @@ fn is_module(lower: &str) -> bool {
 }
 
 fn is_registry(lower: &str) -> bool {
-    const ROOTS: [&str; 8] = [
-        "hkey_local_machine",
-        "hkey_current_user",
-        "hkey_classes_root",
-        "hkey_users",
-        "hklm\\",
-        "hkcu\\",
-        "hkcr\\",
-        "software\\microsoft\\windows\\currentversion",
-    ];
-    ROOTS.iter().any(|r| lower.contains(r))
+    vocab().reg_roots.iter().any(|r| lower.contains(r.as_str()))
 }
 
-/// Living-off-the-land binaries and the command shapes malware builds with them.
-const LOLBINS: [&str; 24] = [
-    "powershell", "-encodedcommand", "cmd.exe /c", "cmd /c", "rundll32", "regsvr32", "mshta",
-    "certutil", "bitsadmin", "wmic ", "schtasks", "vssadmin", "bcdedit", "wscript", "cscript",
-    "net user", "net localgroup", "reg add", "reg delete", "sc create", "installutil",
-    "msbuild", "curl ", "wget ",
-];
-
-pub fn lolbin_hit(lower: &str) -> Option<&'static str> {
-    LOLBINS.iter().copied().find(|b| lower.contains(b))
+/// A living-off-the-land binary, or a command line that is suspicious in its
+/// own right (`-enc`, `vssadmin delete shadows`).
+pub fn lolbin_hit(lower: &str) -> Option<String> {
+    let v = vocab();
+    v.lolbins
+        .iter()
+        .chain(&v.commands)
+        .find(|b| lower.contains(b.as_str()))
+        .cloned()
 }
 
 /// `\\server\share` — but not a run of backslashes, which is just binary noise.
@@ -505,7 +524,8 @@ fn is_unc(s: &str) -> bool {
     };
     let rest = rest.strip_prefix("?\\").unwrap_or(rest);
     let host = rest.split('\\').next().unwrap_or("");
-    host.len() >= 2 && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+    host.len() >= 2
+        && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
 }
 
 fn is_path(s: &str, lower: &str) -> bool {
@@ -568,9 +588,10 @@ pub fn indicator_value(s: &str, kind: Kind) -> Option<String> {
 /// The URL starting at the first scheme (or `www.`), up to whitespace or a quote.
 fn url_span(s: &str) -> Option<String> {
     let lower = s.to_ascii_lowercase();
-    let start = SCHEMES
+    let start = vocab()
+        .schemes
         .iter()
-        .filter_map(|sch| lower.find(sch))
+        .filter_map(|sch| lower.find(sch.as_str()))
         .chain(lower.starts_with("www.").then_some(0))
         .min()?;
     let rest = &s[start..];

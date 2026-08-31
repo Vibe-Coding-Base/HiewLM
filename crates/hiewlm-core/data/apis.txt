@@ -1,0 +1,411 @@
+# hiewLM — imported API behaviour table.
+#
+#   behaviour | api | strength | note
+#
+# `strength` is `strong` or `weak`. A weak API is one that appears in almost
+# every compiled program (CRT startup, ordinary file access): it is still listed
+# for context, but it does not raise the score on its own, or every Rust and
+# MSVC binary would look armed. A behaviour category only scores when something
+# strong lands in it.
+#
+# Names are matched case-insensitively, with or without a `dll!` prefix and with
+# the trailing A/W dropped, so one entry covers CreateFileA and CreateFileW.
+#
+# Copy this file to <config>/hiewlm/rules/apis.txt to replace it wholesale.
+
+# ── Process injection and remote code execution ───────────────────────────────
+injection | WriteProcessMemory | strong | writes into another process
+injection | NtWriteVirtualMemory | strong | writes into another process (syscall)
+injection | ZwWriteVirtualMemory | strong | writes into another process (syscall)
+injection | ReadProcessMemory | strong | reads another process's memory
+injection | NtReadVirtualMemory | strong | reads another process's memory (syscall)
+injection | VirtualAllocEx | strong | allocates memory in another process
+injection | NtAllocateVirtualMemory | strong | allocates memory (syscall)
+injection | VirtualProtectEx | strong | changes page rights in another process
+injection | NtProtectVirtualMemory | strong | changes page rights (syscall)
+injection | CreateRemoteThread | strong | starts a thread in another process
+injection | CreateRemoteThreadEx | strong | starts a thread in another process
+injection | NtCreateThreadEx | strong | undocumented remote thread creation
+injection | RtlCreateUserThread | strong | undocumented remote thread creation
+injection | QueueUserAPC | strong | APC injection
+injection | NtQueueApcThread | strong | APC injection (syscall)
+injection | NtQueueApcThreadEx | strong | APC injection (syscall)
+injection | SetThreadContext | strong | hijacks a thread's execution (hollowing)
+injection | NtSetContextThread | strong | hijacks a thread's execution (syscall)
+injection | GetThreadContext | strong | reads a thread's registers (hollowing)
+injection | NtGetContextThread | strong | reads a thread's registers (syscall)
+injection | NtUnmapViewOfSection | strong | unmaps the original image (hollowing)
+injection | ZwUnmapViewOfSection | strong | unmaps the original image (hollowing)
+injection | NtMapViewOfSection | strong | section-based injection
+injection | ZwMapViewOfSection | strong | section-based injection
+injection | NtCreateSection | strong | creates a shared section (injection)
+injection | SetWindowsHookEx | strong | loads a DLL into other processes
+injection | SetWinEventHook | strong | event hook, loads code into other processes
+injection | CreateProcessInternal | strong | low-level process creation
+injection | NtCreateUserProcess | strong | low-level process creation (syscall)
+injection | NtResumeThread | strong | resumes a suspended (hollowed) process
+injection | ResumeThread | strong | resumes a suspended (hollowed) process
+injection | NtSuspendThread | strong | suspends a thread before hijacking it
+injection | SuspendThread | strong | suspends a thread before hijacking it
+injection | UpdateProcThreadAttribute | strong | parent-PID spoofing / mitigation control
+injection | InitializeProcThreadAttributeList | strong | parent-PID spoofing setup
+injection | SetPropA | weak | window-property injection primitive
+injection | NtOpenProcess | strong | opens another process (syscall)
+injection | LdrpLoadDll | strong | loader-level module load
+
+# ── Runtime API resolution (imports hidden from the IAT) ──────────────────────
+dynamic-resolve | LoadLibrary | weak | loads a module at runtime
+dynamic-resolve | LoadLibraryEx | weak | loads a module at runtime
+dynamic-resolve | GetProcAddress | weak | resolves APIs at runtime
+dynamic-resolve | LdrLoadDll | strong | loader-level module load, bypasses LoadLibrary
+dynamic-resolve | LdrGetProcedureAddress | strong | loader-level resolve
+dynamic-resolve | LdrGetDllHandle | strong | loader-level module lookup
+dynamic-resolve | GetModuleHandle | weak | looks up a loaded module
+dynamic-resolve | RtlGetNativeSystemInformation | strong | native API surface
+
+# ── Defence evasion ───────────────────────────────────────────────────────────
+evasion | EtwEventWrite | strong | ETW telemetry is being touched (patch target)
+evasion | EtwEventWriteFull | strong | ETW telemetry is being touched
+evasion | EtwNotificationRegister | strong | ETW manipulation
+evasion | AmsiScanBuffer | strong | AMSI is being touched (patch target)
+evasion | AmsiInitialize | strong | AMSI interaction
+evasion | AmsiOpenSession | strong | AMSI interaction
+evasion | NtSetInformationProcess | strong | can disable mitigations / hide from debuggers
+evasion | SetProcessMitigationPolicy | strong | changes process mitigations
+evasion | NtSetInformationThread | strong | ThreadHideFromDebugger
+evasion | DeleteFileTransacted | strong | transacted delete, evades file monitoring
+evasion | CreateFileTransacted | strong | transacted file creation (process doppelgänging)
+evasion | RtlSetProcessIsCritical | strong | makes the process unkillable
+evasion | NtRaiseHardError | strong | forces a bugcheck / unkillable process
+evasion | SetErrorMode | weak | suppresses error dialogs
+evasion | NtQueryObject | strong | handle inspection (debugger detection)
+evasion | RtlAdjustPrivilege | strong | privilege change via native API
+evasion | ChangeServiceConfig | strong | reconfigures a service (defence tampering)
+evasion | MoveFileEx | weak | can schedule self-delete on reboot
+evasion | SetFileTime | weak | timestomping
+evasion | NtSetInformationFile | strong | can rename or timestomp via native API
+evasion | GetConsoleWindow | weak | used with ShowWindow to hide the console
+evasion | ShowWindow | weak | hides the program's own window
+evasion | FreeConsole | weak | detaches from the console
+
+# ── Anti-debug, anti-VM, anti-sandbox ─────────────────────────────────────────
+anti-analysis | IsDebuggerPresent | strong | debugger check
+anti-analysis | CheckRemoteDebuggerPresent | strong | debugger check
+anti-analysis | NtQueryInformationProcess | strong | debug-flag / parent queries
+anti-analysis | OutputDebugString | weak | debugger probe
+anti-analysis | GetTickCount | weak | timing check
+anti-analysis | GetTickCount64 | weak | timing check
+anti-analysis | QueryPerformanceCounter | weak | timing check
+anti-analysis | NtDelayExecution | strong | precise sleep, used to outwait sandboxes
+anti-analysis | NtQuerySystemInformation | weak | enumerates system and debug state
+anti-analysis | CreateToolhelp32Snapshot | weak | enumerates processes (AV/sandbox check)
+anti-analysis | Process32First | strong | process enumeration
+anti-analysis | Process32Next | strong | process enumeration
+anti-analysis | Module32First | weak | module enumeration
+anti-analysis | Module32Next | weak | module enumeration
+anti-analysis | Thread32First | weak | thread enumeration
+anti-analysis | Thread32Next | weak | thread enumeration
+anti-analysis | FindWindow | strong | looks for analysis tool windows
+anti-analysis | EnumWindows | weak | window enumeration
+anti-analysis | BlockInput | strong | blocks the analyst's keyboard and mouse
+anti-analysis | SetUnhandledExceptionFilter | weak | exception-based control flow
+anti-analysis | AddVectoredExceptionHandler | weak | exception-based control flow
+anti-analysis | RtlAddVectoredExceptionHandler | weak | exception-based control flow
+anti-analysis | NtRaiseException | strong | exception-based control flow
+anti-analysis | GetSystemFirmwareTable | strong | VM fingerprinting via SMBIOS
+anti-analysis | EnumSystemFirmwareTables | strong | VM fingerprinting via SMBIOS
+anti-analysis | GetAdaptersInfo | strong | MAC-address VM check
+anti-analysis | GetAdaptersAddresses | strong | MAC-address VM check
+anti-analysis | GlobalMemoryStatusEx | weak | RAM-size sandbox check
+anti-analysis | GetDiskFreeSpaceEx | weak | disk-size sandbox check
+anti-analysis | GetSystemInfo | weak | CPU-count sandbox check
+anti-analysis | EnumDisplayDevices | strong | display-driver VM check
+anti-analysis | SetupDiGetClassDevs | strong | device enumeration (VM check)
+anti-analysis | GetCursorPos | weak | user-activity check
+anti-analysis | GetLastInputInfo | strong | idle-time check (waits for a real user)
+anti-analysis | GetForegroundWindow | weak | user-activity check
+anti-analysis | IsWow64Process | weak | architecture check
+anti-analysis | GetNativeSystemInfo | weak | architecture check
+
+# ── Credential access ─────────────────────────────────────────────────────────
+credentials | MiniDumpWriteDump | strong | dumps process memory (LSASS theft)
+credentials | LsaOpenPolicy | strong | LSA access
+credentials | LsaRetrievePrivateData | strong | reads LSA secrets
+credentials | LsaEnumerateLogonSessions | strong | enumerates logon sessions
+credentials | LsaGetLogonSessionData | strong | reads logon session data
+credentials | SamConnect | strong | SAM database access
+credentials | SamEnumerateUsersInDomain | strong | SAM enumeration
+credentials | SamOpenUser | strong | SAM account access
+credentials | CredEnumerate | strong | reads stored credentials
+credentials | CredRead | strong | reads a stored credential
+credentials | CredUnPackAuthenticationBuffer | strong | credential unpacking
+credentials | CryptUnprotectData | strong | DPAPI decrypt (browser and vault secrets)
+credentials | CryptUnprotectMemory | strong | DPAPI memory decrypt
+credentials | VaultOpenVault | strong | Windows Vault access
+credentials | VaultEnumerateItems | strong | Windows Vault enumeration
+credentials | WNetEnumResource | strong | enumerates network credentials/shares
+credentials | NetUserEnum | strong | enumerates local users
+credentials | NetUserGetInfo | strong | reads user account data
+credentials | LogonUser | strong | authenticates as another user
+credentials | ImpersonateLoggedOnUser | strong | impersonation
+credentials | WTSQueryUserToken | strong | steals a session token
+credentials | DuplicateTokenEx | strong | token duplication (theft)
+credentials | DuplicateToken | strong | token duplication (theft)
+
+# ── Discovery ─────────────────────────────────────────────────────────────────
+discovery | EnumProcesses | strong | process discovery
+discovery | EnumProcessModules | strong | module discovery
+discovery | GetModuleFileNameEx | weak | resolves a process's image path
+discovery | QueryFullProcessImageName | weak | resolves a process's image path
+discovery | GetComputerName | weak | host identification
+discovery | GetComputerNameEx | weak | host identification
+discovery | GetUserName | weak | user identification
+discovery | GetUserNameEx | weak | user identification
+discovery | GetVolumeInformation | weak | volume serial (host fingerprint)
+discovery | GetSystemDirectory | weak | locates the system directory
+discovery | GetWindowsDirectory | weak | locates the Windows directory
+discovery | GetLocaleInfo | weak | locale check (region-based targeting)
+discovery | GetUserDefaultLangID | strong | language check (CIS-exclusion behaviour)
+discovery | GetKeyboardLayoutList | strong | keyboard-layout check (region targeting)
+discovery | GetTimeZoneInformation | weak | timezone check
+discovery | NetWkstaGetInfo | strong | domain membership discovery
+discovery | DsGetDcName | strong | locates a domain controller
+discovery | NetServerEnum | strong | enumerates servers on the network
+discovery | NetShareEnum | strong | enumerates network shares
+discovery | GetLogicalDrives | weak | enumerates drives
+discovery | GetDriveType | weak | classifies drives (removable, network)
+discovery | GetIpNetTable | strong | reads the ARP table (network mapping)
+discovery | GetExtendedTcpTable | strong | enumerates TCP connections
+
+# ── Lateral movement ──────────────────────────────────────────────────────────
+lateral | NetUseAdd | strong | mounts a remote share
+lateral | WNetAddConnection2 | strong | mounts a remote share
+lateral | NetScheduleJobAdd | strong | schedules a job on a remote host
+lateral | NetShareAdd | strong | creates a share
+lateral | OpenSCManager | strong | service control (local or remote)
+lateral | CreateProcessWithLogon | strong | runs a process as another user
+lateral | CreateProcessAsUser | strong | runs a process as another user
+lateral | CoCreateInstanceEx | strong | remote COM activation (DCOM lateral movement)
+
+# ── Network ───────────────────────────────────────────────────────────────────
+network | InternetOpen | strong | WinINet HTTP client
+network | InternetOpenUrl | strong | fetches a URL
+network | InternetConnect | strong | connects out
+network | InternetReadFile | strong | downloads content
+network | InternetWriteFile | strong | uploads content
+network | InternetSetOption | weak | HTTP client configuration
+network | InternetCrackUrl | weak | parses a URL
+network | HttpSendRequest | strong | HTTP request
+network | HttpOpenRequest | strong | HTTP request
+network | HttpAddRequestHeaders | weak | HTTP headers
+network | HttpQueryInfo | weak | reads the HTTP response
+network | WinHttpOpen | strong | WinHTTP client
+network | WinHttpConnect | strong | connects out
+network | WinHttpSendRequest | strong | HTTP request
+network | WinHttpReceiveResponse | strong | reads the response
+network | WinHttpReadData | strong | downloads content
+network | WinHttpWriteData | strong | uploads content
+network | WinHttpSetOption | weak | HTTP client configuration
+network | URLDownloadToFile | strong | downloads straight to disk (dropper)
+network | URLDownloadToCacheFile | strong | downloads to the cache (dropper)
+network | WSAStartup | weak | raw sockets
+network | WSASocket | strong | raw sockets
+network | WSAConnect | strong | outbound connection
+network | WSAIoctl | weak | socket control
+network | socket | weak | raw sockets
+network | connect | strong | outbound connection
+network | send | weak | sends data
+network | sendto | weak | sends data
+network | recv | weak | receives data
+network | recvfrom | weak | receives data
+network | bind | strong | listens (backdoor)
+network | listen | strong | listens (backdoor)
+network | accept | strong | accepts connections (backdoor)
+network | gethostbyname | strong | DNS lookup
+network | getaddrinfo | weak | DNS lookup
+network | DnsQuery | strong | DNS lookup (can be DNS tunnelling)
+network | inet_addr | weak | address parsing
+network | htons | weak | byte-order helper
+network | FtpPutFile | strong | exfiltration over FTP
+network | FtpGetFile | strong | download over FTP
+network | SendARP | strong | ARP probe (network discovery)
+network | IcmpSendEcho | weak | ping (sometimes a sleep or a C2 check)
+
+# ── Cryptography ──────────────────────────────────────────────────────────────
+crypto | CryptEncrypt | strong | encrypts data (ransomware or C2)
+crypto | CryptDecrypt | strong | decrypts data (config or payload)
+crypto | CryptGenKey | strong | generates keys
+crypto | CryptDeriveKey | strong | derives a key from a password
+crypto | CryptImportKey | strong | imports an embedded key
+crypto | CryptExportKey | strong | exports a key
+crypto | CryptAcquireContext | weak | crypto provider handle
+crypto | CryptHashData | weak | hashing
+crypto | CryptGenRandom | weak | random bytes (key material)
+crypto | CryptStringToBinary | strong | decodes base64 blobs
+crypto | CryptBinaryToString | weak | encodes base64
+crypto | CryptProtectData | strong | DPAPI encrypt
+crypto | BCryptEncrypt | strong | encrypts data (CNG)
+crypto | BCryptDecrypt | strong | decrypts data (CNG)
+crypto | BCryptGenerateSymmetricKey | strong | symmetric key (CNG)
+crypto | BCryptGenerateKeyPair | strong | asymmetric key (CNG)
+crypto | BCryptGenRandom | weak | random bytes (CNG)
+crypto | BCryptImportKeyPair | strong | imports an embedded public key
+crypto | NCryptOpenKey | strong | key storage access
+crypto | SystemFunction032 | strong | undocumented RC4 (ntdll)
+crypto | SystemFunction033 | strong | undocumented RC4 (ntdll)
+crypto | RtlEncryptMemory | strong | in-memory encryption
+crypto | RtlDecryptMemory | strong | in-memory decryption
+
+# ── Ransomware shape ──────────────────────────────────────────────────────────
+ransom | FindFirstVolume | strong | enumerates volumes to encrypt
+ransom | FindNextVolume | strong | enumerates volumes to encrypt
+ransom | GetVolumePathNamesForVolumeName | strong | maps volumes to paths
+ransom | SetVolumeMountPoint | strong | volume manipulation
+ransom | DeleteVolumeMountPoint | strong | volume manipulation
+ransom | EncryptFile | strong | EFS encryption of a file
+ransom | SetFileAttributes | weak | hides or unhides files
+ransom | SetEndOfFile | weak | truncates a file (in-place encryption)
+ransom | SetFilePointerEx | weak | in-place rewriting
+ransom | LockFileEx | weak | locks a file for exclusive rewriting
+ransom | DeviceIoControl | strong | raw volume or shadow-copy control
+ransom | CreateFileMappingNuma | strong | large in-place file mapping
+ransom | SHEmptyRecycleBin | strong | empties the recycle bin (recovery denial)
+ransom | InitiateShutdown | strong | forces a reboot after encryption
+
+# ── Persistence ───────────────────────────────────────────────────────────────
+persistence | RegSetValueEx | strong | writes a registry value (Run key?)
+persistence | RegCreateKeyEx | strong | creates a registry key
+persistence | RegSetKeyValue | strong | writes a registry value
+persistence | CreateService | strong | installs a service
+persistence | CreateServiceEx | strong | installs a service
+persistence | RegisterServiceCtrlHandler | strong | this program is a service
+persistence | StartServiceCtrlDispatcher | strong | this program is a service
+persistence | SHSetValue | strong | writes a registry value
+persistence | CopyFile | weak | copies a file (possibly itself)
+persistence | CopyFileEx | weak | copies a file (possibly itself)
+persistence | CreateSymbolicLink | strong | link-based persistence or redirection
+persistence | SHGetSpecialFolderPath | weak | locates Startup and AppData
+persistence | RegisterApplicationRestart | strong | restart-on-crash persistence
+
+# ── Privilege ─────────────────────────────────────────────────────────────────
+privilege | AdjustTokenPrivileges | strong | enables a privilege (SeDebug?)
+privilege | OpenProcessToken | weak | token access
+privilege | OpenThreadToken | strong | thread token access
+privilege | LookupPrivilegeValue | strong | privilege lookup
+privilege | SetTokenInformation | strong | token manipulation
+privilege | CheckTokenMembership | weak | admin check
+privilege | AllocateAndInitializeSid | weak | SID handling
+privilege | SetSecurityDescriptorDacl | strong | weakens an object's ACL
+privilege | SetNamedSecurityInfo | strong | changes object permissions
+privilege | SetEntriesInAcl | strong | changes object permissions
+
+# ── Process and shell ─────────────────────────────────────────────────────────
+process | CreateProcess | weak | creates a process
+process | ShellExecute | strong | runs another program
+process | ShellExecuteEx | strong | runs another program
+process | WinExec | strong | runs another program
+process | system | strong | runs a shell command
+process | _wsystem | strong | runs a shell command
+process | popen | strong | runs a shell command and reads its output
+process | OpenProcess | weak | opens another process
+process | TerminateProcess | weak | kills a process
+process | NtTerminateProcess | strong | kills a process (syscall)
+process | ExitWindowsEx | strong | reboots or shuts down
+process | InitiateSystemShutdown | strong | reboots or shuts down
+process | GetStartupInfo | weak | startup context
+process | GetCommandLine | weak | reads the command line
+process | DebugActiveProcess | strong | attaches as a debugger
+process | GetShellWindow | weak | locates the shell (UAC bypass primitive)
+
+# ── Memory ────────────────────────────────────────────────────────────────────
+memory | VirtualAlloc | weak | allocates memory (unpacking)
+memory | VirtualProtect | weak | makes memory executable
+memory | VirtualFree | weak | frees memory
+memory | HeapCreate | weak | private heap
+memory | HeapAlloc | weak | heap allocation
+memory | CreateFileMapping | weak | shared section
+memory | MapViewOfFile | weak | maps a section
+memory | UnmapViewOfFile | weak | unmaps a section
+memory | VirtualQuery | weak | inspects memory layout
+memory | GlobalAlloc | weak | legacy allocation
+memory | FlushInstructionCache | strong | executed after writing code to memory
+
+# ── Filesystem and registry ───────────────────────────────────────────────────
+filesystem | CreateFile | weak | file access
+filesystem | WriteFile | weak | writes a file
+filesystem | ReadFile | weak | reads a file
+filesystem | DeleteFile | weak | deletes a file
+filesystem | FindFirstFile | weak | enumerates files
+filesystem | FindNextFile | weak | enumerates files
+filesystem | GetTempPath | weak | drops to %TEMP%
+filesystem | GetTempFileName | weak | temporary file
+filesystem | SHGetFolderPath | weak | locates user folders
+filesystem | SHGetKnownFolderPath | weak | locates user folders
+filesystem | SHFileOperation | strong | bulk file operations
+filesystem | CreateDirectory | weak | creates a directory
+filesystem | GetFileAttributes | weak | checks a file
+filesystem | GetModuleFileName | weak | this program's own path
+registry | RegOpenKeyEx | weak | reads the registry
+registry | RegQueryValueEx | weak | reads a registry value
+registry | RegEnumKeyEx | weak | enumerates the registry
+registry | RegEnumValue | weak | enumerates registry values
+registry | RegDeleteValue | strong | deletes a registry value
+registry | RegDeleteKey | strong | deletes a registry key
+registry | RegSaveKey | strong | exports a registry hive
+registry | RegLoadKey | strong | loads a registry hive
+registry | RegNotifyChangeKeyValue | strong | watches the registry
+
+# ── Capture (spyware) ─────────────────────────────────────────────────────────
+capture | GetAsyncKeyState | strong | keylogging
+capture | GetKeyState | strong | keylogging
+capture | GetKeyboardState | strong | keylogging
+capture | RegisterRawInputDevices | strong | raw input capture (keylogging)
+capture | GetRawInputData | strong | raw input capture (keylogging)
+capture | MapVirtualKey | weak | key translation (keylogger helper)
+capture | ToUnicodeEx | weak | key translation (keylogger helper)
+capture | GetWindowText | weak | reads window titles
+capture | BitBlt | strong | screen capture
+capture | StretchBlt | strong | screen capture
+capture | PrintWindow | strong | window capture
+capture | GetWindowDC | strong | screen capture
+capture | GetDC | weak | device context (screen capture)
+capture | CreateCompatibleBitmap | strong | screen capture
+capture | GetDIBits | strong | screen capture
+capture | waveInOpen | strong | microphone capture
+capture | waveInStart | strong | microphone capture
+capture | capCreateCaptureWindow | strong | webcam capture
+capture | GetClipboardData | strong | clipboard theft
+capture | SetClipboardData | strong | clipboard manipulation (crypto-clipper)
+capture | OpenClipboard | weak | clipboard access
+capture | EmptyClipboard | weak | clipboard access
+
+# ── Services ──────────────────────────────────────────────────────────────────
+service | StartService | strong | starts a service
+service | ControlService | strong | controls a service
+service | DeleteService | strong | removes a service
+service | OpenService | weak | opens a service handle
+service | QueryServiceStatus | weak | reads service state
+service | EnumServicesStatus | strong | enumerates services (AV discovery)
+service | ChangeServiceConfig2 | strong | reconfigures a service
+
+# ── COM / WMI / scripting hosts ───────────────────────────────────────────────
+com | CoInitialize | weak | COM startup
+com | CoInitializeEx | weak | COM startup
+com | CoInitializeSecurity | strong | COM security setup (often DCOM abuse)
+com | CoCreateInstance | strong | instantiates a COM object (WMI, tasks, shell)
+com | CoGetObject | strong | binds a COM object by moniker (UAC bypass)
+com | CLSIDFromString | weak | COM class lookup
+com | VariantInit | weak | COM variant handling
+com | SysAllocString | weak | COM string handling
+com | IIDFromString | weak | COM interface lookup
+
+# ── Synchronisation (single-instance markers make good IOCs) ──────────────────
+sync | CreateMutex | weak | single-instance mutex (an IOC when named)
+sync | OpenMutex | weak | single-instance mutex (an IOC when named)
+sync | CreateEvent | weak | named event
+sync | CreateSemaphore | weak | named semaphore
+sync | Sleep | weak | delay (sandbox evasion when long)
+sync | SleepEx | weak | delay
+sync | WaitForSingleObject | weak | waits on a handle
+sync | CreateWaitableTimer | weak | timer-based delay
+sync | SetWaitableTimer | weak | timer-based delay

@@ -107,6 +107,8 @@ ANALYSIS
 MISC
   Ctrl+.  Ctrl+P  Ctrl+L       record / play / loop macro (stops on search-fail)
   ?  or  1                     this help
+  V                            about: version, author, build features
+  Ctrl+Q  or  F10              quit from anywhere, even inside a dialog
   q  or  0  or  F10            quit
   Esc                          clear filter/highlight/block, then go back
 
@@ -180,6 +182,7 @@ pub const PALETTE: &[(&str, &str, Command)] = &[
         Command::ToggleAddrMode,
     ),
     ("help", "1 / ?", Command::Help),
+    ("about (version, author, build)", "V", Command::About),
     ("quit", "q / 0", Command::Quit),
 ];
 
@@ -195,4 +198,66 @@ pub fn palette_matches(query: &str) -> Vec<&'static (&'static str, &'static str,
             words.iter().all(|w| hay.contains(w))
         })
         .collect()
+}
+
+/// The about screen: who wrote it, which version, and how this particular
+/// binary was built — the last part matters, because a build without the YARA
+/// feature will tell you no rules matched.
+pub(super) fn about_text(path: &std::path::Path) -> String {
+    let features = {
+        let mut on: Vec<&str> = Vec::new();
+        if cfg!(feature = "yara") {
+            on.push("yara");
+        }
+        if on.is_empty() {
+            "none (build with --features full for YARA, scripting and WASM)".to_string()
+        } else {
+            on.join(", ")
+        }
+    };
+    let notes = crate::notes::store_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "(unavailable)".into());
+    let rules = hiewlm_core::ruledata::rules_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "(unavailable)".into());
+    let loaded: Vec<String> = hiewlm_core::ruledata::builtin_names()
+        .iter()
+        .map(|n| format!("{n} {}", hiewlm_core::ruledata::table(n, 2).len()))
+        .collect();
+
+    format!(
+        "\
+{name} {version}
+{description}
+
+Author        {authors}
+License       {license}
+Repository    {repository}
+
+Build
+  target      {target}
+  features    {features}
+  rules       {loaded}
+
+Paths
+  notes       {notes}
+  rules       {rules}
+  open file   {file}
+
+The file you are looking at is data. hiewLM has no code path that loads or
+executes it, and a test in CI fails the build if one appears.",
+        name = env!("CARGO_PKG_NAME"),
+        version = env!("CARGO_PKG_VERSION"),
+        description = env!("CARGO_PKG_DESCRIPTION"),
+        authors = env!("CARGO_PKG_AUTHORS"),
+        license = env!("CARGO_PKG_LICENSE"),
+        repository = env!("CARGO_PKG_REPOSITORY"),
+        target = std::env::consts::ARCH.to_string() + "-" + std::env::consts::OS,
+        features = features,
+        loaded = loaded.join(", "),
+        notes = notes,
+        rules = rules,
+        file = path.display(),
+    )
 }

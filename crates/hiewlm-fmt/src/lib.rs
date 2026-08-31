@@ -29,6 +29,18 @@ pub fn detect(buf: &EditBuffer) -> Option<ExecutableModel> {
     parse_bytes(&bytes)
 }
 
+/// Parse bytes the caller has already read.
+///
+/// [`detect`] reads the whole file itself; a caller that has the bytes in hand
+/// should not pay for a second copy — for a triage pass over a folder that was
+/// one redundant multi-megabyte read per file.
+pub fn detect_bytes(bytes: &[u8]) -> Option<ExecutableModel> {
+    if bytes.is_empty() || bytes.len() as u64 > MAX_PARSE {
+        return None;
+    }
+    parse_bytes(bytes)
+}
+
 fn parse_bytes(bytes: &[u8]) -> Option<ExecutableModel> {
     use goblin::Object;
     if let Ok(obj) = Object::parse(bytes) {

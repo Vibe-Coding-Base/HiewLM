@@ -27,6 +27,11 @@ All notable changes to hiewLM. The format follows
 - **Detection rules as data** — 359 API, 83 packer, 283 indicator and 210
   document rules in text files, overridable from the config directory.
   `hiewlmc rules` shows what is loaded.
+- **Findings drill-down**: a document finding backed by many hits shows
+  `[Enter: N matches]`, and opens the list with the text each one matched — the
+  1874 URLs in a PDF, not just the count. Also `hiewlmc office --matches`.
+- **About screen** (`V`): version, author, license, build features, loaded rule
+  counts and the paths in use.
 - Command palette (`:`), folder triage (`F`), open-another-file (`O`),
   system-clipboard copy over OSC 52 (`Y`), case-insensitive search, search
   history, list-all-matches, and a context-sensitive Fn-bar.
@@ -47,6 +52,22 @@ All notable changes to hiewLM. The format follows
   present, lockfile committed, rustfmt-clean, CI on three platforms.
 
 ### Fixed
+
+- A folder pass read and hashed every file in full: the six largest files in a
+  Downloads directory cost forty seconds between them, during which the UI had
+  not started and keystrokes queued up — so `q` appeared to hang. Files over
+  64 MB are now listed as `not scanned` instead of being hashed in full, the
+  pass uses fewer bytes than a single-file report, and `hiewlm_fmt::detect_bytes`
+  removed a redundant multi-megabyte read per file. 86 files: 40 s → 3.2 s.
+- PDF analysis lowercased a copy of the whole file and then searched it once per
+  rule; a 23 MB PDF took 2.5 s. One case-insensitive pass over the file for the
+  whole rule table takes 250 ms.
+- `q` inside a filterable popup types into the filter, which is correct but left
+  no way to quit from the folder queue. `Ctrl+Q` and `F10` now quit from
+  anywhere.
+- PDF name markers matched inside longer names: `/AA` matched 278 times inside
+  `/AAAAAA+ArialMT` in one real document, reporting auto-run actions that were
+  not there. A name must now end at a delimiter.
 
 - `N` (one Shift away from the `n` used while searching) overwrote bytes with
   NOPs; it now means "find previous" and NOP moved to `Alt+F2`.

@@ -16,6 +16,8 @@ use hiewlm_core::{Finding, Severity};
 const HEADER_WINDOW: usize = 1024;
 /// Cap structural scanning so a huge file cannot stall the UI.
 const SCAN_CAP: usize = 64 * 1024 * 1024;
+/// A document with a million `/URI`s is a denial of service, not a document.
+const MAX_HITS_PER_RULE: usize = 2000;
 
 /// One indirect object: `12 0 obj`.
 #[derive(Clone, Debug)]
@@ -25,6 +27,14 @@ pub struct Object {
     pub offset: u64,
     /// `/Type` value when the object declares one, for the structure listing.
     pub kind: String,
+}
+
+/// Every hit of one rule, with an excerpt of each — what turns "300 occurrences"
+/// into a list you can read.
+#[derive(Clone, Debug)]
+pub struct MatchGroup {
+    pub label: String,
+    pub hits: Vec<(u64, String)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -38,6 +48,7 @@ pub struct Pdf {
     pub findings: Vec<Finding>,
     /// `(key, value)` from the trailer and the document info, when readable.
     pub metadata: Vec<(String, String)>,
+    pub match_groups: Vec<MatchGroup>,
 }
 
 pub fn is_pdf(bytes: &[u8]) -> bool {
@@ -146,6 +157,15 @@ fn scan_objects(bytes: &[u8]) -> Vec<Object> {
     out
 }
 
+/// Is the byte at `at` a PDF name terminator? A name runs until whitespace or
+/// one of the delimiter characters (PDF 1.7 §7.2.2).
+fn name_ends_at(bytes: &[u8], at: usize) -> bool {
+    match bytes.get(at) {
+        None => true,
+        Some(b) => b.is_ascii_whitespace() || b"()<>[]{}/%".contains(b),
+    }
+}
+
 /// A PDF name written with hex escapes (`/J#61vaScript`) is obfuscation: the
 /// spec allows it, readers accept it, and nothing legitimate needs it.
 fn obfuscated_names(bytes: &[u8]) -> Vec<u64> {
@@ -203,27 +223,49 @@ pub fn parse(bytes: &[u8]) -> Option<Pdf> {
     }
 
     // Active content and historically-abused features, from the rule table.
-    let lower = String::from_utf8_lossy(scan).to_ascii_lowercase();
-    for rule in crate::rules::rules("pdf") {
-        let (count, first) = count_occurrences(scan, rule.value.as_bytes());
-        // Case-insensitive fallback for the JavaScript API names.
-        let (count, first) = if count == 0 && lower.contains(&rule.needle) {
-            (1, lower.find(&rule.needle))
-        } else {
-            (count, first)
-        };
-        if count == 0 {
+    //
+    // One pass over the file for the whole table: searching once per rule, and
+    // lowercasing 23 MB of PDF to make the search case-insensitive, cost more
+    // than everything else in this function put together.
+    let rules = crate::rules::rules("pdf");
+    let patterns: Vec<&[u8]> = rules.iter().map(|r| r.value.as_bytes()).collect();
+    let hits = crate::scan::scan(scan, &patterns, MAX_HITS_PER_RULE);
+    for (i, rule) in rules.iter().enumerate() {
+        let is_name = rule.value.starts_with('/');
+        let offsets: Vec<u64> = hits
+            .iter()
+            .filter(|h| h.pattern == i)
+            // A PDF name ends at a delimiter. Without this, `/AA` matches inside
+            // the font subset name `/AAAAAA+ArialMT` — 278 times in one real
+            // document — and reports auto-run actions that are not there.
+            .filter(|h| !is_name || name_ends_at(scan, h.offset as usize + rule.value.len()))
+            .map(|h| h.offset)
+            .collect();
+        if offsets.is_empty() {
             continue;
         }
-        let msg = if count > 1 {
-            format!("{}: {} ({count} occurrences)", rule.value, rule.note)
+        let msg = if offsets.len() > 1 {
+            format!(
+                "{}: {} ({} occurrences)",
+                rule.value,
+                rule.note,
+                offsets.len()
+            )
         } else {
             format!("{}: {}", rule.value, rule.note)
         };
         p.findings.push(Finding {
             severity: rule.severity,
             message: msg,
-            offset: first.map(|f| f as u64),
+            offset: offsets.first().copied(),
+        });
+        // Keep every hit with an excerpt, so "300 occurrences" can be opened.
+        p.match_groups.push(MatchGroup {
+            label: rule.value.clone(),
+            hits: offsets
+                .iter()
+                .map(|&o| (o, crate::scan::preview(scan, o, 140)))
+                .collect(),
         });
     }
 
@@ -356,6 +398,51 @@ mod tests {
             "{:?}",
             p.findings
         );
+    }
+
+    #[test]
+    fn a_name_marker_does_not_match_inside_a_longer_name() {
+        // `/AAAAAA+ArialMT` is a font subset name, not an /AA action; one real
+        // document matched it 278 times.
+        let doc = b"%PDF-1.4\n1 0 obj\n<< /BaseFont /AAAAAA+ArialMT /Type /Font >>\nendobj\n%%EOF";
+        let p = parse(doc).expect("pdf");
+        assert!(
+            !p.findings.iter().any(|f| f.message.starts_with("/AA")),
+            "{:?}",
+            p.findings
+        );
+
+        // ...but a real /AA is still found.
+        let doc = b"%PDF-1.4\n1 0 obj\n<< /AA << /O 2 0 R >> >>\nendobj\n%%EOF";
+        let p = parse(doc).expect("pdf");
+        assert!(
+            p.findings.iter().any(|f| f.message.starts_with("/AA")),
+            "{:?}",
+            p.findings
+        );
+    }
+
+    #[test]
+    fn every_occurrence_is_kept_with_an_excerpt() {
+        let doc = b"%PDF-1.4\n1 0 obj\n<< /URI (http://one.example.top/a) >>\nendobj\n\
+2 0 obj\n<< /URI (http://two.example.top/b) >>\nendobj\n%%EOF";
+        let p = parse(doc).expect("pdf");
+        let g = p
+            .match_groups
+            .iter()
+            .find(|g| g.label == "/URI")
+            .expect("a /URI group");
+        assert_eq!(g.hits.len(), 2, "both, not just a count");
+        assert!(
+            g.hits[0].1.contains("http://one.example.top/a"),
+            "{:?}",
+            g.hits[0]
+        );
+        assert!(g.hits[1].1.contains("http://two.example.top/b"));
+        assert!(p
+            .findings
+            .iter()
+            .any(|f| f.message.contains("(2 occurrences)")));
     }
 
     #[test]

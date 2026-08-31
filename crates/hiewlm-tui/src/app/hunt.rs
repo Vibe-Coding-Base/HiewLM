@@ -35,9 +35,14 @@ impl super::App {
         let opts = hiewlm_triage::Options {
             // A folder pass wants to be quick; the full scan is one keystroke
             // away once a file is open.
-            max_string_bytes: 8 * 1024 * 1024,
-            max_xor_bytes: 4 * 1024 * 1024,
+            max_string_bytes: 2 * 1024 * 1024,
+            max_xor_bytes: 1024 * 1024,
+            map_cells: 24,
             max_indicators: 40,
+            // The folder pass runs before the UI is interactive, so it must stay
+            // fast: a single 1.5 GB file used to cost thirteen seconds on its own.
+            max_file_bytes: 64 * 1024 * 1024,
+            full_hashes: false,
             ..Default::default()
         };
         let mut rows: Vec<(u8, String, PathBuf)> = Vec::new();

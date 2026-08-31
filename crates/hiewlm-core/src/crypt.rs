@@ -142,7 +142,11 @@ fn parse_key(tok: &str) -> Result<Vec<u8>, CryptError> {
             .map(|b| vec![b])
             .map_err(|_| CryptError::BadOperand(t.to_string()));
     }
-    let padded = if t.len() % 2 == 1 { format!("0{t}") } else { t.to_string() };
+    let padded = if t.len() % 2 == 1 {
+        format!("0{t}")
+    } else {
+        t.to_string()
+    };
     (0..padded.len())
         .step_by(2)
         .map(|i| {
@@ -167,7 +171,11 @@ pub fn parse(text: &str) -> Result<Recipe, CryptError> {
         return Err(CryptError::Empty);
     }
     let mut ops = Vec::new();
-    for step in text.split([',', ';']).map(str::trim).filter(|s| !s.is_empty()) {
+    for step in text
+        .split([',', ';'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let (name, arg) = match step.split_once(char::is_whitespace) {
             Some((n, a)) => (n.to_ascii_lowercase(), a.trim()),
             None => (step.to_ascii_lowercase(), ""),
@@ -202,7 +210,9 @@ pub fn parse(text: &str) -> Result<Recipe, CryptError> {
             }
             "rol" | "ror" => {
                 need(arg)?;
-                let n: u32 = arg.parse().map_err(|_| CryptError::BadOperand(arg.to_string()))?;
+                let n: u32 = arg
+                    .parse()
+                    .map_err(|_| CryptError::BadOperand(arg.to_string()))?;
                 if !(1..=7).contains(&n) {
                     return Err(CryptError::BadRotation(n));
                 }
@@ -274,7 +284,14 @@ mod tests {
     #[test]
     fn inverse_round_trips() {
         let data = b"Hello, world!".to_vec();
-        for recipe in ["xor 5a", "add 10", "rol 3", "xor dead, add 7, ror 2", "not", "neg"] {
+        for recipe in [
+            "xor 5a",
+            "add 10",
+            "rol 3",
+            "xor dead, add 7, ror 2",
+            "not",
+            "neg",
+        ] {
             let r = parse(recipe).unwrap();
             let inv = r.inverse().expect("invertible");
             let mut v = data.clone();

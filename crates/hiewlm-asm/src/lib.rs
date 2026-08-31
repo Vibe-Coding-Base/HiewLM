@@ -97,7 +97,9 @@ impl Disassembler {
     /// offset `base_off` and virtual address `base_va`.
     pub fn decode(&self, data: &[u8], base_off: u64, base_va: u64, max: usize) -> Vec<Insn> {
         match self.arch {
-            Arch::X86 | Arch::X86_64 | Arch::Unknown => self.decode_x86(data, base_off, base_va, max),
+            Arch::X86 | Arch::X86_64 | Arch::Unknown => {
+                self.decode_x86(data, base_off, base_va, max)
+            }
             // WASM is a stack machine, not a capstone target: own decoder.
             Arch::Wasm => wasm::decode(data, base_off, base_va, max),
             _ => self.decode_capstone(data, base_off, base_va, max),
@@ -155,7 +157,11 @@ impl Disassembler {
             let bytes = i.bytes().to_vec();
             let mnem = i.mnemonic().unwrap_or("(bad)");
             let op = i.op_str().unwrap_or("");
-            let text = if op.is_empty() { mnem.to_string() } else { format!("{mnem} {op}") };
+            let text = if op.is_empty() {
+                mnem.to_string()
+            } else {
+                format!("{mnem} {op}")
+            };
             out.push(Insn {
                 offset: base_off + addr.saturating_sub(base_va),
                 va: addr,
@@ -175,27 +181,59 @@ impl Disassembler {
 }
 
 fn build_capstone(arch: Arch, bits: u8) -> Option<capstone::Capstone> {
-    use capstone::arch::{arm, arm64, mips, ppc, riscv, sparc, BuildsCapstone, BuildsCapstoneEndian};
+    use capstone::arch::{
+        arm, arm64, mips, ppc, riscv, sparc, BuildsCapstone, BuildsCapstoneEndian,
+    };
     use capstone::{Capstone, Endian};
 
     match arch {
-        Arch::Arm64 => Capstone::new().arm64().mode(arm64::ArchMode::Arm).build().ok(),
+        Arch::Arm64 => Capstone::new()
+            .arm64()
+            .mode(arm64::ArchMode::Arm)
+            .build()
+            .ok(),
         Arch::Arm => Capstone::new().arm().mode(arm::ArchMode::Arm).build().ok(),
         Arch::Mips => {
-            let mode = if bits == 64 { mips::ArchMode::Mips64 } else { mips::ArchMode::Mips32 };
-            Capstone::new().mips().mode(mode).endian(Endian::Little).build().ok()
+            let mode = if bits == 64 {
+                mips::ArchMode::Mips64
+            } else {
+                mips::ArchMode::Mips32
+            };
+            Capstone::new()
+                .mips()
+                .mode(mode)
+                .endian(Endian::Little)
+                .build()
+                .ok()
         }
         Arch::Riscv => {
-            let mode = if bits == 64 { riscv::ArchMode::RiscV64 } else { riscv::ArchMode::RiscV32 };
+            let mode = if bits == 64 {
+                riscv::ArchMode::RiscV64
+            } else {
+                riscv::ArchMode::RiscV32
+            };
             Capstone::new().riscv().mode(mode).build().ok()
         }
         // PowerPC is big-endian in every deployment hiewLM sees; capstone's
         // SPARC backend is big-endian only and takes no endian setter.
         Arch::Ppc => {
-            let mode = if bits == 64 { ppc::ArchMode::Mode64 } else { ppc::ArchMode::Mode32 };
-            Capstone::new().ppc().mode(mode).endian(Endian::Big).build().ok()
+            let mode = if bits == 64 {
+                ppc::ArchMode::Mode64
+            } else {
+                ppc::ArchMode::Mode32
+            };
+            Capstone::new()
+                .ppc()
+                .mode(mode)
+                .endian(Endian::Big)
+                .build()
+                .ok()
         }
-        Arch::Sparc => Capstone::new().sparc().mode(sparc::ArchMode::Default).build().ok(),
+        Arch::Sparc => Capstone::new()
+            .sparc()
+            .mode(sparc::ArchMode::Default)
+            .build()
+            .ok(),
         _ => None,
     }
 }
@@ -209,7 +247,9 @@ struct TokenSink {
 impl FormatterOutput for TokenSink {
     fn write(&mut self, text: &str, kind: FormatterTextKind) {
         let tk = match kind {
-            FormatterTextKind::Mnemonic | FormatterTextKind::Keyword | FormatterTextKind::Prefix
+            FormatterTextKind::Mnemonic
+            | FormatterTextKind::Keyword
+            | FormatterTextKind::Prefix
             | FormatterTextKind::Directive => TokenKind::Mnemonic,
             FormatterTextKind::Register => TokenKind::Register,
             FormatterTextKind::Number
@@ -366,11 +406,18 @@ mod tests {
     #[test]
     fn detects_stack_stores_that_build_a_string() {
         // mov byte ptr [rbp-8], 'h' ; mov dword ptr [rsp+4], 0x41414141
-        let data = [0xc6, 0x45, 0xf8, 0x68, 0xc7, 0x44, 0x24, 0x04, 0x41, 0x41, 0x41, 0x41];
+        let data = [
+            0xc6, 0x45, 0xf8, 0x68, 0xc7, 0x44, 0x24, 0x04, 0x41, 0x41, 0x41, 0x41,
+        ];
         let dis = Disassembler::new(Arch::X86_64, 64);
         let insns = dis.decode(&data, 0, 0, 8);
         let stores: Vec<(i64, u64, u8)> = insns.iter().filter_map(|i| i.stack_store).collect();
-        assert_eq!(stores.len(), 2, "{:?}", insns.iter().map(|i| &i.text).collect::<Vec<_>>());
+        assert_eq!(
+            stores.len(),
+            2,
+            "{:?}",
+            insns.iter().map(|i| &i.text).collect::<Vec<_>>()
+        );
         assert_eq!(stores[0], (-8, u64::from(b'h'), 1));
         assert_eq!(stores[1], (4, 0x4141_4141, 4));
     }
@@ -409,7 +456,10 @@ mod tests {
         let data = [0x48, 0x89, 0xe5]; // mov rbp, rsp
         let dis = Disassembler::new(Arch::X86_64, 64);
         let ins = &dis.decode(&data, 0, 0x1000, 1)[0];
-        assert!(ins.tokens.iter().any(|(t, k)| *k == TokenKind::Mnemonic && t.contains("mov")));
+        assert!(ins
+            .tokens
+            .iter()
+            .any(|(t, k)| *k == TokenKind::Mnemonic && t.contains("mov")));
         assert!(ins.tokens.iter().any(|(_, k)| *k == TokenKind::Register));
     }
 

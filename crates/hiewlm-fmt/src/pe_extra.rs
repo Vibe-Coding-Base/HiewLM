@@ -121,10 +121,14 @@ impl PeDetails {
 }
 
 fn u16le(b: &[u8], off: usize) -> u16 {
-    b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]])).unwrap_or(0)
+    b.get(off..off + 2)
+        .map(|s| u16::from_le_bytes([s[0], s[1]]))
+        .unwrap_or(0)
 }
 fn u32le(b: &[u8], off: usize) -> u32 {
-    b.get(off..off + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]])).unwrap_or(0)
+    b.get(off..off + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        .unwrap_or(0)
 }
 fn u64le(b: &[u8], off: usize) -> u64 {
     b.get(off..off + 8)
@@ -157,17 +161,32 @@ pub fn parse(bytes: &[u8]) -> Option<PeDetails> {
     let magic = u16le(bytes, opt);
     let is_64 = magic == 0x20b;
 
-    let mut d = PeDetails { is_64, timestamp, ..Default::default() };
-    d.image_base = if is_64 { u64le(bytes, opt + 24) } else { u32le(bytes, opt + 28) as u64 };
+    let mut d = PeDetails {
+        is_64,
+        timestamp,
+        ..Default::default()
+    };
+    d.image_base = if is_64 {
+        u64le(bytes, opt + 24)
+    } else {
+        u32le(bytes, opt + 28) as u64
+    };
     d.entry_rva = u32le(bytes, opt + 16);
     let checksum_off = opt + 64;
     let header_checksum = u32le(bytes, checksum_off);
     let size_of_headers = u32le(bytes, opt + 60);
-    let (dd_count_off, dd_off) = if is_64 { (opt + 108, opt + 112) } else { (opt + 92, opt + 96) };
+    let (dd_count_off, dd_off) = if is_64 {
+        (opt + 108, opt + 112)
+    } else {
+        (opt + 92, opt + 96)
+    };
     let dd_count = u32le(bytes, dd_count_off).min(16) as usize;
     let dir = |i: usize| -> (u32, u32) {
         if i < dd_count {
-            (u32le(bytes, dd_off + i * 8), u32le(bytes, dd_off + i * 8 + 4))
+            (
+                u32le(bytes, dd_off + i * 8),
+                u32le(bytes, dd_off + i * 8 + 4),
+            )
         } else {
             (0, 0)
         }
@@ -184,7 +203,13 @@ pub fn parse(bytes: &[u8]) -> Option<PeDetails> {
         let name: String = raw_name
             .iter()
             .take_while(|&&c| c != 0)
-            .map(|&c| if (0x20..0x7f).contains(&c) { c as char } else { '?' })
+            .map(|&c| {
+                if (0x20..0x7f).contains(&c) {
+                    c as char
+                } else {
+                    '?'
+                }
+            })
             .collect();
         d.sections.push(SectionRaw {
             name,
@@ -199,7 +224,10 @@ pub fn parse(bytes: &[u8]) -> Option<PeDetails> {
     // -- Certificate table (a file offset, uniquely among the directories) ---
     let (cert_off, cert_size) = dir(4);
     if cert_size > 0 {
-        d.cert = Some(CertInfo { offset: cert_off as u64, size: cert_size as u64 });
+        d.cert = Some(CertInfo {
+            offset: cert_off as u64,
+            size: cert_size as u64,
+        });
     }
 
     // -- Overlay ------------------------------------------------------------
@@ -225,13 +253,21 @@ pub fn parse(bytes: &[u8]) -> Option<PeDetails> {
             d.tls_dir_off = Some(off);
             let o = off as usize;
             // AddressOfCallBacks: VA (not RVA) at +12 (PE32) / +24 (PE32+).
-            let cb_va = if is_64 { u64le(bytes, o + 24) } else { u32le(bytes, o + 12) as u64 };
+            let cb_va = if is_64 {
+                u64le(bytes, o + 24)
+            } else {
+                u32le(bytes, o + 12) as u64
+            };
             if cb_va > d.image_base {
                 let cb_rva = (cb_va - d.image_base) as u32;
                 if let Some(cb_off) = rva_to_off(&d.sections, cb_rva) {
                     let mut p = cb_off as usize;
                     for _ in 0..64 {
-                        let va = if is_64 { u64le(bytes, p) } else { u32le(bytes, p) as u64 };
+                        let va = if is_64 {
+                            u64le(bytes, p)
+                        } else {
+                            u32le(bytes, p) as u64
+                        };
                         if va == 0 {
                             break;
                         }
@@ -256,7 +292,9 @@ pub fn parse(bytes: &[u8]) -> Option<PeDetails> {
                 let kind = u32le(bytes, e + 12);
                 let size = u32le(bytes, e + 16);
                 let ptr = u32le(bytes, e + 24) as u64;
-                let pdb = (kind == 2).then(|| read_codeview_pdb(bytes, ptr as usize, size as usize)).flatten();
+                let pdb = (kind == 2)
+                    .then(|| read_codeview_pdb(bytes, ptr as usize, size as usize))
+                    .flatten();
                 if let Some(p) = &pdb {
                     d.pdb_path = Some(p.clone());
                 }
@@ -278,7 +316,8 @@ pub fn parse(bytes: &[u8]) -> Option<PeDetails> {
     }
 
     // -- Authenticode coverage & checksum ------------------------------------
-    d.authentihash_ranges = authenticode_ranges(file_len, checksum_off as u64, dd_off as u64, &d.cert);
+    d.authentihash_ranges =
+        authenticode_ranges(file_len, checksum_off as u64, dd_off as u64, &d.cert);
     d.checksum = (header_checksum, compute_checksum(bytes, checksum_off));
 
     d.anomalies = anomalies(&d, file_len, size_of_headers);
@@ -317,7 +356,13 @@ fn read_codeview_pdb(bytes: &[u8], off: usize, size: usize) -> Option<String> {
     let s: String = text
         .iter()
         .take_while(|&&c| c != 0)
-        .map(|&c| if (0x20..0x7f).contains(&c) { c as char } else { '?' })
+        .map(|&c| {
+            if (0x20..0x7f).contains(&c) {
+                c as char
+            } else {
+                '?'
+            }
+        })
         .collect();
     (!s.is_empty()).then_some(s)
 }
@@ -331,7 +376,10 @@ fn authenticode_ranges(
     cert: &Option<CertInfo>,
 ) -> Vec<(u64, u64)> {
     let cert_entry = dd_off + 4 * 8; // data directory 4
-    let mut cuts = vec![(checksum_off, checksum_off + 4), (cert_entry, cert_entry + 8)];
+    let mut cuts = vec![
+        (checksum_off, checksum_off + 4),
+        (cert_entry, cert_entry + 8),
+    ];
     if let Some(c) = cert {
         if c.offset > 0 && c.size > 0 {
             cuts.push((c.offset, (c.offset + c.size).min(file_len)));
@@ -429,7 +477,10 @@ fn anomalies(d: &PeDetails, file_len: u64, size_of_headers: u32) -> Vec<Finding>
         out.push(Finding::suspicious("no sections in the section table"));
     }
     if d.sections.len() > 12 {
-        out.push(Finding::info(format!("{} sections (unusually many)", d.sections.len())));
+        out.push(Finding::info(format!(
+            "{} sections (unusually many)",
+            d.sections.len()
+        )));
     }
 
     for s in &d.sections {
@@ -454,7 +505,11 @@ fn anomalies(d: &PeDetails, file_len: u64, size_of_headers: u32) -> Vec<Finding>
                 ))
                 .at(s.raw_ptr as u64),
             );
-        } else if !uninitialized && s.vsize > 0 && s.raw_size > 0 && s.vsize as u64 > s.raw_size as u64 * 10 {
+        } else if !uninitialized
+            && s.vsize > 0
+            && s.raw_size > 0
+            && s.vsize as u64 > s.raw_size as u64 * 10
+        {
             out.push(
                 Finding::suspicious(format!(
                     "section '{}' expands {:.0}x in memory ({:#x} -> {:#x}) — typical of a packer",
@@ -478,7 +533,10 @@ fn anomalies(d: &PeDetails, file_len: u64, size_of_headers: u32) -> Vec<Finding>
             );
         }
         if s.name.contains('?') || s.name.is_empty() {
-            out.push(Finding::suspicious(format!("section name is not printable: '{}'", s.name)));
+            out.push(Finding::suspicious(format!(
+                "section name is not printable: '{}'",
+                s.name
+            )));
         }
     }
 
@@ -497,8 +555,9 @@ fn anomalies(d: &PeDetails, file_len: u64, size_of_headers: u32) -> Vec<Finding>
             "entry point is in writable section '{}' — self-modifying/unpacking stub",
             s.name
         ))),
-        Some(s) if d.sections.last().map(|l| l.name.as_str()) == Some(s.name.as_str())
-            && d.sections.len() > 1 =>
+        Some(s)
+            if d.sections.last().map(|l| l.name.as_str()) == Some(s.name.as_str())
+                && d.sections.len() > 1 =>
         {
             out.push(Finding::info(format!(
                 "entry point is in the last section '{}' (common for packed files)",
@@ -510,13 +569,25 @@ fn anomalies(d: &PeDetails, file_len: u64, size_of_headers: u32) -> Vec<Finding>
 
     if let Some(o) = d.overlay {
         if o.payload_size() > 0 {
-            let sev = if o.payload_size() > 4096 { Severity::Suspicious } else { Severity::Info };
+            let sev = if o.payload_size() > 4096 {
+                Severity::Suspicious
+            } else {
+                Severity::Info
+            };
             let msg = format!(
                 "overlay: {} bytes appended after the last section{}",
                 o.payload_size(),
-                if o.cert_size > 0 { format!(" (plus a {}-byte signature)", o.cert_size) } else { String::new() }
+                if o.cert_size > 0 {
+                    format!(" (plus a {}-byte signature)", o.cert_size)
+                } else {
+                    String::new()
+                }
             );
-            out.push(Finding { severity: sev, message: msg, offset: Some(o.offset) });
+            out.push(Finding {
+                severity: sev,
+                message: msg,
+                offset: Some(o.offset),
+            });
         }
     }
 
@@ -537,7 +608,9 @@ fn anomalies(d: &PeDetails, file_len: u64, size_of_headers: u32) -> Vec<Finding>
         )));
     }
     if d.timestamp == 0 {
-        out.push(Finding::info("TimeDateStamp is zero (stripped or reproducible build)"));
+        out.push(Finding::info(
+            "TimeDateStamp is zero (stripped or reproducible build)",
+        ));
     }
 
     if size_of_headers as u64 > file_len {
@@ -588,7 +661,10 @@ mod tests {
     fn reads_the_timestamp_from_the_coff_header() {
         let d = parse(&build_pe(EXEC_READ, 0)).expect("pe");
         assert_eq!(d.timestamp, 0x6000_0000);
-        assert!(!d.anomalies.iter().any(|f| f.message.contains("TimeDateStamp is zero")));
+        assert!(!d
+            .anomalies
+            .iter()
+            .any(|f| f.message.contains("TimeDateStamp is zero")));
     }
 
     #[test]
@@ -600,7 +676,9 @@ mod tests {
         b[sec + 36..sec + 40].copy_from_slice(&0xc000_0080u32.to_le_bytes());
         let d = parse(&b).expect("pe");
         assert!(
-            !d.anomalies.iter().any(|f| f.message.contains("no raw data")),
+            !d.anomalies
+                .iter()
+                .any(|f| f.message.contains("no raw data")),
             "{:?}",
             d.anomalies
         );

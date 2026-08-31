@@ -104,7 +104,11 @@ impl From<&FoundString> for Indicator {
         Self {
             offset: s.offset,
             kinds: s.kind_list(),
-            enc: if s.enc == strings::StrEnc::Utf16Le { "utf-16" } else { "ascii" },
+            enc: if s.enc == strings::StrEnc::Utf16Le {
+                "utf-16"
+            } else {
+                "ascii"
+            },
             value: s.value(),
             text: s.text.clone(),
         }
@@ -249,7 +253,11 @@ pub fn analyze(
     container: Option<&Container>,
     opts: &Options,
 ) -> TriageReport {
-    let mut r = TriageReport { name: name.to_string(), size: buf.len(), ..Default::default() };
+    let mut r = TriageReport {
+        name: name.to_string(),
+        size: buf.len(),
+        ..Default::default()
+    };
 
     // Whole-file bytes are needed by the format parsers; bounded like they are.
     let cap = buf.len().min(256 * 1024 * 1024) as usize;
@@ -265,7 +273,10 @@ pub fn analyze(
     // Exactly one of these claims the bytes; each contributes the structural
     // checks that make sense for its format.
     let pe = hiewlm_fmt::pe_details(&bytes);
-    let elf = pe.is_none().then(|| hiewlm_fmt::elf_details(&bytes)).flatten();
+    let elf = pe
+        .is_none()
+        .then(|| hiewlm_fmt::elf_details(&bytes))
+        .flatten();
     let macho = (pe.is_none() && elf.is_none())
         .then(|| hiewlm_fmt::macho_details(&bytes))
         .flatten();
@@ -346,8 +357,14 @@ pub fn analyze(
         if m.format == Format::Pe && !names.is_empty() {
             r.hashes.imphash = Some(imphash(&names));
         }
-        r.packer_likelihood =
-            packer(m, buf, &bytes, &r.sections, &mut r.packer, &mut r.packer_kind);
+        r.packer_likelihood = packer(
+            m,
+            buf,
+            &bytes,
+            &r.sections,
+            &mut r.packer,
+            &mut r.packer_kind,
+        );
     } else {
         r.format = "raw".into();
         r.arch = Arch::Unknown.label().into();
@@ -360,7 +377,11 @@ pub fn analyze(
                 "certificate table {} bytes at {:#x}; header checksum {}",
                 p.cert.map(|c| c.size).unwrap_or(0),
                 p.cert.map(|c| c.offset).unwrap_or(0),
-                if p.checksum_ok() { "matches" } else { "MISMATCH" }
+                if p.checksum_ok() {
+                    "matches"
+                } else {
+                    "MISMATCH"
+                }
             ));
             r.hashes.authentihash = Some(authentihash(buf, p));
         }
@@ -381,7 +402,10 @@ pub fn analyze(
             r.extra.push(("Linking".into(), "static".into()));
         }
         if e.no_section_headers {
-            r.extra.push(("Section headers".into(), "absent (stripped or packed)".into()));
+            r.extra.push((
+                "Section headers".into(),
+                "absent (stripped or packed)".into(),
+            ));
         }
         r.extra.push((
             "Segments".into(),
@@ -401,12 +425,17 @@ pub fn analyze(
         if let Some((off, size)) = m.code_signature {
             r.signature_note = Some(format!("code signature: {size} bytes at {off:#x}"));
         }
-        r.extra.push(("Mach-O type".into(), m.filetype_name.to_string()));
+        r.extra
+            .push(("Mach-O type".into(), m.filetype_name.to_string()));
         if m.encrypted {
-            r.extra.push(("Encryption".into(), "cryptid set — segment ships encrypted".into()));
+            r.extra.push((
+                "Encryption".into(),
+                "cryptid set — segment ships encrypted".into(),
+            ));
         }
         if !m.dylibs.is_empty() {
-            r.extra.push(("Linked libraries".into(), m.dylibs.len().to_string()));
+            r.extra
+                .push(("Linked libraries".into(), m.dylibs.len().to_string()));
         }
         r.extra.push((
             "Segments".into(),
@@ -490,7 +519,13 @@ fn capabilities(ir: &ImportReport) -> Vec<Capability> {
             // shows which ones actually drove the score.
             apis: hits
                 .iter()
-                .map(|h| if h.strong { format!("{}*", h.func) } else { h.func.clone() })
+                .map(|h| {
+                    if h.strong {
+                        format!("{}*", h.func)
+                    } else {
+                        h.func.clone()
+                    }
+                })
                 .collect(),
             note: hits
                 .iter()
@@ -520,7 +555,10 @@ fn packer(
     buf.read_at(FileOffset(entry_off), &mut entry);
     let secs: Vec<hiewlm_core::packer::SectionInfo> = sections
         .iter()
-        .map(|s| hiewlm_core::packer::SectionInfo { name: s.name.clone(), entropy: s.entropy })
+        .map(|s| hiewlm_core::packer::SectionInfo {
+            name: s.name.clone(),
+            entropy: s.entropy,
+        })
         .collect();
     // The whole image, because build markers can be anywhere in it.
     let rep = hiewlm_core::packer::detect(&entry, &secs, m.imports.len(), bytes);
@@ -610,7 +648,11 @@ fn entropy_map(buf: &EditBuffer, cells: usize) -> Vec<MapCell> {
     let mut off = 0u64;
     while off < len && out.len() < cells {
         let n = step.min(len - off);
-        out.push(MapCell { offset: off, len: n, entropy: range_entropy(buf, off, n) });
+        out.push(MapCell {
+            offset: off,
+            len: n,
+            entropy: range_entropy(buf, off, n),
+        });
         off += n;
     }
     out
@@ -630,7 +672,11 @@ fn score(r: &mut TriageReport) {
         r.badges.push(k.to_uppercase());
     }
 
-    let suspicious = r.anomalies.iter().filter(|a| a.severity == "suspicious").count();
+    let suspicious = r
+        .anomalies
+        .iter()
+        .filter(|a| a.severity == "suspicious")
+        .count();
     s += (suspicious as u32 * 6).min(20);
 
     if r.entropy >= 7.5 {
@@ -648,7 +694,10 @@ fn score(r: &mut TriageReport) {
         r.badges.push("TLS".into());
     }
     if r.signed {
-        if r.signature_note.as_deref().is_some_and(|n| n.contains("MISMATCH")) {
+        if r.signature_note
+            .as_deref()
+            .is_some_and(|n| n.contains("MISMATCH"))
+        {
             s += 15;
             r.badges.push("SIG-BROKEN".into());
         } else {
@@ -665,7 +714,11 @@ fn score(r: &mut TriageReport) {
         r.badges.push(format!("IOC{strong_iocs}"));
     }
     // A document that runs code on open is the whole verdict.
-    let doc_suspicious = r.doc_findings.iter().filter(|f| f.severity == "suspicious").count();
+    let doc_suspicious = r
+        .doc_findings
+        .iter()
+        .filter(|f| f.severity == "suspicious")
+        .count();
     if doc_suspicious > 0 {
         // A document that auto-updates an object, carries a DDE field and names
         // Equation.3 is not "notable" — every one of those is the payload path.
@@ -690,7 +743,10 @@ fn score(r: &mut TriageReport) {
         s += 25;
         r.badges.push(format!("YARA{}", r.yara.len()));
     }
-    if r.container_findings.iter().any(|f| f.severity == "suspicious") {
+    if r.container_findings
+        .iter()
+        .any(|f| f.severity == "suspicious")
+    {
         s += 15;
         r.badges.push("CONTAINER".into());
     }
@@ -774,15 +830,30 @@ mod tests {
         data.extend(b"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\0");
         data.extend(b"just some prose that is not an indicator at all\0");
         let r = analyze("t.bin", &buf(data), None, &Options::default());
-        assert!(r.indicators.iter().any(|i| i.value == "http://c2.example.top/gate.php"));
+        assert!(r
+            .indicators
+            .iter()
+            .any(|i| i.value == "http://c2.example.top/gate.php"));
         assert!(r.indicators.iter().all(|i| !i.kinds.is_empty()));
-        assert!(r.indicators[0].kinds.contains("url"), "URLs sort first: {:?}", r.indicators[0]);
+        assert!(
+            r.indicators[0].kinds.contains("url"),
+            "URLs sort first: {:?}",
+            r.indicators[0]
+        );
     }
 
     #[test]
     fn entropy_map_covers_the_file() {
         let b = buf(vec![0u8; 10_000]);
-        let r = analyze("t.bin", &b, None, &Options { map_cells: 10, ..Default::default() });
+        let r = analyze(
+            "t.bin",
+            &b,
+            None,
+            &Options {
+                map_cells: 10,
+                ..Default::default()
+            },
+        );
         assert_eq!(r.map.len(), 10);
         assert_eq!(r.map.iter().map(|c| c.len).sum::<u64>(), 10_000);
         assert!(r.map[0].entropy < 0.1, "zeros have no entropy");
@@ -809,11 +880,16 @@ mod tests {
 
         let r = analyze("t.elf", &buf(b), None, &Options::default());
         assert!(
-            r.anomalies.iter().any(|a| a.message.contains("writable AND executable")),
+            r.anomalies
+                .iter()
+                .any(|a| a.message.contains("writable AND executable")),
             "{:?}",
             r.anomalies
         );
-        assert!(r.anomalies.iter().any(|a| a.message.contains("no section header table")));
+        assert!(r
+            .anomalies
+            .iter()
+            .any(|a| a.message.contains("no section header table")));
         assert!(r.extra.iter().any(|(k, _)| k == "ELF type"));
     }
 
@@ -824,8 +900,16 @@ mod tests {
         let r = analyze("t.bin", &buf(data), None, &Options::default());
         let h = r.hidden.first().expect("a hidden string");
         assert_eq!(h.recipe, "xor 41");
-        assert!(h.preview.contains("http://hidden.example.top"), "{}", h.preview);
-        assert!(r.badges.iter().any(|b| b.starts_with("HIDDEN")), "{:?}", r.badges);
+        assert!(
+            h.preview.contains("http://hidden.example.top"),
+            "{}",
+            h.preview
+        );
+        assert!(
+            r.badges.iter().any(|b| b.starts_with("HIDDEN")),
+            "{:?}",
+            r.badges
+        );
     }
 
     #[test]
@@ -838,7 +922,11 @@ mod tests {
             matches: vec![(0, 4, "$a".into())],
         }]);
         assert!(r.score > before);
-        assert!(r.badges.iter().any(|b| b.starts_with("YARA")), "{:?}", r.badges);
+        assert!(
+            r.badges.iter().any(|b| b.starts_with("YARA")),
+            "{:?}",
+            r.badges
+        );
         // Re-scoring must not double-count on a second call.
         let once = r.score;
         r.set_yara(r.yara.clone());

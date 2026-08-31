@@ -40,7 +40,9 @@ impl Config {
 
     /// Names to enable in the container registry. Defaults to everything.
     pub fn plugins(&self) -> Vec<String> {
-        self.plugins.clone().unwrap_or_else(|| vec!["all".to_string()])
+        self.plugins
+            .clone()
+            .unwrap_or_else(|| vec!["all".to_string()])
     }
 
     pub fn encoding(&self) -> Option<Encoding> {

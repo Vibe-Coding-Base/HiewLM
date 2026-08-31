@@ -104,7 +104,11 @@ impl FoundString {
 
     /// `url,ip` — the categories, for display and filtering.
     pub fn kind_list(&self) -> String {
-        self.kinds.iter().map(|k| k.label()).collect::<Vec<_>>().join(",")
+        self.kinds
+            .iter()
+            .map(|k| k.label())
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 
@@ -167,7 +171,12 @@ impl Run {
             let text: String = self.bytes.iter().map(|&c| c as char).collect();
             let kinds = classify(&text);
             if !opts.only_tagged || !kinds.is_empty() {
-                out.push(FoundString { offset: self.start, text, enc, kinds });
+                out.push(FoundString {
+                    offset: self.start,
+                    text,
+                    enc,
+                    kinds,
+                });
             }
         }
         self.bytes.clear();
@@ -263,7 +272,11 @@ pub fn extract(data: &[u8], opts: &Options) -> Scan {
 
 /// Extract strings from a buffer without materializing it, honouring `max_bytes`.
 pub fn extract_buffer(buf: &EditBuffer, opts: &Options) -> Scan {
-    let limit = if opts.max_bytes == 0 { buf.len() } else { opts.max_bytes.min(buf.len()) };
+    let limit = if opts.max_bytes == 0 {
+        buf.len()
+    } else {
+        opts.max_bytes.min(buf.len())
+    };
     let mut out = Vec::new();
     let mut sc = Scanner::new();
     let mut chunk = vec![0u8; 64 * 1024];
@@ -283,14 +296,19 @@ fn finalize(mut out: Vec<FoundString>, opts: &Options, mut truncated: bool) -> S
     out.sort_by_key(|s| (s.offset, s.enc == StrEnc::Utf16Le));
     // The two wide parities can rediscover the same text one byte apart; keep one.
     out.dedup_by(|a, b| {
-        a.enc == StrEnc::Utf16Le && b.enc == StrEnc::Utf16Le && a.text == b.text
+        a.enc == StrEnc::Utf16Le
+            && b.enc == StrEnc::Utf16Le
+            && a.text == b.text
             && a.offset.abs_diff(b.offset) <= 1
     });
     if opts.max_results > 0 && out.len() > opts.max_results {
         out.truncate(opts.max_results);
         truncated = true;
     }
-    Scan { strings: out, truncated }
+    Scan {
+        strings: out,
+        truncated,
+    }
 }
 
 /// The indicator categories a string belongs to (possibly none).
@@ -319,7 +337,10 @@ pub fn classify(s: &str) -> Vec<Kind> {
     if lower.starts_with("mozilla/") || lower.contains("user-agent") {
         kinds.push(Kind::UserAgent);
     }
-    if lower.contains("global\\") || lower.contains("local\\") || lower.contains("\\basenamedobjects\\") {
+    if lower.contains("global\\")
+        || lower.contains("local\\")
+        || lower.contains("\\basenamedobjects\\")
+    {
         kinds.push(Kind::Mutex);
     }
     if is_unc(s) {
@@ -404,7 +425,9 @@ pub fn find_ipv4(s: &str) -> Option<(usize, String)> {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if !bytes[i].is_ascii_digit() || (i > 0 && (bytes[i - 1].is_ascii_digit() || bytes[i - 1] == b'.')) {
+        if !bytes[i].is_ascii_digit()
+            || (i > 0 && (bytes[i - 1].is_ascii_digit() || bytes[i - 1] == b'.'))
+        {
             i += 1;
             continue;
         }
@@ -460,11 +483,17 @@ fn is_email(s: &str) -> bool {
 /// A bare hostname: dotted labels ending in an alphabetic TLD, no spaces, and
 /// not merely a filename like "kernel32.dll".
 fn is_domain(lower: &str) -> bool {
-    let host = lower.split(['/', '?', '#', ':', ' ']).next().unwrap_or(lower);
+    let host = lower
+        .split(['/', '?', '#', ':', ' '])
+        .next()
+        .unwrap_or(lower);
     if host.len() < 4 || host.len() > 253 || !host.contains('.') {
         return false;
     }
-    if host.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')) {
+    if host
+        .chars()
+        .any(|c| !(c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_'))
+    {
         return false;
     }
     let labels: Vec<&str> = host.split('.').collect();
@@ -525,14 +554,19 @@ fn is_unc(s: &str) -> bool {
     let rest = rest.strip_prefix("?\\").unwrap_or(rest);
     let host = rest.split('\\').next().unwrap_or("");
     host.len() >= 2
-        && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
 }
 
 fn is_path(s: &str, lower: &str) -> bool {
     if s.len() < 6 {
         return false;
     }
-    let drive = s.as_bytes().windows(3).any(|w| w[0].is_ascii_alphabetic() && w[1] == b':' && w[2] == b'\\');
+    let drive = s
+        .as_bytes()
+        .windows(3)
+        .any(|w| w[0].is_ascii_alphabetic() && w[1] == b':' && w[2] == b'\\');
     drive
         || lower.starts_with("%appdata%")
         || lower.starts_with("%temp%")
@@ -545,8 +579,17 @@ fn is_guid(s: &str) -> bool {
     let t = s.trim_matches(['{', '}']);
     let parts: Vec<&str> = t.split('-').collect();
     parts.len() == 5
-        && [8, 4, 4, 4, 12] == [parts[0].len(), parts[1].len(), parts[2].len(), parts[3].len(), parts[4].len()]
-        && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
+        && [8, 4, 4, 4, 12]
+            == [
+                parts[0].len(),
+                parts[1].len(),
+                parts[2].len(),
+                parts[3].len(),
+                parts[4].len(),
+            ]
+        && parts
+            .iter()
+            .all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// A long, dense run of base64 characters — how configuration blobs and staged
@@ -556,7 +599,10 @@ fn is_base64_blob(s: &str) -> bool {
     if t.len() < 32 || t.contains(' ') {
         return false;
     }
-    if !t.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/') {
+    if !t
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/')
+    {
         return false;
     }
     // Require a real mix, so plain identifiers and hex blobs do not qualify.
@@ -620,7 +666,13 @@ mod tests {
     fn finds_ascii_and_wide_strings() {
         let mut data = b"..hello world..".to_vec();
         data.extend(b"m\0a\0l\0w\0a\0r\0e\0".iter());
-        let scan = extract(&data, &Options { min_len: 4, ..Default::default() });
+        let scan = extract(
+            &data,
+            &Options {
+                min_len: 4,
+                ..Default::default()
+            },
+        );
         let texts: Vec<&str> = scan.strings.iter().map(|s| s.text.as_str()).collect();
         assert!(texts.iter().any(|t| t.contains("hello world")), "{texts:?}");
         assert!(texts.contains(&"malware"), "{texts:?}");
@@ -631,7 +683,10 @@ mod tests {
         let mut data = vec![0xffu8];
         data.extend(b"c\0o\0n\0f\0i\0g\0".iter());
         let scan = extract(&data, &Options::default());
-        assert!(scan.strings.iter().any(|s| s.text == "config" && s.enc == StrEnc::Utf16Le));
+        assert!(scan
+            .strings
+            .iter()
+            .any(|s| s.text == "config" && s.enc == StrEnc::Utf16Le));
     }
 
     #[test]
@@ -668,14 +723,20 @@ mod tests {
     fn version_numbers_are_not_addresses() {
         assert!(find_ipv4("1.0.0.0.1").is_none());
         assert!(find_ipv4("999.1.1.1").is_none());
-        assert_eq!(find_ipv4("host 10.0.0.5 up").map(|(_, s)| s), Some("10.0.0.5".into()));
+        assert_eq!(
+            find_ipv4("host 10.0.0.5 up").map(|(_, s)| s),
+            Some("10.0.0.5".into())
+        );
     }
 
     #[test]
     fn binary_noise_is_not_a_domain() {
         // Real string-table debris that used to pass the old TLD check.
         for junk in ["Z.xgU", "__.SYMDEF", "a.b", "x.QQQZ"] {
-            assert!(!classify(junk).contains(&Kind::Domain), "{junk} classified as a domain");
+            assert!(
+                !classify(junk).contains(&Kind::Domain),
+                "{junk} classified as a domain"
+            );
         }
         assert!(classify("update.evil-cdn.top").contains(&Kind::Domain));
     }
@@ -683,7 +744,10 @@ mod tests {
     #[test]
     fn code_tokens_are_not_domains() {
         for junk in ["i32.store", "f64.load", "u8.max", "v128.const"] {
-            assert!(!classify(junk).contains(&Kind::Domain), "{junk} classified as a domain");
+            assert!(
+                !classify(junk).contains(&Kind::Domain),
+                "{junk} classified as a domain"
+            );
         }
     }
 
@@ -721,7 +785,13 @@ mod tests {
     #[test]
     fn only_tagged_keeps_indicators_only() {
         let data = b"just some prose here\0http://c2.example.top/p\0";
-        let scan = extract(data, &Options { only_tagged: true, ..Default::default() });
+        let scan = extract(
+            data,
+            &Options {
+                only_tagged: true,
+                ..Default::default()
+            },
+        );
         assert_eq!(scan.strings.len(), 1);
         assert!(scan.strings[0].kinds.contains(&Kind::Url));
     }

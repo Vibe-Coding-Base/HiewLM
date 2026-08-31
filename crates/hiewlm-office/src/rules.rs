@@ -64,12 +64,17 @@ pub fn rule_count() -> usize {
 
 /// The first rule of `kind` whose value occurs in `haystack` (already lowercase).
 pub fn first_match<'a>(kind: &'a str, haystack_lower: &str) -> Option<&'a DocRule> {
-    rules(kind).iter().find(|r| haystack_lower.contains(&r.needle))
+    rules(kind)
+        .iter()
+        .find(|r| haystack_lower.contains(&r.needle))
 }
 
 /// Every rule of `kind` whose value occurs in `haystack` (already lowercase).
 pub fn all_matches<'a>(kind: &'a str, haystack_lower: &str) -> Vec<&'a DocRule> {
-    rules(kind).iter().filter(|r| haystack_lower.contains(&r.needle)).collect()
+    rules(kind)
+        .iter()
+        .filter(|r| haystack_lower.contains(&r.needle))
+        .collect()
 }
 
 #[cfg(test)]

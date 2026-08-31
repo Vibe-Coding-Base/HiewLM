@@ -235,15 +235,9 @@ enum Cmd {
     /// Detect packers/protectors (signatures + entropy/import heuristics).
     Packer { file: PathBuf },
     /// Run a Rhai script against a file for automated inspection/patching.
-    Script {
-        file: PathBuf,
-        script: PathBuf,
-    },
+    Script { file: PathBuf, script: PathBuf },
     /// Run a sandboxed WASM plugin (.wasm/.wat) against a file.
-    Plugin {
-        file: PathBuf,
-        wasm: PathBuf,
-    },
+    Plugin { file: PathBuf, wasm: PathBuf },
 }
 
 fn main() -> std::process::ExitCode {
@@ -262,7 +256,11 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
     let out = match cmd {
         Cmd::Plugins => cmd_plugins()?,
         Cmd::Rules { dump } => cmd_rules(dump.as_deref())?,
-        Cmd::Office { file, macros, fail_on_suspicious } => {
+        Cmd::Office {
+            file,
+            macros,
+            fail_on_suspicious,
+        } => {
             let (text, suspicious) = cmd_office(&file, macros)?;
             print!("{text}");
             return Ok(if suspicious && fail_on_suspicious {
@@ -271,11 +269,24 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
                 ExitCode::SUCCESS
             });
         }
-        Cmd::Xorkey { file, at, count, max_len } => cmd_xorkey(&file, &at, count, max_len)?,
-        Cmd::Yara { file, rules, fail_on_match } => {
+        Cmd::Xorkey {
+            file,
+            at,
+            count,
+            max_len,
+        } => cmd_xorkey(&file, &at, count, max_len)?,
+        Cmd::Yara {
+            file,
+            rules,
+            fail_on_match,
+        } => {
             let (text, matched) = cmd_yara(&file, &rules)?;
             print!("{text}");
-            return Ok(if matched && fail_on_match { ExitCode::from(1) } else { ExitCode::SUCCESS });
+            return Ok(if matched && fail_on_match {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            });
         }
         Cmd::Triage {
             file,
@@ -288,8 +299,14 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
         } => {
             // `--json` stays as the shorthand it always was.
             let format = if json { "json".to_string() } else { format };
-            let (text, worst) =
-                cmd_triage(&file, plugins, &format, min_score, max_string_bytes, yara.as_deref())?;
+            let (text, worst) = cmd_triage(
+                &file,
+                plugins,
+                &format,
+                min_score,
+                max_string_bytes,
+                yara.as_deref(),
+            )?;
             print!("{text}");
             return Ok(if fail_on_suspicious && worst >= min_score {
                 ExitCode::from(1)
@@ -297,7 +314,11 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
                 ExitCode::SUCCESS
             });
         }
-        Cmd::Container { file, findings, fail_on_suspicious } => {
+        Cmd::Container {
+            file,
+            findings,
+            fail_on_suspicious,
+        } => {
             let (text, suspicious) = cmd_container(&file, plugins, findings)?;
             print!("{text}");
             return Ok(if suspicious && fail_on_suspicious {
@@ -308,24 +329,58 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
         }
         Cmd::Info { file } => cmd_info(&file, plugins)?,
         Cmd::Hex { file, at, count } => cmd_hex(&file, &at, count)?,
-        Cmd::Disasm { file, at, count, arch } => cmd_disasm(&file, at.as_deref(), count, arch.as_deref())?,
+        Cmd::Disasm {
+            file,
+            at,
+            count,
+            arch,
+        } => cmd_disasm(&file, at.as_deref(), count, arch.as_deref())?,
         Cmd::Search { file, pattern, hex } => {
             let (text, found) = cmd_search(&file, &pattern, hex)?;
             print!("{text}");
-            return Ok(if found { ExitCode::SUCCESS } else { ExitCode::from(1) });
+            return Ok(if found {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            });
         }
-        Cmd::Replace { file, find, with, recursive, hex, no_backup } => {
-            cmd_replace(&file, &find, &with, recursive, hex, !no_backup)?
-        }
-        Cmd::Patch { file, at, bytes, no_backup } => cmd_patch(&file, &at, &bytes, !no_backup)?,
-        Cmd::Asm { file, at, text, bits, dry_run, no_backup } => {
-            cmd_asm(&file, &at, &text, bits, dry_run, !no_backup)?
-        }
-        Cmd::Crypt { file, recipe, at, count, dry_run, no_backup } => {
-            cmd_crypt(&file, &recipe, &at, count, dry_run, !no_backup)?
-        }
+        Cmd::Replace {
+            file,
+            find,
+            with,
+            recursive,
+            hex,
+            no_backup,
+        } => cmd_replace(&file, &find, &with, recursive, hex, !no_backup)?,
+        Cmd::Patch {
+            file,
+            at,
+            bytes,
+            no_backup,
+        } => cmd_patch(&file, &at, &bytes, !no_backup)?,
+        Cmd::Asm {
+            file,
+            at,
+            text,
+            bits,
+            dry_run,
+            no_backup,
+        } => cmd_asm(&file, &at, &text, bits, dry_run, !no_backup)?,
+        Cmd::Crypt {
+            file,
+            recipe,
+            at,
+            count,
+            dry_run,
+            no_backup,
+        } => cmd_crypt(&file, &recipe, &at, count, dry_run, !no_backup)?,
         Cmd::Hash { file } => cmd_hash(&file)?,
-        Cmd::Strings { file, min, utf16, ioc } => cmd_strings(&file, min, utf16, ioc)?,
+        Cmd::Strings {
+            file,
+            min,
+            utf16,
+            ioc,
+        } => cmd_strings(&file, min, utf16, ioc)?,
         Cmd::Entropy { file } => cmd_entropy(&file)?,
         Cmd::Packer { file } => cmd_packer(&file)?,
         Cmd::Script { file, script } => cmd_script(&file, &script)?,
@@ -497,13 +552,20 @@ fn cmd_container(file: &Path, plugins: &[String], only_findings: bool) -> Result
     let mut s = String::new();
     let suspicious = c.suspicious().count() > 0;
     if !only_findings {
-        s.push_str(&format!("file      {}\nplugin    {name}\nkind      {}\n", file.display(), c.kind));
+        s.push_str(&format!(
+            "file      {}\nplugin    {name}\nkind      {}\n",
+            file.display(),
+            c.kind
+        ));
         for (k, v) in &c.summary {
             s.push_str(&format!("  {k:<14} {v}\n"));
         }
         s.push_str(&format!("\nmembers ({}):\n", c.members.len()));
         for m in &c.members {
-            s.push_str(&format!("  off:{:08X}  {:<40} {}\n", m.offset, m.name, m.detail));
+            s.push_str(&format!(
+                "  off:{:08X}  {:<40} {}\n",
+                m.offset, m.name, m.detail
+            ));
         }
     }
     if !c.findings.is_empty() {
@@ -519,7 +581,11 @@ fn cmd_container(file: &Path, plugins: &[String], only_findings: bool) -> Result
 fn cmd_info(file: &Path, plugins: &[String]) -> Result<String> {
     let (buf, model) = open(file)?;
     let mut s = String::new();
-    s.push_str(&format!("file      {}\nsize      {}\n", file.display(), buf.len()));
+    s.push_str(&format!(
+        "file      {}\nsize      {}\n",
+        file.display(),
+        buf.len()
+    ));
     let Some(m) = model else {
         // Not an executable — an activated container plugin may still know it.
         if !plugins.is_empty() {
@@ -533,12 +599,25 @@ fn cmd_info(file: &Path, plugins: &[String]) -> Result<String> {
         }
         return Ok(s);
     };
-    s.push_str(&format!("format    {}\narch      {} / {}-bit\n", m.format.label(), m.arch.label(), m.bits));
+    s.push_str(&format!(
+        "format    {}\narch      {} / {}-bit\n",
+        m.format.label(),
+        m.arch.label(),
+        m.bits
+    ));
     if let Some(e) = m.entry {
         s.push_str(&format!("entry     .{e:08X}\n"));
     }
-    s.push_str(&format!("sections  {}  imports {}  exports {}\n", m.address_space.sections().len(), m.imports.len(), m.exports.len()));
-    s.push_str(&format!("packer    {}\n", packer_report(&buf, &Some(m.clone())).summary()));
+    s.push_str(&format!(
+        "sections  {}  imports {}  exports {}\n",
+        m.address_space.sections().len(),
+        m.imports.len(),
+        m.exports.len()
+    ));
+    s.push_str(&format!(
+        "packer    {}\n",
+        packer_report(&buf, &Some(m.clone())).summary()
+    ));
     for (k, v) in &m.header_fields {
         s.push_str(&format!("  {k:<18} {v}\n"));
     }
@@ -551,7 +630,10 @@ fn cmd_info(file: &Path, plugins: &[String]) -> Result<String> {
     }
     s.push_str("\nsections:\n");
     for sec in m.address_space.sections() {
-        s.push_str(&format!("  {:<16} off:{:08X} va:.{:08X} size:{:X}\n", sec.name, sec.file_off, sec.va, sec.size));
+        s.push_str(&format!(
+            "  {:<16} off:{:08X} va:.{:08X} size:{:X}\n",
+            sec.name, sec.file_off, sec.va, sec.size
+        ));
     }
     Ok(s)
 }
@@ -576,7 +658,11 @@ fn cmd_hex(file: &Path, at: &str, count: u64) -> Result<String> {
         }
         s.push_str(" |");
         for &b in &bytes[..row as usize] {
-            s.push(if (0x20..0x7f).contains(&b) { b as char } else { '.' });
+            s.push(if (0x20..0x7f).contains(&b) {
+                b as char
+            } else {
+                '.'
+            });
         }
         s.push_str("|\n");
         off += row;
@@ -588,7 +674,10 @@ fn cmd_disasm(file: &Path, at: Option<&str>, count: usize, arch: Option<&str>) -
     let (buf, model) = open(file)?;
     let (a, bits) = match arch {
         Some(name) => arch_of(name)?,
-        None => model.as_ref().map(|m| (m.arch, m.bits)).unwrap_or((Arch::X86_64, 64)),
+        None => model
+            .as_ref()
+            .map(|m| (m.arch, m.bits))
+            .unwrap_or((Arch::X86_64, 64)),
     };
     if !Disassembler::supports(a) {
         bail!("disassembly for {} is not supported yet", a.label());
@@ -598,7 +687,11 @@ fn cmd_disasm(file: &Path, at: Option<&str>, count: usize, arch: Option<&str>) -
         None => model
             .as_ref()
             .and_then(|m| m.entry)
-            .and_then(|va| model.as_ref().and_then(|m| m.address_space.offset_of(Va(va))))
+            .and_then(|va| {
+                model
+                    .as_ref()
+                    .and_then(|m| m.address_space.offset_of(Va(va)))
+            })
             .map(|o| o.get())
             .unwrap_or(0),
     };
@@ -613,7 +706,12 @@ fn cmd_disasm(file: &Path, at: Option<&str>, count: usize, arch: Option<&str>) -
     buf.read_at(FileOffset(start), &mut data);
     let mut s = String::new();
     for ins in Disassembler::new(a, bits).decode(&data, start, va, count) {
-        let hexb: String = ins.bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join("");
+        let hexb: String = ins
+            .bytes
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<Vec<_>>()
+            .join("");
         s.push_str(&format!("{:08X}: {:<20} {}\n", ins.va, hexb, ins.text));
     }
     Ok(s)
@@ -639,8 +737,16 @@ fn cmd_replace(
     hex: bool,
     do_backup: bool,
 ) -> Result<String> {
-    let needle = if hex { parse_hex_bytes(find)? } else { find.as_bytes().to_vec() };
-    let repl = if hex { parse_hex_bytes(with)? } else { with.as_bytes().to_vec() };
+    let needle = if hex {
+        parse_hex_bytes(find)?
+    } else {
+        find.as_bytes().to_vec()
+    };
+    let repl = if hex {
+        parse_hex_bytes(with)?
+    } else {
+        with.as_bytes().to_vec()
+    };
     if needle.is_empty() {
         bail!("empty search pattern");
     }
@@ -665,7 +771,10 @@ fn cmd_replace(
         backup(file)?;
     }
     std::fs::write(file, &out)?;
-    Ok(format!("# replaced {count} occurrence(s){}\n", if do_backup { ", .bak saved" } else { "" }))
+    Ok(format!(
+        "# replaced {count} occurrence(s){}\n",
+        if do_backup { ", .bak saved" } else { "" }
+    ))
 }
 
 /// Replace in every file under `dir`, recursively and budgeted.
@@ -673,12 +782,7 @@ fn cmd_replace(
 /// This lives on the command line and not in the interactive viewer on purpose:
 /// rewriting a folder of samples should be something you typed out, not
 /// something one keystroke away from the keys you press all day.
-fn replace_in_tree(
-    dir: &Path,
-    needle: &[u8],
-    repl: &[u8],
-    do_backup: bool,
-) -> Result<String> {
+fn replace_in_tree(dir: &Path, needle: &[u8], repl: &[u8], do_backup: bool) -> Result<String> {
     const MAX_FILES: usize = 5000;
     const MAX_SIZE: u64 = 64 * 1024 * 1024;
 
@@ -689,7 +793,9 @@ fn replace_in_tree(
     let mut stack = vec![dir.to_path_buf()];
 
     while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for entry in rd.flatten() {
             if budget == 0 {
                 bail!("stopped after {MAX_FILES} files; narrow the directory");
@@ -707,7 +813,9 @@ fn replace_in_tree(
             if entry.metadata().map(|m| m.len() > MAX_SIZE).unwrap_or(true) {
                 continue;
             }
-            let Ok(data) = std::fs::read(&path) else { continue };
+            let Ok(data) = std::fs::read(&path) else {
+                continue;
+            };
             let (new, count) = replace_all(&data, needle, repl);
             if count == 0 {
                 continue;
@@ -738,14 +846,22 @@ fn cmd_patch(file: &Path, at: &str, bytes: &str, do_backup: bool) -> Result<Stri
     let patch = parse_hex_bytes(bytes)?;
     let mut data = std::fs::read(file)?;
     if off + patch.len() > data.len() {
-        bail!("patch at {off:#x} + {} bytes exceeds file size {}", patch.len(), data.len());
+        bail!(
+            "patch at {off:#x} + {} bytes exceeds file size {}",
+            patch.len(),
+            data.len()
+        );
     }
     if do_backup {
         backup(file)?;
     }
     data[off..off + patch.len()].copy_from_slice(&patch);
     std::fs::write(file, &data)?;
-    Ok(format!("# wrote {} byte(s) at {off:#x}{}\n", patch.len(), if do_backup { ", .bak saved" } else { "" }))
+    Ok(format!(
+        "# wrote {} byte(s) at {off:#x}{}\n",
+        patch.len(),
+        if do_backup { ", .bak saved" } else { "" }
+    ))
 }
 
 fn cmd_asm(
@@ -758,7 +874,9 @@ fn cmd_asm(
 ) -> Result<String> {
     let (buf, model) = open(file)?;
     let off = parse_addr(at, &model)?;
-    let bits = bits.or_else(|| model.as_ref().map(|m| m.bits)).unwrap_or(64);
+    let bits = bits
+        .or_else(|| model.as_ref().map(|m| m.bits))
+        .unwrap_or(64);
     if !matches!(bits, 16 | 32 | 64) {
         bail!("bits must be 16, 32 or 64");
     }
@@ -789,7 +907,11 @@ fn cmd_asm(
     }
     data[off as usize..off as usize + bytes.len()].copy_from_slice(&bytes);
     std::fs::write(file, &data).with_context(|| format!("writing {}", file.display()))?;
-    s.push_str(&format!("# wrote {} byte(s){}\n", bytes.len(), if make_backup { " (.bak saved)" } else { "" }));
+    s.push_str(&format!(
+        "# wrote {} byte(s){}\n",
+        bytes.len(),
+        if make_backup { " (.bak saved)" } else { "" }
+    ));
     Ok(s)
 }
 
@@ -808,14 +930,23 @@ fn cmd_crypt(
     if start >= data.len() as u64 {
         bail!("start {start:#x} is past end of file");
     }
-    let end = if count == 0 { data.len() as u64 } else { (start + count).min(data.len() as u64) };
+    let end = if count == 0 {
+        data.len() as u64
+    } else {
+        (start + count).min(data.len() as u64)
+    };
     let (s, e) = (start as usize, end as usize);
 
     let before: Vec<u8> = data[s..e.min(s + 16)].to_vec();
     r.apply(&mut data[s..e], 0);
     let after: Vec<u8> = data[s..e.min(s + 16)].to_vec();
 
-    let hex = |v: &[u8]| v.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
+    let hex = |v: &[u8]| {
+        v.iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     let mut out = format!(
         "{recipe}\n  range   {start:08X}..{end:08X} ({} bytes)\n  before  {}\n  after   {}\n",
         e - s,
@@ -834,7 +965,11 @@ fn cmd_crypt(
         backup(file)?;
     }
     std::fs::write(file, &data).with_context(|| format!("writing {}", file.display()))?;
-    out.push_str(&format!("# wrote {} byte(s){}\n", e - s, if make_backup { " (.bak saved)" } else { "" }));
+    out.push_str(&format!(
+        "# wrote {} byte(s){}\n",
+        e - s,
+        if make_backup { " (.bak saved)" } else { "" }
+    ));
     Ok(out)
 }
 
@@ -881,8 +1016,17 @@ fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String
     );
     let mut s = String::new();
     for f in &scan.strings {
-        let tags = if f.kinds.is_empty() { String::new() } else { format!("[{}] ", f.kind_list()) };
-        s.push_str(&format!("{:08X} {} {tags}{}\n", f.offset, f.enc.label(), f.text));
+        let tags = if f.kinds.is_empty() {
+            String::new()
+        } else {
+            format!("[{}] ", f.kind_list())
+        };
+        s.push_str(&format!(
+            "{:08X} {} {tags}{}\n",
+            f.offset,
+            f.enc.label(),
+            f.text
+        ));
     }
     if scan.truncated {
         s.push_str("... (truncated: scan hit its limit)\n");
@@ -896,7 +1040,11 @@ fn cmd_office(file: &Path, show_macros: bool) -> Result<(String, bool)> {
     let doc = hiewlm_office::parse(&data)
         .ok_or_else(|| anyhow!("not an Office document (no OLE2, OOXML or RTF structure)"))?;
 
-    let mut out = format!("format     {}\ncontainer  {}\n", doc.format, doc.kind.label());
+    let mut out = format!(
+        "format     {}\ncontainer  {}\n",
+        doc.format,
+        doc.kind.label()
+    );
     if !doc.metadata.is_empty() {
         out.push_str("\n== Metadata ==\n");
         for (k, v) in &doc.metadata {
@@ -911,8 +1059,15 @@ fn cmd_office(file: &Path, show_macros: bool) -> Result<(String, bool)> {
             Some(o) => format!("{o:08X}"),
             None => "        ".to_string(),
         };
-        let detail = if n.detail.is_empty() { String::new() } else { format!("  {}", n.detail) };
-        out.push_str(&format!("{off}  {:<8} {:>9}  {indent}{}{detail}\n", n.kind, n.size, n.path));
+        let detail = if n.detail.is_empty() {
+            String::new()
+        } else {
+            format!("  {}", n.detail)
+        };
+        out.push_str(&format!(
+            "{off}  {:<8} {:>9}  {indent}{}{detail}\n",
+            n.kind, n.size, n.path
+        ));
     }
 
     if !doc.external.is_empty() {
@@ -937,7 +1092,11 @@ fn cmd_office(file: &Path, show_macros: bool) -> Result<(String, bool)> {
     if !doc.macros.is_empty() {
         out.push_str(&format!("\n== Macros ({}) ==\n", doc.macros.len()));
         for m in &doc.macros {
-            out.push_str(&format!("-- {} ({} lines)\n", m.path, m.source.lines().count()));
+            out.push_str(&format!(
+                "-- {} ({} lines)\n",
+                m.path,
+                m.source.lines().count()
+            ));
             if !m.keywords.is_empty() {
                 out.push_str(&format!("   keywords: {}\n", m.keywords.join(", ")));
             }
@@ -957,9 +1116,12 @@ fn cmd_office(file: &Path, show_macros: bool) -> Result<(String, bool)> {
 fn cmd_rules(dump: Option<&str>) -> Result<String> {
     use hiewlm_core::ruledata;
     if let Some(name) = dump {
-        return ruledata::builtin(name)
-            .map(str::to_string)
-            .ok_or_else(|| anyhow!("no such table '{name}'; try: {}", ruledata::builtin_names().join(", ")));
+        return ruledata::builtin(name).map(str::to_string).ok_or_else(|| {
+            anyhow!(
+                "no such table '{name}'; try: {}",
+                ruledata::builtin_names().join(", ")
+            )
+        });
     }
     let mut out = String::new();
     for name in ruledata::builtin_names() {
@@ -1008,7 +1170,13 @@ fn cmd_xorkey(file: &Path, at: &str, count: u64, max_len: usize) -> Result<Strin
         let printable: String = c
             .key
             .iter()
-            .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+            .map(|&b| {
+                if (0x20..0x7f).contains(&b) {
+                    b as char
+                } else {
+                    '.'
+                }
+            })
             .collect();
         out.push_str(&format!(
             "{:>3}B  {:>3.0}%  {:<34} \"{printable}\"\n      {}\n",
@@ -1035,8 +1203,16 @@ fn cmd_yara(file: &Path, rules: &Path) -> Result<(String, bool)> {
     }
     let mut out = String::new();
     for h in &hits {
-        let tags = if h.tags.is_empty() { String::new() } else { format!(" [{}]", h.tags.join(" ")) };
-        out.push_str(&format!("{}{tags}  {} match(es)\n", h.rule, h.matches.len()));
+        let tags = if h.tags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", h.tags.join(" "))
+        };
+        out.push_str(&format!(
+            "{}{tags}  {} match(es)\n",
+            h.rule,
+            h.matches.len()
+        ));
         for (off, len, id) in h.matches.iter().take(64) {
             out.push_str(&format!("    {off:08X}  {len:>5}  {id}\n"));
         }
@@ -1053,7 +1229,10 @@ fn cmd_triage(
     max_string_bytes: u64,
     yara: Option<&Path>,
 ) -> Result<(String, u8)> {
-    let opts = hiewlm_triage::Options { max_string_bytes, ..Default::default() };
+    let opts = hiewlm_triage::Options {
+        max_string_bytes,
+        ..Default::default()
+    };
     if path.is_dir() {
         return triage_dir(path, plugins, format, min_score, &opts, yara);
     }
@@ -1082,8 +1261,16 @@ fn triage_one(
         let data = read_all(&buf);
         reg.parse(&data).map(|(_, c)| c)
     };
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    Ok(hiewlm_triage::analyze(&name, &buf, container.as_ref(), opts))
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(hiewlm_triage::analyze(
+        &name,
+        &buf,
+        container.as_ref(),
+        opts,
+    ))
 }
 
 /// Fold a YARA scan into an existing report, if rules were given.
@@ -1151,7 +1338,10 @@ fn triage_dir(
         }
         return Ok((out, worst));
     }
-    let mut out = format!("{:>5} {:<10} {:<40} {:<34} {}\n", "score", "verdict", "file", "sha256", "badges");
+    let mut out = format!(
+        "{:>5} {:<10} {:<40} {:<34} {}\n",
+        "score", "verdict", "file", "sha256", "badges"
+    );
     for r in &reports {
         out.push_str(&format!(
             "{:>5} {:<10} {:<40} {:<34} {}\n",
@@ -1163,7 +1353,10 @@ fn triage_dir(
         ));
     }
     let flagged = reports.iter().filter(|r| r.score >= min_score).count();
-    out.push_str(&format!("\n{} file(s), {flagged} at or above score {min_score}\n", reports.len()));
+    out.push_str(&format!(
+        "\n{} file(s), {flagged} at or above score {min_score}\n",
+        reports.len()
+    ));
     Ok((out, worst))
 }
 
@@ -1204,7 +1397,10 @@ fn packer_report(
         .and_then(|va| m.address_space.offset_of(Va(va)))
         .map(|o| o.get() as usize)
         .unwrap_or(0);
-    let entry: Vec<u8> = data.get(entry_off..(entry_off + 32).min(data.len())).unwrap_or(&[]).to_vec();
+    let entry: Vec<u8> = data
+        .get(entry_off..(entry_off + 32).min(data.len()))
+        .unwrap_or(&[])
+        .to_vec();
     let sections: Vec<hiewlm_core::packer::SectionInfo> = m
         .address_space
         .sections()
@@ -1214,7 +1410,11 @@ fn packer_report(
             let b = (a + s.size as usize).min(data.len());
             hiewlm_core::packer::SectionInfo {
                 name: s.name.clone(),
-                entropy: if a < b { entropy(&data[a..b]) as f32 } else { 0.0 },
+                entropy: if a < b {
+                    entropy(&data[a..b]) as f32
+                } else {
+                    0.0
+                },
             }
         })
         .collect();
@@ -1287,16 +1487,36 @@ fn cmd_script(file: &Path, script: &Path) -> Result<String> {
         }};
     }
     reg!("len", s, move || s.borrow().data.len() as i64);
-    reg!("byte", s, move |i: i64| s.borrow().data.get(i as usize).map(|&b| b as i64).unwrap_or(-1));
-    reg!("u16", s, move |i: i64| read_le(&s.borrow().data, i as usize, 2) as i64);
-    reg!("u32", s, move |i: i64| read_le(&s.borrow().data, i as usize, 4) as i64);
-    reg!("u64", s, move |i: i64| read_le(&s.borrow().data, i as usize, 8) as i64);
+    reg!("byte", s, move |i: i64| s
+        .borrow()
+        .data
+        .get(i as usize)
+        .map(|&b| b as i64)
+        .unwrap_or(-1));
+    reg!(
+        "u16",
+        s,
+        move |i: i64| read_le(&s.borrow().data, i as usize, 2) as i64
+    );
+    reg!(
+        "u32",
+        s,
+        move |i: i64| read_le(&s.borrow().data, i as usize, 4) as i64
+    );
+    reg!(
+        "u64",
+        s,
+        move |i: i64| read_le(&s.borrow().data, i as usize, 8) as i64
+    );
     reg!("poke", s, move |i: i64, v: i64| {
         if let Some(x) = s.borrow_mut().data.get_mut(i as usize) {
             *x = v as u8;
         }
     });
-    reg!("find_text", s, move |p: &str| find_in(&s.borrow().data, p.as_bytes()));
+    reg!("find_text", s, move |p: &str| find_in(
+        &s.borrow().data,
+        p.as_bytes()
+    ));
     reg!("find_hex", s, move |p: &str| {
         let bytes = parse_hex_bytes(p).unwrap_or_default();
         find_in(&s.borrow().data, &bytes)
@@ -1318,7 +1538,14 @@ fn cmd_script(file: &Path, script: &Path) -> Result<String> {
     engine.run(&src).map_err(|e| anyhow!("script error: {e}"))?;
     let b = st.borrow();
     let mut out = b.log.clone();
-    out.push_str(&format!("# script done{}\n", if b.saved { " (file saved, .bak kept)" } else { "" }));
+    out.push_str(&format!(
+        "# script done{}\n",
+        if b.saved {
+            " (file saved, .bak kept)"
+        } else {
+            ""
+        }
+    ));
     Ok(out)
 }
 
@@ -1328,7 +1555,6 @@ fn cmd_script(file: &Path, script: &Path) -> Result<String> {
 fn cmd_script(_file: &Path, _script: &Path) -> Result<String> {
     bail!("this build has no Rhai scripting — rebuild with `--features script`")
 }
-
 
 #[cfg(feature = "wasm")]
 fn cmd_plugin(file: &Path, wasm: &Path) -> Result<String> {
@@ -1353,7 +1579,6 @@ fn cmd_plugin(file: &Path, wasm: &Path) -> Result<String> {
 fn cmd_plugin(_file: &Path, _wasm: &Path) -> Result<String> {
     bail!("this build has no WASM plugin host — rebuild with `--features wasm`")
 }
-
 
 fn replace_all(data: &[u8], needle: &[u8], repl: &[u8]) -> (Vec<u8>, usize) {
     let mut out = Vec::with_capacity(data.len());

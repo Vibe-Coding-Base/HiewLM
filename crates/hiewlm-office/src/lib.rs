@@ -11,12 +11,12 @@
 //! remote template target is *reported*, never resolved.
 
 pub mod cfb;
-pub mod pdf;
-pub mod rules;
-pub mod zip;
 pub mod ooxml;
+pub mod pdf;
 pub mod rtf;
+pub mod rules;
 pub mod vba;
+pub mod zip;
 
 use hiewlm_core::{Finding, Severity};
 
@@ -75,7 +75,10 @@ pub struct Document {
 
 impl Document {
     pub fn suspicious_count(&self) -> usize {
-        self.findings.iter().filter(|f| f.severity == Severity::Suspicious).count()
+        self.findings
+            .iter()
+            .filter(|f| f.severity == Severity::Suspicious)
+            .count()
     }
 
     pub fn has_macros(&self) -> bool {
@@ -85,8 +88,11 @@ impl Document {
     /// Every macro keyword found, deduplicated — the quick answer to "what does
     /// this macro do".
     pub fn macro_keywords(&self) -> Vec<String> {
-        let mut all: Vec<String> =
-            self.macros.iter().flat_map(|m| m.keywords.clone()).collect();
+        let mut all: Vec<String> = self
+            .macros
+            .iter()
+            .flat_map(|m| m.keywords.clone())
+            .collect();
         all.sort();
         all.dedup();
         all
@@ -238,7 +244,10 @@ fn parse_ooxml(bytes: &[u8]) -> Option<Document> {
             severity,
             message: match r.kind.as_str() {
                 "attachedTemplate" => {
-                    format!("remote template: {} — fetched and its macros run on open", r.target)
+                    format!(
+                        "remote template: {} — fetched and its macros run on open",
+                        r.target
+                    )
                 }
                 "oleObject" => format!("remote OLE object: {}", r.target),
                 _ => format!("external {}: {}", r.kind, r.target),
@@ -299,9 +308,8 @@ fn parse_rtf(bytes: &[u8]) -> Option<Document> {
             file_off: Some(h.offset),
             detail: h.detail.clone(),
         });
-        doc.findings.push(
-            Finding::suspicious(format!("{} — {}", h.what, h.detail)).at(h.offset),
-        );
+        doc.findings
+            .push(Finding::suspicious(format!("{} — {}", h.what, h.detail)).at(h.offset));
     }
     for class in &r.object_classes {
         let lower = class.to_ascii_lowercase();
@@ -384,7 +392,11 @@ fn parse_zip(bytes: &[u8]) -> Option<Document> {
             detail.push_str(m.content);
         }
         if m.encrypted {
-            detail.push_str(if m.aes { "  encrypted (AES)" } else { "  encrypted (ZipCrypto)" });
+            detail.push_str(if m.aes {
+                "  encrypted (AES)"
+            } else {
+                "  encrypted (ZipCrypto)"
+            });
         }
         if !m.flags.is_empty() {
             detail.push_str("  ⚠");
@@ -438,7 +450,10 @@ fn finish_macros(doc: &mut Document) {
             .map(|k| k.split_once(':').map(|(_, v)| v).unwrap_or(k))
             .collect();
         if !found.is_empty() {
-            doc.findings.push(Finding::suspicious(format!("macro {short}: {}", found.join(", "))));
+            doc.findings.push(Finding::suspicious(format!(
+                "macro {short}: {}",
+                found.join(", ")
+            )));
         }
     }
 }
@@ -463,8 +478,15 @@ mod tests {
         let bytes = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog /OpenAction << /S /JavaScript /JS (x) >> >>\nendobj\n%%EOF";
         let d = parse(bytes).expect("document");
         assert_eq!(d.kind, DocKind::Pdf);
-        assert!(d.format.starts_with("PDF document (PDF-1.7"), "{}", d.format);
-        assert!(d.findings.iter().any(|f| f.message.contains("runs on open")));
+        assert!(
+            d.format.starts_with("PDF document (PDF-1.7"),
+            "{}",
+            d.format
+        );
+        assert!(d
+            .findings
+            .iter()
+            .any(|f| f.message.contains("runs on open")));
         // The object map is navigable, which is the point of showing it here.
         assert_eq!(d.nodes.len(), 1);
         assert_eq!(d.nodes[0].file_off, Some(9));
@@ -515,8 +537,15 @@ mod tests {
         let d = parse(&data).expect("document");
         assert_eq!(d.kind, DocKind::Zip);
         assert_eq!(d.nodes.len(), 1);
-        assert!(d.nodes[0].detail.contains("PE/DOS executable"), "{:?}", d.nodes[0]);
-        assert!(d.findings.iter().any(|f| f.message.contains("despite the .jpg")));
+        assert!(
+            d.nodes[0].detail.contains("PE/DOS executable"),
+            "{:?}",
+            d.nodes[0]
+        );
+        assert!(d
+            .findings
+            .iter()
+            .any(|f| f.message.contains("despite the .jpg")));
     }
 
     #[test]

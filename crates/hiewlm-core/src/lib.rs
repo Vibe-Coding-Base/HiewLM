@@ -14,6 +14,7 @@ pub mod crypt;
 pub mod fuzzy;
 pub mod packer;
 pub mod registry;
+pub mod ruledata;
 pub mod search;
 pub mod strings;
 pub mod structdef;

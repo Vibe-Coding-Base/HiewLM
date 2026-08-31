@@ -879,8 +879,13 @@ impl App {
                 entropy: self.section_entropy.get(i).copied().unwrap_or(0.0),
             })
             .collect();
-        let r = hiewlm_core::packer::detect(&entry, &sections, self.imports.len());
-        (!r.indicators.is_empty() || r.name.is_some()).then(|| r.summary())
+        // Build markers can be anywhere in the image, so the whole (bounded)
+        // file is scanned, not just the entry point.
+        let cap = self.buffer.len().min(64 * 1024 * 1024) as usize;
+        let mut file = vec![0u8; cap];
+        self.buffer.read_at(FileOffset(0), &mut file);
+        let r = hiewlm_core::packer::detect(&entry, &sections, self.imports.len(), &file);
+        (!r.indicators.is_empty() || r.identified()).then(|| r.summary())
     }
 
     /// The industry-standard PE import hash (MD5 of normalized "dll.func" list).

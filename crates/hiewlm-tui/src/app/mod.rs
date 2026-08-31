@@ -3037,8 +3037,12 @@ fn mode_index(m: Mode) -> usize {
     }
 }
 
+/// How many modes the mode menu offers. Adding a mode without updating this is
+/// how `Doc` shipped unreachable from the menu.
+pub const MODES: usize = 4;
+
 pub fn mode_at(i: usize) -> Mode {
-    [Mode::Hex, Mode::Code, Mode::Text, Mode::Doc][i % 4]
+    [Mode::Hex, Mode::Code, Mode::Text, Mode::Doc][i % MODES]
 }
 
 /// A number with HIEW-style base prefix/suffix: hex by default; `0x`/`h` hex,

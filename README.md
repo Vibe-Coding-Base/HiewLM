@@ -1,284 +1,139 @@
-# hiewLM
+<h1 align="center">hiewLM</h1>
 
-A cross-platform (Windows · macOS · Linux) binary viewer/editor in the spirit of
-**HIEW**. Keyboard-driven, Norton-Commander-style function-key bar, and absolutely
-safe for viewing malware (it only reads data — the target file is never executed).
+<p align="center">
+  <strong>A keyboard-driven binary viewer and malware triage tool, in the spirit of HIEW.</strong><br>
+  Cross-platform, single binary, and safe to point at malware: the target file is
+  data, never code.
+</p>
 
-Full design: [docs/develop/00-overall-design.md](docs/develop/00-overall-design.md).
+<p align="center">
+  <a href="https://github.com/hiewLM/hiewLM/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/hiewLM/hiewLM/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Rust 1.75+" src="https://img.shields.io/badge/rust-1.75%2B-orange">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey">
+</p>
 
-## Status — M0–M6 done (except HEM shim & GUI)
+---
 
-M6 (packaging, richer rules, and Office documents):
+hiewLM answers the question a malware analyst actually starts with — **is this
+file worth my next hour, and why?** — and then gives you a HIEW-style hex,
+disassembly and structure editor to go and find out.
 
-- **Office document analysis** — a fourth view mode, `Doc`, for OLE2
-  (`.doc`/`.xls`/`.ppt`), OOXML (`.docx`/`.xlsx`/`.pptx`) and RTF. Panes for
-  **Structure** (storages, parts and objects, `Enter` jumps to the bytes),
-  **Findings**, **Macros** (VBA is *decompressed*, not merely detected, with its
-  keywords grouped: auto-exec, execution, download, obfuscation, memory) and
-  **Info** (metadata plus external references — a remote template is reported,
-  never fetched). Also `hiewlmc office`, and the findings feed the triage score.
-- **Rules live in data files** (`crates/hiewlm-core/data/*.txt`), embedded at
-  build time and overridable from `<config>/hiewlm/rules/`. `hiewlmc rules`
-  shows what is loaded. Enriched to **359 API rules** across six new behaviour
-  categories (evasion, credentials, ransom, lateral, discovery, COM, with direct
-  syscall equivalents), **84 packer rules** that distinguish packer / protector /
-  obfuscator / installer / runtime, and **283 indicator entries**.
-- **Smaller binaries**: wasmtime and Rhai are opt-in like YARA already was, so
-  `hiewlmc` is 8.8 MB instead of 15 MB (`--features full` for everything).
-- **Popups scroll sideways** — a long string is no longer cut at the panel edge.
-- Build artifacts are named `os-arch` (`hiewlm-macos-arm64`), not `host`.
+```console
+$ hiewlmc triage suspicious.docx
+== Overview ==
+Verdict          SUSPICIOUS (61/100)  MACRO EXTREF1
+File             suspicious.docx  84210 bytes (82K)
+Format           OOXML package
+Document         Word document (OOXML)
+Macro keywords   autoexec:AutoOpen, download:XMLHTTP, execution:Shell, lure:Enable Content
+SHA-256          9f2c...  ssdeep  1536:h7Xk...
 
+== Risk ==
+[suspicious] document: remote template: http://…/t.dotm — fetched and its macros run on open
+[suspicious] document: macro runs on open AND executes a program — this is the payload path
+[suspicious] word/vbaProject.bin: VBA macro project (0x14a0)
+```
 
+## Why
 
-M5 (don't lose analysis work, don't be blind on non-Windows samples):
+Hex editors show you bytes. Triage tools give you a verdict you cannot verify.
+hiewLM does both in one place: every finding carries the offset it came from, and
+`Enter` takes you there.
 
-- **Notes that survive**: comments, named bookmarks, numbered slots and colored
-  markers are saved automatically in a per-user store keyed by the sample's
-  **SHA-256** — rename or move the file and they follow the bytes. Older
-  `.hiewlm.markers` sidecars are imported on first open.
-- **ELF and Mach-O structural checks**, on par with the PE ones: RWX segments,
-  a missing section header table, executable stack, memory expanding past file
-  size, entry points outside code, appended data — and for Mach-O, a missing
-  `LC_CODE_SIGNATURE`, `cryptid`, the legacy `LC_UNIXTHREAD` entry, and libraries
-  loaded from writable paths. Universal binaries are followed into their slice.
-- **Repeating XOR key recovery** (`Alt+K`, `hiewlmc xorkey`): the key is derived
-  from a marked block — ranked by a plaintext model with a description-length
-  penalty, so it doesn't just return the longest key you allowed — and picking a
-  candidate puts it on the lens.
-- **Stack strings** (`Alt+S`): replays the `mov [rbp-0x20], 'h'` stores a
-  function makes and rebuilds the strings that never exist in the file at all.
-- **Markdown report** (`hiewlmc triage --format markdown`, `Y` then `m`/`w`):
-  verdict first, then identity, findings, capabilities and indicators as tables —
-  paste it into a ticket, or write it beside the sample without unlocking it.
+- **Triage in one keystroke.** Hashes a feed will recognise (including ssdeep and
+  imphash), packer and builder identification, structural anomalies, capabilities
+  read off the import table, indicators, and an entropy map — one screen, filterable.
+- **Documents get the same treatment as executables.** OLE2, OOXML, RTF, PDF and
+  ZIP have a structure view with navigable offsets, decompressed VBA macro source,
+  and the findings that decide whether a document is a lure.
+- **Safe by construction.** A `no_exec` test in CI fails the build if any code
+  path gains the ability to load or run target-file content. `unsafe` is denied
+  workspace-wide. Nothing is dlopened, no linked resource is fetched, no macro runs.
+- **HIEW-faithful.** The function-key bar, the key rhythm, the classic theme — and
+  every action also has a plain-letter alias, because most terminals never deliver
+  F1–F12.
+- **Detection rules are data.** APIs, packers, indicators and document signatures
+  live in text files you can extend without a compiler.
 
-M4 (triage-first — make initial malware classification fast):
+## Install
 
-- **Triage screen** (`2` / `T` / F2): one keystroke for the whole verdict —
-  score and badges, MD5/SHA-1/SHA-256/CRC32/**ssdeep**/imphash/rich-hash/authentihash,
-  format, entropy, packer, sections with permissions and entropy, **PE anomalies**
-  (RWX sections, zero raw size, 10x memory expansion, entry point outside code,
-  overlay, TLS callbacks, broken checksum on a signed file), **capabilities**
-  inferred from the import table, **indicators** (URL/IP/registry/LOLBin/mutex/PDB…)
-  and an **entropy map**. Panes switch with ←→, typing filters, `Enter` jumps.
-  The verdict then rides along on the status line.
-- **`hiewlmc triage <file|dir>`**: the same report headless, `--json` for pipelines,
-  `--fail-on-suspicious` for CI. A **directory** is ranked worst-first — a work queue.
-- **Strings v2** (`s`): ASCII **and UTF-16LE**, each tagged with its indicator
-  categories, filterable by typing (`url`, `lolbin`, `registry`…).
-- **YARA** (`R`, `hiewlmc yara`): pure-Rust yara-x, so no native library is loaded.
-  Matches become a jump list and feed the triage verdict. Build with `--features yara`.
-- **Hidden strings**: triage brute-forces the single-byte transforms and reports
-  plaintext the sample took the trouble to hide (`http://…  (lens: xor 41)`) —
-  obfuscation is intent, so it also raises the score.
-- **XOR lens** (`L`) and **key hunt** (`Alt+X`): find plaintext hidden behind a
-  single-byte XOR/ADD/SUB/ROL, then **view the file decoded without patching it** —
-  hex, text *and* disassembly go through the lens; the bytes on disk never change.
-- **Annotated disassembly**: `call [rip+…]` shows the imported API it reaches
-  (including through the IAT), and data references show the string they point at.
-- **Copy out** (`Y`): hash, block (hex / C array / Python bytes / text), address,
-  the whole indicator list or the whole report — to the *system* clipboard via
-  OSC 52, so it works over SSH.
-- **Folder triage** (`F`): rank the samples next to this one and open any of them.
-- **Command palette** (`:`): every command by name, for the keys you don't recall.
-- **Real write lock**: the sample is read-only until `Ctrl+W` (or `--rw`). Evidence
-  does not get modified by a stray keystroke.
-
-## Earlier milestones
-
-Container plugins (ZIP · PDF):
-
-- **ZIP** and **PDF** parsing live in their own crates behind a `ContainerParser` trait, activated by name — `hiewlmc --plugin zip|pdf|all`. They are read-only: nothing is decompressed, followed or executed.
-- `hiewlmc container <file>` lists members with **real file offsets** (ZIP local file headers, PDF indirect objects) plus a structural summary; `F12` in the TUI jumps into any member.
-- Both report **malware-relevant findings**: ZIP flags path traversal, dropper extensions, zip-bomb ratios, encryption and SFX/appended-ZIP stubs; PDF flags `/JavaScript`, `/OpenAction`, `/Launch`, `/EmbeddedFile`, `/JBIG2Decode`, XFA and data prepended before `%PDF-`. `--fail-on-suspicious` gives CI a non-zero exit.
-- Plugins are **statically registered, never `dlopen`ed** — the security model bans runtime code loading, so isolation comes from the trait boundary (a plugin sees only `&[u8]`), not from a dynamic loader.
-
-M3 (extensibility & automation):
-
-- **WASM plugins** (`hiewlmc plugin <file> plugin.wasm`): sandboxed via wasmtime, fuel-bounded, host ABI `len/read/write/find/log`, no filesystem/network/syscalls.
-- **Rhai scripting** (`hiewlmc script <file> script.rhai`): pure-Rust scripted patching with a buffer API (read/write/search).
-- **Headless CLI** (`hiewlmc`): info/hex/disasm/search/replace/patch/hash/strings/entropy/packer for scripts & CI.
-- **Process memory** (`pid:N`): read a live process on Linux via `/proc/pid/mem`.
-- **Packer detection** (shown in the `8` header Info pane and the `2` triage screen; `hiewlmc packer`): signature DB + entropy/imports heuristics.
-- **CFG view** (`G`): basic-block graph of the function at the cursor.
-- **Text assemble-at-cursor** (`A`, x86/x86-64): type `xor eax, eax`, see the encoding live, `Enter` patches it in — NOP-padded to the instruction it replaces, and refused outright if it would not fit. Also `hiewlmc asm <file> <at> "mov rax, rbx"`.
-- **Crypt engine** (`C`, `hiewlmc crypt`): XOR/ADD/SUB/AND/OR/ROL/ROR/NOT/NEG pipelines over a block — `xor dead, rol 3` — with repeating hex or ASCII keys. Tells you whether the recipe is invertible before you commit.
-- **Numbered bookmark slots**: `K`+digit sets, `Alt+1..8` jumps; listed in `F12` alongside names and functions.
-- **Advanced search**: `Tab` cycles hex / text / **UTF-16** / **instruction** (assembles what you type, then finds its encoding). Marking a block **scopes the search to it**; `Alt+N` searches backwards.
-- **Split 2-pane diff** (`S` after `c`): both files at the same offsets side by side, differing bytes highlighted, `--` past the shorter file's end.
-- **Full block ops** (`b` menu): write-to-file, read-file-in, copy, move, insert, fill, zero, delete.
-- Deferred: HEM compat shim (loads native DLLs — forbidden by the `no_exec` security guard) and a GUI wrapper (needs a display; core is already UI-free and reusable).
-
-M2 (beyond HIEW):
-
-- **Binary diff** (`c`): compare with another file; differing bytes highlighted in Hex, `>`/`<` jump between differences.
-- **Multi-architecture disassembly**: x86/x86-64 (iced-x86) + ARM/ARM64/MIPS/RISC-V/PowerPC/SPARC (Capstone) + a **WASM bytecode** decoder, in Code mode.
-- **Recursive-traversal analysis**: from entry + exports, follows calls/jumps to recover a **function list** (in `F12`) and a **reliable cross-reference** index (`6`/`F6`).
-- **More formats**: COFF and `ar` archives (goblin) plus NE/LE/LX/TE and **NLM** (NetWare) — shown in the header view.
-- **Structure viewer** (`t`): a Kaitai-flavoured template DSL — `meta endian be`, per-field `le`/`be`, arrays (`u32[4]`), lengths that reference an earlier field (`char[namelen]`), `enum { 2=EXEC }` maps and `= value` validation. See `examples/elf_header.tpl`.
-- **PEStudio-like header** (`8`/`F8`): decoded header struct fields (magic, subsystem, decoded Characteristics/DllCharacteristics flags, alignments, versions…), **file + per-section entropy**, and a **Resources** pane (type/name/lang/size) with **`Enter` to extract** a resource to a file. Panes filter as you type.
-- **Data inspector** (`i`): int/float values at the cursor in both endians. **Block hashes** (`h`): CRC32/MD5/SHA-256/BLAKE3 over the selection or whole file (streamed).
-- **Named bookmarks** (`k`, unlimited) and **multi-file search** (`x`) across the folder — both listed with `Enter` to jump/open. Rewriting a whole folder is a CLI-only operation (`hiewlmc replace <dir> --recursive`): it is deliberate work, not something a keystroke away from the keys you press all day.
-- **Themes** (`\`): HIEW Classic / dark / light. **Text encodings** (`E`): ASCII / CP437 / Latin-1.
-- File chooser: `c` (diff) and `t` (template) open a navigable **file browser**.
-
-M0 + M1:
-
-- **Hex** / **Text** / **Code** views, switch mode with `Enter`, `F4`/`m` menu.
-- **Code mode**: multi-arch disassembly with **syntax highlighting** (mnemonic/register/number/comment colors — exact for x86/x64 via iced token kinds, heuristic for others). Navigate by instruction, follow the branch under the cursor (`f`), return (`Backspace`); **patch opcode bytes** in place (`e`/`F3`, live re-disassembly); **`o`** to choose how to disassemble (x86 / x86-64 / ARM64 / ARM / MIPS / RISC-V / PowerPC / SPARC, or auto); **`A`** to assemble an instruction from text.
-- **Executable detection** (PE/ELF/Mach-O via goblin): arch/bits, entry point, real file-offset↔VA (`a`/`Alt+F1`, goto `.va`).
-- **Header view** (`8`/`F8`): Info / Sections / Imports / Exports (`←→`/`Tab`/`n s i x` switch, `Enter` jump). Handles universal (fat) Mach-O.
-- **Xref** (`6`/`F6`): find and jump to instructions that reference the cursor's address.
-- **Names & comments**: `;` add/remove a comment (shown inline in Code mode), `F12` names list (entry, sections, comments) to jump.
-- **Macros**: `Ctrl+.` record, `Ctrl+P` play (key-level).
-- **Block operations** on a selection: yank `y`, paste `p`, delete `d`, and `b` menu (write-to-file, fill pattern, zero).
-- **Bookmarks**: `+` push / `-` pop stack.
-- In-place hex editing (`F3`/`e` -> nibbles / `Tab` to ASCII), undo/redo (`Ctrl+Z`/`Ctrl+Y`).
-- Safe save `F9`/`w` (atomic write + `.bak` backup); read-only by default.
-- Goto `F5`/`g` (`n` · `+n`/`-n` · `.va` · `nt`), find `F7`/`/` (hex/ASCII, `??` wildcard) with **all matches highlighted**, `n`/`Ctrl+Enter` next.
-- Block selection (`*`/`v`, Shift+arrows), highlighted in Hex and Text; `Esc` clears highlight/selection (never quits).
-- Insert/overwrite `Ins`, **HIEW Classic** theme, status line + Fn-bar.
-- Works without function keys: every action has a letter/digit alias (see `?`/F1 help).
-
-All HIEW-parity features are implemented; see the design doc §9.3b.
-
-Three pillars baked in from the start (design §22–24):
-
-- **Security:** `unsafe` is denied workspace-wide (the mmap exception carries a SAFETY note); a `no_exec` test blocks any code-loading/execution API in the source.
-- **HIEW-faithful:** keymap + layout + theme follow HIEW.
-- **Extensible:** trait + registry architecture (`FormatParser`, `DataSource`, `ContainerParser`), and `FileOffset`/`Va` newtypes to prevent offset↔VA mix-ups.
-
-## Build & run
+Prebuilt binaries are attached to each release. To build from source you need a
+recent stable Rust:
 
 ```sh
-cargo build --release
-./target/release/hiewlm <file>
+git clone https://github.com/hiewLM/hiewLM
+cd hiewLM
+cargo build --release                      # hiewlm (viewer) + hiewlmc (CLI)
 ```
 
-### Windows / cross-compiling
-
-On Windows, the normal MSVC toolchain needs nothing special:
-
-```powershell
-cargo build --release
-.\target\release\hiewlm.exe <file>
-```
-
-To cross-compile Windows binaries from macOS or Linux, install mingw-w64 and use
-the build script (it also installs the Rust std for the target if missing):
+Nothing heavy is enabled by default. Add what you need:
 
 ```sh
-brew install mingw-w64            # macOS
-# apt install gcc-mingw-w64-x86-64  # Debian/Ubuntu
-
-./scripts/build-release.sh windows        # -> dist/hiewlm-windows-x64.exe
-./scripts/build-release.sh all            # host + windows + linux
+cargo build --release --features full      # YARA + Rhai scripting + WASM plugins
+FEATURES=full ./scripts/build-release.sh   # same, into dist/hiewlm-<os>-<arch>
 ```
 
-The linker settings live in [.cargo/config.toml](.cargo/config.toml). Note that a
-distro/Homebrew Rust ships std for the host only, so cross-builds go through a
-`rustup` toolchain — the script picks one up automatically when it is installed.
+| Build | `hiewlm` | `hiewlmc` |
+|---|---:|---:|
+| default | 9.5 MB | 8.8 MB |
+| `--features full` | 24 MB | 30 MB |
 
-Basic keys: `1` help · `2` triage · `Enter` cycle mode · `3` edit · `5` goto · `7` find ·
-`9` save · `q` quit · `:` command palette.
-
-### Build profiles
-
-Nothing heavy is on by default — a binary you carry around should not pay for
-features you do not use:
+## Quick start
 
 ```sh
-cargo build --release                       # 8.8 MB hiewlmc
-cargo build --release --features full       # + YARA, Rhai scripting, WASM plugins
-FEATURES=full ./scripts/build-release.sh    # same, into dist/hiewlm-macos-arm64
+hiewlm sample.exe            # open the viewer; press 2 for triage, 1 for help
+hiewlm ~/samples/            # a folder opens as a queue, ranked worst-first
+hiewlmc triage sample.exe    # the same verdict, headless
 ```
 
-`hiewlmc script` and `hiewlmc plugin` still appear in `--help` without their
-features and tell you how to enable themselves.
+The keys worth knowing on day one:
 
-### YARA support
-
-YARA scanning uses [yara-x](https://github.com/VirusTotal/yara-x) (pure Rust — no
-libyara, nothing native is loaded at runtime). It is a heavy dependency, so it is
-opt-in:
-
-```sh
-cargo build --release --features yara      # hiewlm and hiewlmc
-```
-
-Point `yara_rules` in `config.toml` at your rule file or folder and `R` scans with
-it without prompting.
-
-### Headless CLI (`hiewlmc`)
-
-For scripts / CI (never executes the target):
-
-```sh
-hiewlmc info    <file>                       # format, arch, entry, sections, header fields
-hiewlmc disasm  <file> [--at .VA] [--count N] [--arch x64]
-hiewlmc hex     <file> [--at ADDR] [--count N]
-hiewlmc search  <file> PATTERN [--hex]       # exit 1 if no match
-hiewlmc replace <file> FIND WITH [--hex]     # writes, .bak backup
-hiewlmc replace <dir>  FIND WITH --recursive # every file under the folder
-hiewlmc patch   <file> ADDR "90 90 c3"       # writes, .bak backup
-hiewlmc hash    <file>                       # CRC32/MD5/SHA-256/BLAKE3
-hiewlmc strings <file> [--min N] [--no-utf16] [--ioc]
-hiewlmc entropy <file>                       # file + per-section
-hiewlmc packer  <file>                       # packer/protector detection
-hiewlmc script  <file> script.rhai           # automated patching (Rhai)
-hiewlmc plugin  <file> plugin.wasm            # sandboxed WASM plugin
-hiewlmc info    pid:1234                      # live process memory (Linux)
-
-hiewlmc asm     <file> ADDR "xor eax, eax"   # assemble + patch (--dry-run to preview)
-hiewlmc crypt   <file> "xor 5a, rol 3" [--at ADDR --count N]   # byte transforms
-hiewlmc triage  <file> [--json] [--fail-on-suspicious]   # one-screen verdict
-hiewlmc triage  <dir>  [--json]              # rank a folder of samples
-hiewlmc triage  <file> --yara rules.yar      # fold a YARA scan into the verdict
-hiewlmc yara    <file> rules.yar|rules_dir/  # scan only  (needs --features yara)
-hiewlmc triage  <file> --format markdown     # report for a ticket
-hiewlmc xorkey  <file> --at ADDR --count N   # recover a repeating XOR key
-hiewlmc office  <file> [--macros]            # document structure, macros, findings
-hiewlmc rules   [--dump apis]                # what detection rules are loaded
-hiewlmc strings <file> --ioc                 # indicators only (URL/IP/registry/…)
-hiewlmc plugins                              # list container plugins
-hiewlmc --plugin all container <file>        # ZIP/PDF structure + findings
-hiewlmc --plugin all container <f> --findings --fail-on-suspicious   # exit 1 if flagged
-```
-Addresses accept an offset (hex), `.va` (virtual address), or `Nt` (decimal).
-File args also accept `pid:<N>` on Linux to read a live process's memory.
-
-## Testing
-
-```sh
-cargo test        # buffer/undo, search, addressing, calc, packer, disasm, plugins, edit->save->disk, render, security
-cargo clippy      # clean, no warnings
-```
-
-## Layout
-
-| Crate | Role |
+| Key | |
 |---|---|
-| `hiewlm-core` | Buffer (memmap + piece-table + journal), addressing, search, registry, crypt engine, container plugin API, struct templates, string/IOC extraction, import scoring, ssdeep, xor key hunting — pure, no UI. |
-| `hiewlm-fmt` | Format detection (PE/ELF/Mach-O incl. fat, COFF, ar, NE/LE/LX/TE/NLM) → arch/bits/entry/VA map, imports/exports, header fields; PE overlay/TLS/debug/Authenticode/anomalies. |
-| `hiewlm-office` | Document analysis: OLE2/CFB, OOXML (with inflate), RTF, **PDF**, and MS-OVBA macro decompression. |
-| `hiewlm-triage` | The triage verdict: hashes, packer, capabilities, anomalies, indicators, entropy map, YARA — rendered as panes the TUI and CLI share. |
-| `hiewlm-asm` | Disassembly: x86/x86-64 (iced-x86, branch targets + flow), ARM/ARM64/MIPS/RISC-V/PPC/SPARC (Capstone), WASM bytecode; plus an x86 text assembler. |
-| `hiewlm-tui` | ratatui/crossterm UI, state machine, keymap, theme; the `hiewlm` binary. |
-| `hiewlm-cli` | Headless batch tool (`hiewlmc`): info/hex/disasm/asm/search/replace/patch/hash/strings/entropy/packer/script/plugin/container for scripts & CI. |
-| `hiewlm-plugin` | Sandboxed WASM plugin host (wasmtime): fuel-bounded, host ABI `len/read/write/find/log`, no fs/network. |
-| `hiewlm-plugin-zip` | Container plugin: ZIP structure, member list, traversal/dropper/zip-bomb checks. |
+| `2` | triage screen — verdict, hashes, anomalies, capabilities, indicators |
+| `Enter` | cycle Hex → Code → Text → Doc |
+| `s` | strings (ASCII + UTF-16), tagged; type `url` or `lolbin` to filter |
+| `8` | header: sections, imports tagged by behaviour, exports, resources |
+| `Alt+X` | find plaintext hidden behind a single-byte key, and read it decoded |
+| `Y` | copy a hash, a block or the whole report to the system clipboard |
+| `:` | command palette — every command by name |
+| `1` | help |
 
-## Roadmap
+The sample is **read-only until you unlock it** with `Ctrl+W` (or `--rw`).
+Evidence should not change because of a stray keystroke.
 
-**M4 (done)** — triage-first · **M5 (done)** — persistent notes, ELF/Mach-O checks,
-repeating-key recovery, stack strings, Markdown reports. See the top of this file;
-progress and the remaining decisions live in
-[docs/develop/01-M4-triage-plan.md](docs/develop/01-M4-triage-plan.md).
+## Documentation
 
+- **[Usage guide](docs/USAGE.md)** — every key, every command, and the workflows
+  they add up to.
+- **[Developer guide](docs/DEVELOPMENT.md)** — architecture, how to add a format,
+  a rule or a view, and the decisions behind the shape of the code.
+- **[Design document](docs/DESIGN.md)** — the long-form design, including the
+  security model.
 
-M0 (done) · M1 (done) ·
-M2 (done: diff + split view, multi-arch disasm incl. WASM, recursive analysis/xref,
-more parsers incl. NLM, Kaitai-flavoured struct viewer, hashes, multi-file search,
-themes, data inspector, PEStudio-like header) ·
-**M3 (done: WASM plugins, container plugins (ZIP/PDF), Rhai scripting, headless CLI,
-process memory, packer detection, CFG view, text assembler)** — deferred: HEM native-DLL
-shim (security-incompatible) and GUI wrapper. Details in design doc §9.4 / §9.5.
+## Security model
+
+hiewLM is built to be pointed at hostile files.
+
+- The target file is **passive data**. There is no code path that loads or
+  executes its content, and `crates/hiewlm-core/tests/no_exec.rs` scans the source
+  to keep it that way — `Command::new`, `dlopen`, `LoadLibrary` and friends fail
+  the build.
+- `unsafe_code = "deny"` workspace-wide; the single exception (memory-mapping a
+  file) carries a local allow and a SAFETY note.
+- Container and document parsers see `&[u8]` and return descriptions. Nothing is
+  decompressed beyond a bounded prefix, no action is followed, no remote template
+  or URL is ever fetched.
+- Optional WASM plugins run in a fuel-bounded wasmtime sandbox with no filesystem
+  or network access.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Adding a packer signature or an API rule
+is a one-line edit to a data file — that path is meant to be easy.
+
+## License
+
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your
+option.

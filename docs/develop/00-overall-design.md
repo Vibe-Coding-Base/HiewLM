@@ -107,7 +107,7 @@ HIEW has 3 view modes: **Text**, **Hex**, **Decode/Code (disassembler)**.
 | **Disassembler** | x86 / x86-64 / ARMv6 (linear + interactive, not a true recursive-traversal analyzer). |
 | **EXE header parsing** | NE, LE, LX, PE/PE32+, ELF/ELF64, Mach-O/Mach-O64, TE/TE64, COFF, NLM. `F8` views the header; imports `F7`, exports `F9`, sections `F6`, entry point `F8 F5`. |
 | **Block ops** | mark (`*`), read/write file, fill, copy, move, insert, delete, crypt. |
-| **Search/replace** | hex, ASCII, Unicode (even/odd UTF-16), search by instruction, single-char wildcard (`Alt ?`), directional, file/block scope, **multi-file replace**. |
+| **Search/replace** | hex, ASCII, Unicode (even/odd UTF-16), search by instruction, single-char wildcard (`Alt ?`), directional, file/block scope, **multi-file search**; rewriting a folder is CLI-only (`hiewlmc replace <dir> --recursive`). |
 | **Crypt engine** | `Alt F3` — a small x86-subset interpreter that runs a loop over each byte/word/dword/qword (XOR/add/rotate…). |
 | **Calculator** | `Alt =`, 64-bit, full C operator set, multiple bases. |
 | **Disk access** | view/edit physical & logical drives directly. |
@@ -981,7 +981,7 @@ Maps HiewGate's spirit but safely:
 |---|---|---|
 | **M0** (MVP) | Hex/Text view+edit, goto, search, Fn-bar, journal, save | A usable cross-platform hex editor. |
 | **M1** (HIEW-parity) | Code mode + asm-at-cursor, PE/ELF/MachO headers, block ops, crypt, bookmark/xref/names, macros, VA addressing | "HIEW but cross-platform and open source". |
-| **M2** (beyond) | Binary diff, recursive disasm, structure viewer, extended archs, hash, multi-file replace, themes, data inspector | Beyond HIEW in analysis & convenience. |
+| **M2** (beyond) | Binary diff, recursive disasm, structure viewer, extended archs, hash, multi-file search/replace, themes, data inspector | Beyond HIEW in analysis & convenience. |
 | **M3** (ecosystem) | WASM/Lua plugins, CLI batch, HEM shim, GUI wrapper, process memory, packer detect, CFG view | An extensible, community platform. |
 | **M4** (triage-first) | Triage screen + `hiewlmc triage`, strings/IOC extraction, import capability scoring, PE anomalies (overlay/TLS/debug/Authenticode), ssdeep, YARA, XOR lens & key hunt, annotated disassembly, folder queue, command palette, real write lock | Fast initial malware classification, not just inspection. |
 | **M5** (keep the work) | Notes keyed by content hash, ELF/Mach-O structural checks, repeating-XOR key recovery, stack-string reconstruction, Markdown reports | Analysis survives the session, and non-Windows samples get the same scrutiny. |

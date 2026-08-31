@@ -450,6 +450,117 @@ fn xor_search_finds_a_hidden_url_and_offers_its_recipe() {
     assert_eq!(decoded, "http://");
 }
 
+/// A minimal but real OOXML package (stored entries), enough that the document
+/// parser recognises it the way it recognises a Word file.
+fn docx_bytes() -> Vec<u8> {
+    let entries: [(&str, &[u8]); 2] =
+        [("[Content_Types].xml", b"<Types/>"), ("word/document.xml", b"<w:document/>")];
+    let mut out = Vec::new();
+    let mut dir = Vec::new();
+    for (name, data) in entries {
+        let local = out.len() as u32;
+        out.extend_from_slice(b"PK\x03\x04");
+        out.extend_from_slice(&[20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(data);
+
+        dir.extend_from_slice(b"PK\x01\x02");
+        dir.extend_from_slice(&[20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        dir.extend_from_slice(&0u32.to_le_bytes());
+        dir.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        dir.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        dir.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        for _ in 0..4 {
+            dir.extend_from_slice(&0u16.to_le_bytes());
+        }
+        dir.extend_from_slice(&0u32.to_le_bytes());
+        dir.extend_from_slice(&local.to_le_bytes());
+        dir.extend_from_slice(name.as_bytes());
+    }
+    let cd_off = out.len() as u32;
+    let cd_len = dir.len() as u32;
+    out.extend_from_slice(&dir);
+    out.extend_from_slice(b"PK\x05\x06");
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&cd_len.to_le_bytes());
+    out.extend_from_slice(&cd_off.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out
+}
+
+/// An app holding a document, opened the way the real one is.
+fn doc_app() -> App {
+    let path = std::env::temp_dir().join("hiewlm_modemenu_test.docx");
+    fs::write(&path, docx_bytes()).unwrap();
+    let a = App::open(path).unwrap();
+    assert!(a.doc_supported(), "the fixture must parse as a document");
+    a
+}
+
+#[test]
+fn mode_menu_offers_every_mode() {
+    // Doc shipped unreachable from the menu: the list and its wrap-around were
+    // still written for three modes.
+    use crossterm::event::{KeyCode, KeyEvent};
+    let mut a = doc_app();
+    a.apply(Command::OpenModeMenu);
+    a.handle_key(KeyEvent::from(KeyCode::Char('4')));
+    assert_eq!(a.mode, Mode::Doc, "`4` in the mode menu must reach Doc");
+
+    // Arrowing down wraps through all four, not three.
+    a.apply(Command::OpenModeMenu);
+    let mut seen = Vec::new();
+    for _ in 0..MODES {
+        let Some(Dialog::ModeMenu { selected }) = &a.dialog else { panic!("menu closed") };
+        seen.push(*selected);
+        a.handle_key(KeyEvent::from(KeyCode::Down));
+    }
+    assert_eq!(seen, vec![3, 0, 1, 2], "the highlight must cycle all four rows");
+}
+
+#[test]
+fn enter_cycles_into_doc_only_for_documents() {
+    let mut a = doc_app();
+    a.mode = Mode::Text;
+    a.apply(Command::CycleMode);
+    assert_eq!(a.mode, Mode::Doc);
+    a.apply(Command::CycleMode);
+    assert_eq!(a.mode, Mode::Hex);
+
+    // A file with no document structure skips it rather than showing an empty
+    // screen.
+    let mut b = app();
+    assert!(!b.doc_supported());
+    b.mode = Mode::Text;
+    b.apply(Command::CycleMode);
+    assert_eq!(b.mode, Mode::Hex);
+    b.apply(Command::SetMode(Mode::Doc));
+    assert_eq!(b.mode, Mode::Hex, "Doc is refused, not entered empty");
+    assert!(b.status.contains("Not an Office document"), "{}", b.status);
+}
+
+#[test]
+fn doc_view_lists_parts_and_navigates() {
+    let mut a = doc_app();
+    a.apply(Command::SetMode(Mode::Doc));
+    let rows = a.doc_rows();
+    assert!(rows.iter().any(|(l, _)| l.contains("word/document.xml")), "{rows:?}");
+    // Enter on a part jumps to its bytes.
+    let idx = rows.iter().position(|(l, _)| l.contains("word/document.xml")).unwrap();
+    a.doc_sel = idx;
+    a.apply(Command::DocActivate);
+    assert_eq!(a.mode, Mode::Hex);
+    assert!(a.cursor > 0, "jumped to the part's local header");
+}
+
 #[test]
 fn triage_screen_opens_and_lists_panes() {
     use crossterm::event::{KeyCode, KeyEvent};

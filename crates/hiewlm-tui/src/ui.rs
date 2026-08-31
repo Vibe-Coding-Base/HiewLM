@@ -30,7 +30,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
         draw_split(f, chunks[1], app, theme);
         draw_fnbar(f, chunks[2], app, theme);
         if let Some(d) = &app.dialog {
-            draw_dialog(f, area, d, theme);
+            draw_dialog(f, area, app, d, theme);
         }
         return;
     }
@@ -89,7 +89,7 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
             }
             Dialog::Calc { input } => draw_calc(f, area, app, input, theme),
             Dialog::Assemble { input } => draw_assemble(f, area, app, input, theme),
-            _ => draw_dialog(f, area, dialog, theme),
+            _ => draw_dialog(f, area, app, dialog, theme),
         }
     }
 }
@@ -785,7 +785,7 @@ pub const BLOCK_MENU_LABELS: [&str; 9] = [
     "n  NOP out instruction (Alt+F2)",
 ];
 
-fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
+fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Theme) {
     let (title, body, height): (String, Vec<Line>, u16) = match dialog {
         Dialog::Goto { input } => (
             "Goto".into(),
@@ -809,16 +809,31 @@ fn draw_dialog(f: &mut Frame, area: Rect, dialog: &Dialog, theme: &Theme) {
             )
         }
         Dialog::ModeMenu { selected } => {
-            let names = ["1 Hex", "2 Code", "3 Text"];
+            // Doc is listed even when the file has none, and says so: a mode
+            // that silently disappears leaves the user wondering whether the
+            // feature exists at all.
+            let doc = if app.doc_supported() {
+                "4 Doc"
+            } else {
+                "4 Doc  (not an Office document)"
+            };
+            let names = ["1 Hex", "2 Code", "3 Text", doc];
             let lines = names
                 .iter()
                 .enumerate()
                 .map(|(i, n)| {
+                    let style = if i == *selected {
+                        theme.selection()
+                    } else if i == 3 && !app.doc_supported() {
+                        Style::default().bg(theme.dialog_bg).fg(theme.ascii_other)
+                    } else {
+                        theme.dialog()
+                    };
                     let marker = if i == *selected { "► " } else { "  " };
-                    Line::from(format!("{marker}{n}"))
+                    Line::from(Span::styled(format!("{marker}{n}"), style))
                 })
                 .collect();
-            ("Mode".into(), lines, 5)
+            ("Mode".into(), lines, 6)
         }
         Dialog::DisasmMenu { selected } => {
             let lines = crate::app::DISASM_OPTIONS

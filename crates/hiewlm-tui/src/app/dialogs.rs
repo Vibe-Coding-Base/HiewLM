@@ -29,15 +29,16 @@ impl super::App {
                 _ => self.dialog = Some(Dialog::Message { title, body, scroll }),
             },
             Dialog::ModeMenu { selected } => match key.code {
-                Up => self.dialog = Some(Dialog::ModeMenu { selected: (selected + 2) % 3 }),
+                Up => self.dialog = Some(Dialog::ModeMenu { selected: (selected + MODES - 1) % MODES }),
                 // Down, Tab, and F4-again all cycle the highlight so the menu feels responsive.
                 Down | Tab | F(4) => {
-                    self.dialog = Some(Dialog::ModeMenu { selected: (selected + 1) % 3 })
+                    self.dialog = Some(Dialog::ModeMenu { selected: (selected + 1) % MODES })
                 }
                 Enter => self.apply(Command::SetMode(mode_at(selected))),
                 Char('1') | Char('h') | Char('H') => self.apply(Command::SetMode(Mode::Hex)),
                 Char('2') | Char('c') | Char('C') => self.apply(Command::SetMode(Mode::Code)),
                 Char('3') | Char('t') | Char('T') => self.apply(Command::SetMode(Mode::Text)),
+                Char('4') | Char('d') | Char('D') => self.apply(Command::SetMode(Mode::Doc)),
                 Esc => {}
                 _ => self.dialog = Some(Dialog::ModeMenu { selected }),
             },

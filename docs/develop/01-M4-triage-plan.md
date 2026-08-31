@@ -148,9 +148,10 @@ Cùng quy tắc: đánh `[x]` ngay trong commit hoàn tất mục đó.
 | 6.1 | Tên artifact build theo `os-arch` (`macos-arm64`), bỏ `host` | [x] | suy triple từ `cargo -vV`, khớp nhãn của bản cross-compile |
 | 6.2 | Feature-gate dependency nặng (wasmtime, rhai) như đã làm với yara | [x] | `hiewlmc` 15 MB → **8.8 MB**; `--features full` = 29.8 MB. Lệnh vẫn hiện trong `--help`, chạy thì báo cách bật |
 | 6.3 | Tách signature/rule ra file dữ liệu riêng + làm giàu (API, packer, LOLBin, IOC) | [x] | `crates/hiewlm-core/data/*.txt`: **359** API (từ ~140), **84** luật packer/protector/installer/runtime, **283** mục từ vựng IOC. Nhúng `include_str!`, override bằng `<config>/hiewlm/rules/*.txt`; xem bằng `hiewlmc rules` |
-| 6.4 | Module parse Office (OLE/CFB + OOXML) + mode mới trên TUI | [ ] | tiêu chuẩn tham chiếu: Cerbero Suite |
+| 6.4 | Module parse Office (OLE/CFB + OOXML) + mode mới trên TUI | [x] | crate `hiewlm-office`: OLE2/CFB, OOXML (có inflate), RTF, giải nén VBA (MS-OVBA). Mode `Doc` trong TUI (4 pane, Enter nhảy tới offset), `hiewlmc office`, và findings được đưa vào triage |
 | 6.5 | Tách `app.rs` (6065 dòng) thành module | [ ] | vấn đề bảo trì thật sự, lớn hơn chuyện dung lượng |
-| 6.6 | Cập nhật docs + test + clippy | [ ] | |
+| 6.6 | Popup cuộn được cả ngang lẫn dọc (hiện text dài bị cắt cụt) | [x] | `←→` trong list/message popup, `Shift+←→` trong pane view (vì `←→` đã dùng để đổi pane), `<`/`>` trong Doc mode; mở popup mới thì về lề trái |
+| 6.7 | Cập nhật docs + test + clippy | [ ] | |
 
 ## Ghi chú về câu hỏi "tách thành .dll"
 

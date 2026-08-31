@@ -73,10 +73,24 @@ fn overview(r: &TriageReport) -> Vec<(String, Option<u64>)> {
     let mut v = vec![
         kv("Verdict", format!("{} ({}/100)  {}", r.verdict().to_uppercase(), r.score, r.badge_line())),
         kv("File", format!("{}  {} bytes ({})", r.name, r.size, human(r.size))),
-        kv("Format", format!("{} / {} / {}-bit", r.format, r.arch, r.bits)),
+        // Arch and bitness are meaningless for a document or an archive.
+        kv(
+            "Format",
+            if r.bits == 0 {
+                r.format.clone()
+            } else {
+                format!("{} / {} / {}-bit", r.format, r.arch, r.bits)
+            },
+        ),
     ];
     if let Some(k) = &r.container_kind {
         v.push(kv("Container", k));
+    }
+    if let Some(d) = &r.doc_format {
+        v.push(kv("Document", d));
+    }
+    if !r.macro_keywords.is_empty() {
+        v.push(kv("Macro keywords", r.macro_keywords.join(", ")));
     }
     if let Some(va) = r.entry_va {
         v.push((
@@ -134,6 +148,12 @@ fn risk(r: &TriageReport) -> Vec<(String, Option<u64>)> {
     }
     for f in &r.container_findings {
         v.push((format!("[{}] container: {}", f.severity, f.message), f.offset));
+    }
+    for f in &r.doc_findings {
+        v.push((format!("[{}] document: {}", f.severity, f.message), f.offset));
+    }
+    for e in &r.external_refs {
+        v.push((format!("[suspicious] external reference: {e}"), None));
     }
     for n in &r.import_notes {
         v.push((format!("[imports] {n}"), None));

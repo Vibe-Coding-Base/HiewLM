@@ -1,0 +1,19 @@
+[package]
+name = "hiewlm-office"
+description = "hiewLM document analysis: OLE/CFB, OOXML and RTF structure plus the indicators that decide whether a document is a lure."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+hiewlm-core = { path = "../hiewlm-core" }
+# Pure-Rust inflate (miniz_oxide): OOXML parts are deflated, and the parts that
+# matter most — the relationship files that carry remote-template links — are
+# unreadable without it. No C, no system zlib.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[lints]
+workspace = true

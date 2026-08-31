@@ -16,6 +16,7 @@ path = "src/main.rs"
 hiewlm-core = { path = "../hiewlm-core" }
 hiewlm-fmt = { path = "../hiewlm-fmt" }
 hiewlm-triage = { path = "../hiewlm-triage" }
+hiewlm-office = { path = "../hiewlm-office" }
 hiewlm-asm = { path = "../hiewlm-asm" }
 hiewlm-plugin = { path = "../hiewlm-plugin", optional = true }
 hiewlm-plugin-zip = { path = "../hiewlm-plugin-zip" }

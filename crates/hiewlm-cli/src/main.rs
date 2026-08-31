@@ -100,6 +100,17 @@ enum Cmd {
         #[arg(long, default_value_t = 32)]
         max_len: usize,
     },
+    /// Office document structure: OLE storages / OOXML parts / RTF objects,
+    /// recovered VBA macros, external references and what they mean.
+    Office {
+        file: PathBuf,
+        /// Print recovered macro source in full.
+        #[arg(long)]
+        macros: bool,
+        /// Exit 1 when anything is flagged suspicious.
+        #[arg(long)]
+        fail_on_suspicious: bool,
+    },
     /// Show the detection rule tables: how many rules are loaded, where they
     /// came from, and how to override them.
     Rules {
@@ -243,6 +254,15 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
     let out = match cmd {
         Cmd::Plugins => cmd_plugins()?,
         Cmd::Rules { dump } => cmd_rules(dump.as_deref())?,
+        Cmd::Office { file, macros, fail_on_suspicious } => {
+            let (text, suspicious) = cmd_office(&file, macros)?;
+            print!("{text}");
+            return Ok(if suspicious && fail_on_suspicious {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            });
+        }
         Cmd::Xorkey { file, at, count, max_len } => cmd_xorkey(&file, &at, count, max_len)?,
         Cmd::Yara { file, rules, fail_on_match } => {
             let (text, matched) = cmd_yara(&file, &rules)?;
@@ -861,6 +881,70 @@ fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String
         s.push_str("... (truncated: scan hit its limit)\n");
     }
     Ok(s)
+}
+
+fn cmd_office(file: &Path, show_macros: bool) -> Result<(String, bool)> {
+    let (buf, _) = open(file)?;
+    let data = read_all(&buf);
+    let doc = hiewlm_office::parse(&data)
+        .ok_or_else(|| anyhow!("not an Office document (no OLE2, OOXML or RTF structure)"))?;
+
+    let mut out = format!("format     {}\ncontainer  {}\n", doc.format, doc.kind.label());
+    if !doc.metadata.is_empty() {
+        out.push_str("\n== Metadata ==\n");
+        for (k, v) in &doc.metadata {
+            out.push_str(&format!("{k:<20} {v}\n"));
+        }
+    }
+
+    out.push_str("\n== Structure ==\n");
+    for n in &doc.nodes {
+        let indent = "  ".repeat(n.depth.min(8));
+        let off = match n.file_off {
+            Some(o) => format!("{o:08X}"),
+            None => "        ".to_string(),
+        };
+        let detail = if n.detail.is_empty() { String::new() } else { format!("  {}", n.detail) };
+        out.push_str(&format!("{off}  {:<8} {:>9}  {indent}{}{detail}\n", n.kind, n.size, n.path));
+    }
+
+    if !doc.external.is_empty() {
+        out.push_str("\n== External references ==\n");
+        for e in &doc.external {
+            out.push_str(&format!("  {e}\n"));
+        }
+    }
+
+    let suspicious = doc.suspicious_count() > 0;
+    out.push_str("\n== Findings ==\n");
+    if doc.findings.is_empty() {
+        out.push_str("  (nothing flagged)\n");
+    }
+    for f in &doc.findings {
+        match f.offset {
+            Some(o) => out.push_str(&format!("[{}] {} ({o:#x})\n", f.severity, f.message)),
+            None => out.push_str(&format!("[{}] {}\n", f.severity, f.message)),
+        }
+    }
+
+    if !doc.macros.is_empty() {
+        out.push_str(&format!("\n== Macros ({}) ==\n", doc.macros.len()));
+        for m in &doc.macros {
+            out.push_str(&format!("-- {} ({} lines)\n", m.path, m.source.lines().count()));
+            if !m.keywords.is_empty() {
+                out.push_str(&format!("   keywords: {}\n", m.keywords.join(", ")));
+            }
+            if show_macros {
+                for line in m.source.lines() {
+                    out.push_str(&format!("   | {line}\n"));
+                }
+            }
+        }
+        if !show_macros {
+            out.push_str("\n(--macros prints the recovered source)\n");
+        }
+    }
+    Ok((out, suspicious))
 }
 
 fn cmd_rules(dump: Option<&str>) -> Result<String> {

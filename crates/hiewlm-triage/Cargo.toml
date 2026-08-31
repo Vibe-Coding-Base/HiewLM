@@ -13,6 +13,7 @@ authors.workspace = true
 [dependencies]
 hiewlm-core = { path = "../hiewlm-core" }
 hiewlm-fmt = { path = "../hiewlm-fmt" }
+hiewlm-office = { path = "../hiewlm-office" }
 crc32fast = "1"
 md-5 = "0.10"
 sha1 = "0.10"

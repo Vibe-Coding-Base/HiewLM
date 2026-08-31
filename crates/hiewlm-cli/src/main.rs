@@ -27,12 +27,16 @@ struct Cli {
 /// the user asked for. Registration is static: no code is loaded at runtime.
 fn registry(enable: &[String]) -> Result<hiewlm_core::ContainerRegistry> {
     let mut reg = hiewlm_core::ContainerRegistry::new();
-    reg.register(Box::new(hiewlm_plugin_zip::ZipPlugin));
-    // `pdf` used to be a container plugin; PDF is now handled by the document
-    // analyser, which gives it a structure view instead of a member list. The
-    // name is still accepted so existing scripts do not break.
-    let enable: Vec<String> =
-        enable.iter().filter(|n| !n.eq_ignore_ascii_case("pdf")).cloned().collect();
+    // `zip` and `pdf` used to be container plugins. Both are now handled by the
+    // document analyser, which gives them a navigable structure view instead of
+    // a flat member list; the registry remains as the extension point for
+    // plugins users write. The old names are still accepted so existing scripts
+    // do not break.
+    let enable: Vec<String> = enable
+        .iter()
+        .filter(|n| !n.eq_ignore_ascii_case("pdf") && !n.eq_ignore_ascii_case("zip"))
+        .cloned()
+        .collect();
     let unknown = reg.enable(&enable);
     if !unknown.is_empty() {
         bail!(
@@ -477,17 +481,16 @@ fn cmd_plugins() -> Result<String> {
 }
 
 fn cmd_container(file: &Path, plugins: &[String], only_findings: bool) -> Result<(String, bool)> {
-    if plugins.is_empty() {
-        bail!("no plugin activated — pass --plugin zip|pdf|all (see `hiewlmc plugins`)");
-    }
     let reg = registry(plugins)?;
     let (buf, _) = open(file)?;
     let data = read_all(&buf);
     let Some((name, c)) = reg.parse(&data) else {
         bail!(
-            "no enabled plugin recognizes {} (enabled: {})",
-            file.display(),
-            plugins.join(", ")
+            "no container plugin recognises {}.\n\
+             ZIP, PDF and Office documents are handled by `hiewlmc office` now, \
+             which reports their structure and findings; this command is for \
+             plugins you add yourself.",
+            file.display()
         );
     };
 

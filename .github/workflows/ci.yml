@@ -7,7 +7,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
 
 jobs:
   test:
@@ -27,7 +26,12 @@ jobs:
         run: cargo build --workspace --release
       - name: Test
         run: cargo test --workspace --release
-      - name: Clippy
+      # Shipping code must be warning-free. Tests are held to the workspace lint
+      # configuration instead: `unwrap_used` is deliberately a warning there, and
+      # denying it would fail the build over assertions that are meant to panic.
+      - name: Clippy (shipping code, warnings are errors)
+        run: cargo clippy --workspace --release -- -D warnings
+      - name: Clippy (tests)
         run: cargo clippy --workspace --all-targets --release
       - name: Format
         run: cargo fmt --all --check

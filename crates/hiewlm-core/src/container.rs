@@ -24,7 +24,12 @@ pub struct Member {
 
 impl Member {
     pub fn new(name: impl Into<String>, offset: u64, size: u64, detail: impl Into<String>) -> Self {
-        Self { name: name.into(), offset, size, detail: detail.into() }
+        Self {
+            name: name.into(),
+            offset,
+            size,
+            detail: detail.into(),
+        }
     }
 }
 
@@ -57,10 +62,18 @@ pub struct Finding {
 
 impl Finding {
     pub fn info(message: impl Into<String>) -> Self {
-        Self { severity: Severity::Info, message: message.into(), offset: None }
+        Self {
+            severity: Severity::Info,
+            message: message.into(),
+            offset: None,
+        }
     }
     pub fn suspicious(message: impl Into<String>) -> Self {
-        Self { severity: Severity::Suspicious, message: message.into(), offset: None }
+        Self {
+            severity: Severity::Suspicious,
+            message: message.into(),
+            offset: None,
+        }
     }
     pub fn at(mut self, offset: u64) -> Self {
         self.offset = Some(offset);
@@ -81,7 +94,9 @@ pub struct Container {
 
 impl Container {
     pub fn suspicious(&self) -> impl Iterator<Item = &Finding> {
-        self.findings.iter().filter(|f| f.severity == Severity::Suspicious)
+        self.findings
+            .iter()
+            .filter(|f| f.severity == Severity::Suspicious)
     }
 }
 
@@ -136,7 +151,10 @@ impl ContainerRegistry {
     }
 
     pub fn descriptions(&self) -> Vec<(&'static str, &'static str)> {
-        self.parsers.iter().map(|p| (p.name(), p.description())).collect()
+        self.parsers
+            .iter()
+            .map(|p| (p.name(), p.description()))
+            .collect()
     }
 
     /// Turn on plugins by name. `["all"]` enables every registered plugin.
@@ -190,7 +208,10 @@ mod tests {
             bytes.starts_with(b"DUM")
         }
         fn parse(&self, _bytes: &[u8]) -> Option<Container> {
-            Some(Container { kind: "dummy".into(), ..Default::default() })
+            Some(Container {
+                kind: "dummy".into(),
+                ..Default::default()
+            })
         }
     }
 

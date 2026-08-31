@@ -135,7 +135,10 @@ pub struct FormatRegistry {
 impl std::fmt::Debug for FormatRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FormatRegistry")
-            .field("parsers", &self.parsers.iter().map(|p| p.name()).collect::<Vec<_>>())
+            .field(
+                "parsers",
+                &self.parsers.iter().map(|p| p.name()).collect::<Vec<_>>(),
+            )
             .finish()
     }
 }

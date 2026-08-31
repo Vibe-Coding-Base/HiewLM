@@ -28,7 +28,9 @@ struct Roll {
 impl Roll {
     fn update(&mut self, c: u8) -> u32 {
         self.h2 = self.h2.wrapping_sub(self.h1);
-        self.h2 = self.h2.wrapping_add((ROLLING_WINDOW as u32).wrapping_mul(c as u32));
+        self.h2 = self
+            .h2
+            .wrapping_add((ROLLING_WINDOW as u32).wrapping_mul(c as u32));
         self.h1 = self.h1.wrapping_add(c as u32);
         self.h1 = self.h1.wrapping_sub(self.window[self.n] as u32);
         self.window[self.n] = c;
@@ -91,8 +93,12 @@ pub fn ssdeep(data: &[u8]) -> String {
 /// Similarity of two ssdeep digests, 0..100. 0 means "not comparable or nothing
 /// in common"; anything above ~50 is worth looking at as the same family.
 pub fn compare(a: &str, b: &str) -> u32 {
-    let Some((bs1, a1, a2)) = split(a) else { return 0 };
-    let Some((bs2, b1, b2)) = split(b) else { return 0 };
+    let Some((bs1, a1, a2)) = split(a) else {
+        return 0;
+    };
+    let Some((bs2, b1, b2)) = split(b) else {
+        return 0;
+    };
     if bs1 == 0 || bs2 == 0 {
         return 0;
     }
@@ -150,7 +156,8 @@ fn has_common_substring(a: &str, b: &str) -> bool {
     if a.len() < ROLLING_WINDOW || b.len() < ROLLING_WINDOW {
         return false;
     }
-    a.windows(ROLLING_WINDOW).any(|w| b.windows(ROLLING_WINDOW).any(|v| v == w))
+    a.windows(ROLLING_WINDOW)
+        .any(|w| b.windows(ROLLING_WINDOW).any(|v| v == w))
 }
 
 /// Levenshtein distance with ssdeep's weights: 1 for insert/delete, 3 for change.

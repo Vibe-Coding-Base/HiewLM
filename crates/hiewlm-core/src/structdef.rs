@@ -154,8 +154,12 @@ fn take_enum(s: &str, lineno: usize) -> Result<(String, HashMap<u64, String>), S
         return Ok((s.to_string(), HashMap::new()));
     };
     let after = &s[at + 4..];
-    let open = after.find('{').ok_or_else(|| format!("line {lineno}: enum needs {{ … }}"))?;
-    let close = after.find('}').ok_or_else(|| format!("line {lineno}: unterminated enum"))?;
+    let open = after
+        .find('{')
+        .ok_or_else(|| format!("line {lineno}: enum needs {{ … }}"))?;
+    let close = after
+        .find('}')
+        .ok_or_else(|| format!("line {lineno}: unterminated enum"))?;
     if close < open {
         return Err(format!("line {lineno}: unterminated enum"));
     }
@@ -214,7 +218,9 @@ impl Template {
                     (Some("endian"), Some("be")) => endian = Endian::Big,
                     (Some("endian"), Some("le")) => endian = Endian::Little,
                     _ => {
-                        return Err(format!("line {lineno}: only `meta endian be|le` is supported"))
+                        return Err(format!(
+                            "line {lineno}: only `meta endian be|le` is supported"
+                        ))
                     }
                 }
                 continue;
@@ -232,7 +238,9 @@ impl Template {
             };
 
             let mut it = line.split_whitespace();
-            let name = it.next().ok_or_else(|| format!("line {lineno}: missing field name"))?;
+            let name = it
+                .next()
+                .ok_or_else(|| format!("line {lineno}: missing field name"))?;
             let tyname = it
                 .next()
                 .ok_or_else(|| format!("line {lineno}: missing type for '{name}'"))?;
@@ -240,13 +248,23 @@ impl Template {
 
             let is_int_scalar = matches!(&ty, FieldType::Scalar(s) if s.is_integer());
             if expect.is_some() && !is_int_scalar {
-                return Err(format!("line {lineno}: '= value' only applies to integer fields"));
+                return Err(format!(
+                    "line {lineno}: '= value' only applies to integer fields"
+                ));
             }
             if !enum_map.is_empty() && !is_int_scalar {
-                return Err(format!("line {lineno}: enum only applies to integer fields"));
+                return Err(format!(
+                    "line {lineno}: enum only applies to integer fields"
+                ));
             }
 
-            fields.push(Field { name: name.to_string(), ty, endian: field_endian, enum_map, expect });
+            fields.push(Field {
+                name: name.to_string(),
+                ty,
+                endian: field_endian,
+                enum_map,
+                expect,
+            });
         }
         if fields.is_empty() {
             return Err("template has no fields".into());
@@ -257,9 +275,9 @@ impl Template {
     /// Byte size when every length is literal; `None` if the layout depends on
     /// values only known once the data is read.
     pub fn static_size(&self) -> Option<u64> {
-        self.fields.iter().try_fold(0u64, |acc, f| {
-            f.ty.static_size().map(|n| acc + n as u64)
-        })
+        self.fields
+            .iter()
+            .try_fold(0u64, |acc, f| f.ty.static_size().map(|n| acc + n as u64))
     }
 
     /// Size for callers that just want a number; 0 when data-dependent.
@@ -306,10 +324,18 @@ fn sign_extend(v: u64, bytes: usize) -> i64 {
     ((v << shift) as i64) >> shift
 }
 
-fn render_scalar(s: &Scalar, raw: &[u8], endian: Endian, enum_map: &HashMap<u64, String>) -> String {
+fn render_scalar(
+    s: &Scalar,
+    raw: &[u8],
+    endian: Endian,
+    enum_map: &HashMap<u64, String>,
+) -> String {
     match s {
         Scalar::F32 => {
-            let b: [u8; 4] = raw.get(0..4).and_then(|r| r.try_into().ok()).unwrap_or_default();
+            let b: [u8; 4] = raw
+                .get(0..4)
+                .and_then(|r| r.try_into().ok())
+                .unwrap_or_default();
             let v = match endian {
                 Endian::Little => f32::from_le_bytes(b),
                 Endian::Big => f32::from_be_bytes(b),
@@ -317,7 +343,10 @@ fn render_scalar(s: &Scalar, raw: &[u8], endian: Endian, enum_map: &HashMap<u64,
             return v.to_string();
         }
         Scalar::F64 => {
-            let b: [u8; 8] = raw.get(0..8).and_then(|r| r.try_into().ok()).unwrap_or_default();
+            let b: [u8; 8] = raw
+                .get(0..8)
+                .and_then(|r| r.try_into().ok())
+                .unwrap_or_default();
             let v = match endian {
                 Endian::Little => f64::from_le_bytes(b),
                 Endian::Big => f64::from_be_bytes(b),
@@ -381,7 +410,13 @@ pub fn apply(template: &Template, buf: &EditBuffer, base: u64) -> Vec<ResolvedFi
                     let raw = read_n(n);
                     let s: String = raw
                         .iter()
-                        .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+                        .map(|&b| {
+                            if (0x20..0x7f).contains(&b) {
+                                b as char
+                            } else {
+                                '.'
+                            }
+                        })
                         .collect();
                     (raw.len(), format!("\"{s}\""), false)
                 }
@@ -396,8 +431,11 @@ pub fn apply(template: &Template, buf: &EditBuffer, base: u64) -> Vec<ResolvedFi
                         .map(|b| format!("{b:02X}"))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    let text =
-                        if raw.len() > 16 { format!("{hex} … ({} bytes)", raw.len()) } else { hex };
+                    let text = if raw.len() > 16 {
+                        format!("{hex} … ({} bytes)", raw.len())
+                    } else {
+                        hex
+                    };
                     (raw.len(), text, false)
                 }
                 None => (0, format!("<unknown length '{}'>", len_name(len)), true),
@@ -412,15 +450,24 @@ pub fn apply(template: &Template, buf: &EditBuffer, base: u64) -> Vec<ResolvedFi
                         .take(16)
                         .map(|c| render_scalar(s, c, endian, &field.enum_map))
                         .collect();
-                    let more =
-                        if count > 16 { format!(" … ({count} items)") } else { String::new() };
+                    let more = if count > 16 {
+                        format!(" … ({count} items)")
+                    } else {
+                        String::new()
+                    };
                     (raw.len(), format!("[{}]{more}", items.join(", ")), false)
                 }
                 None => (0, format!("<unknown length '{}'>", len_name(len)), true),
             },
         };
 
-        out.push(ResolvedField { name: field.name.clone(), offset: off, size, value, mismatch });
+        out.push(ResolvedField {
+            name: field.name.clone(),
+            offset: off,
+            size,
+            value,
+            mismatch,
+        });
         off += size as u64;
     }
     out
@@ -481,7 +528,9 @@ mod tests {
     /// `i8`/`u8` must not have their trailing "8" confused with a `be` suffix.
     #[test]
     fn bare_scalar_names_are_not_read_as_endian_suffixes() {
-        for name in ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "f32", "f64"] {
+        for name in [
+            "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "f32", "f64",
+        ] {
             let t = Template::parse(&format!("x {name}")).unwrap();
             assert_eq!(t.fields[0].endian, None, "{name}");
         }
@@ -544,9 +593,15 @@ mod tests {
     #[test]
     fn floats_respect_endianness() {
         let t = Template::parse("meta endian be\nx f32").unwrap();
-        assert_eq!(apply(&t, &buf(1.5f32.to_be_bytes().to_vec()), 0)[0].value, "1.5");
+        assert_eq!(
+            apply(&t, &buf(1.5f32.to_be_bytes().to_vec()), 0)[0].value,
+            "1.5"
+        );
         let t = Template::parse("x f64").unwrap();
-        assert_eq!(apply(&t, &buf(2.5f64.to_le_bytes().to_vec()), 0)[0].value, "2.5");
+        assert_eq!(
+            apply(&t, &buf(2.5f64.to_le_bytes().to_vec()), 0)[0].value,
+            "2.5"
+        );
     }
 
     #[test]
@@ -558,11 +613,19 @@ mod tests {
     #[test]
     fn errors_are_specific() {
         assert!(Template::parse("# only a comment").is_err());
-        assert!(Template::parse("name").unwrap_err().contains("missing type"));
-        assert!(Template::parse("name frob").unwrap_err().contains("bad type"));
+        assert!(Template::parse("name")
+            .unwrap_err()
+            .contains("missing type"));
+        assert!(Template::parse("name frob")
+            .unwrap_err()
+            .contains("bad type"));
         assert!(Template::parse("meta endian middle").is_err());
-        assert!(Template::parse("name char[4] = 5").unwrap_err().contains("integer"));
-        assert!(Template::parse("k u8 enum { bad }").unwrap_err().contains("value=NAME"));
+        assert!(Template::parse("name char[4] = 5")
+            .unwrap_err()
+            .contains("integer"));
+        assert!(Template::parse("k u8 enum { bad }")
+            .unwrap_err()
+            .contains("value=NAME"));
     }
 
     #[test]
@@ -578,7 +641,10 @@ mod tests {
     /// ELF64 header, so the documented syntax cannot drift from the parser.
     #[test]
     fn shipped_elf_example_template_decodes_a_real_header() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/elf_header.tpl");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/templates/elf_header.tpl"
+        );
         let text = std::fs::read_to_string(path).expect("example template present");
         let t = Template::parse(&text).expect("example template parses");
 
@@ -595,10 +661,22 @@ mod tests {
         let get = |n: &str| r.iter().find(|f| f.name == n).expect(n);
         assert!(!get("magic").mismatch, "magic: {}", get("magic").value);
         assert!(!get("version").mismatch);
-        assert!(get("class").value.contains("ELF64"), "{}", get("class").value);
+        assert!(
+            get("class").value.contains("ELF64"),
+            "{}",
+            get("class").value
+        );
         assert!(get("type").value.contains("DYN"), "{}", get("type").value);
-        assert!(get("machine").value.contains("x86-64"), "{}", get("machine").value);
-        assert!(get("entry").value.contains("0x1040"), "{}", get("entry").value);
+        assert!(
+            get("machine").value.contains("x86-64"),
+            "{}",
+            get("machine").value
+        );
+        assert!(
+            get("entry").value.contains("0x1040"),
+            "{}",
+            get("entry").value
+        );
         // e_ident is 16 bytes, so e_type must land exactly at offset 16.
         assert_eq!(get("type").offset, 16);
     }

@@ -54,7 +54,11 @@ impl Member {
 
     /// Extension, lowercase, without the dot.
     pub fn extension(&self) -> String {
-        self.name.rsplit('.').next().unwrap_or("").to_ascii_lowercase()
+        self.name
+            .rsplit('.')
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase()
     }
 }
 
@@ -74,10 +78,12 @@ pub struct Zip {
 }
 
 fn u16le(b: &[u8], off: usize) -> u16 {
-    b.get(off..off + 2).map_or(0, |s| u16::from_le_bytes([s[0], s[1]]))
+    b.get(off..off + 2)
+        .map_or(0, |s| u16::from_le_bytes([s[0], s[1]]))
 }
 fn u32le(b: &[u8], off: usize) -> u32 {
-    b.get(off..off + 4).map_or(0, |s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+    b.get(off..off + 4)
+        .map_or(0, |s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 /// Is this a ZIP?
@@ -92,7 +98,9 @@ pub fn is_zip(bytes: &[u8]) -> bool {
     if &bytes[0..2] == b"PK" {
         return true;
     }
-    find_eocd(bytes).0.is_some_and(|e| locate_central_directory(bytes, e).is_some())
+    find_eocd(bytes)
+        .0
+        .is_some_and(|e| locate_central_directory(bytes, e).is_some())
 }
 
 /// The central directory's real position, and the offset every local-header
@@ -169,7 +177,9 @@ fn member_head(bytes: &[u8], m: &Member) -> Vec<u8> {
     let extra_len = u16le(bytes, lo + 28) as usize;
     let start = lo + 30 + name_len + extra_len;
     let end = (start + m.compressed as usize).min(bytes.len());
-    let Some(raw) = bytes.get(start..end) else { return Vec::new() };
+    let Some(raw) = bytes.get(start..end) else {
+        return Vec::new();
+    };
     if m.encrypted {
         return Vec::new(); // the bytes are ciphertext; nothing to read
     }
@@ -189,15 +199,46 @@ fn member_head(bytes: &[u8], m: &Member) -> Vec<u8> {
 
 /// Extensions that execute (or can be made to execute) on a double-click.
 const DROPPER_EXTS: &[&str] = &[
-    "exe", "dll", "scr", "com", "pif", "cpl", "msi", "msix", "jar", "js", "jse", "vbs", "vbe",
-    "wsf", "wsh", "ps1", "psm1", "bat", "cmd", "hta", "lnk", "url", "reg", "chm", "iso", "img",
-    "vhd", "vhdx", "diagcab", "appref-ms", "settingcontent-ms", "library-ms", "scf", "inf",
+    "exe",
+    "dll",
+    "scr",
+    "com",
+    "pif",
+    "cpl",
+    "msi",
+    "msix",
+    "jar",
+    "js",
+    "jse",
+    "vbs",
+    "vbe",
+    "wsf",
+    "wsh",
+    "ps1",
+    "psm1",
+    "bat",
+    "cmd",
+    "hta",
+    "lnk",
+    "url",
+    "reg",
+    "chm",
+    "iso",
+    "img",
+    "vhd",
+    "vhdx",
+    "diagcab",
+    "appref-ms",
+    "settingcontent-ms",
+    "library-ms",
+    "scf",
+    "inf",
 ];
 
 /// Extensions people expect to be harmless, which makes them the disguise.
 const LURE_EXTS: &[&str] = &[
-    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "jpg", "jpeg", "png", "gif", "txt",
-    "rtf", "csv", "htm", "html", "zip", "rar",
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "jpg", "jpeg", "png", "gif", "txt", "rtf",
+    "csv", "htm", "html", "zip", "rar",
 ];
 
 /// Name-level disguises. A name is not just a label here: it is what the user
@@ -260,7 +301,10 @@ pub fn parse(bytes: &[u8]) -> Option<Zip> {
     }
     let (eocd, eocd_count) = find_eocd(bytes);
     let eocd = eocd?;
-    let mut z = Zip { eocd_count, ..Default::default() };
+    let mut z = Zip {
+        eocd_count,
+        ..Default::default()
+    };
 
     let count = u16le(bytes, eocd + 10) as usize;
     let (cd_off, shift) = locate_central_directory(bytes, eocd)?;
@@ -279,9 +323,12 @@ pub fn parse(bytes: &[u8]) -> Option<Zip> {
         let name_len = u16le(bytes, p + 28) as usize;
         let extra_len = u16le(bytes, p + 30) as usize;
         let comment = u16le(bytes, p + 32) as usize;
-        let name = String::from_utf8_lossy(bytes.get(p + 46..p + 46 + name_len).unwrap_or_default())
-            .into_owned();
-        let extra = bytes.get(p + 46 + name_len..p + 46 + name_len + extra_len).unwrap_or_default();
+        let name =
+            String::from_utf8_lossy(bytes.get(p + 46..p + 46 + name_len).unwrap_or_default())
+                .into_owned();
+        let extra = bytes
+            .get(p + 46 + name_len..p + 46 + name_len + extra_len)
+            .unwrap_or_default();
         // WinZip AES stores the real method inside extra field 0x9901.
         let aes = extra_field(extra, 0x9901).is_some();
 
@@ -341,7 +388,11 @@ fn findings(bytes: &[u8], z: &mut Zip, cd_off: usize, cd_size: usize) {
     // -- Data outside the archive structure --------------------------------
     if z.prefix_len > 0 {
         let stub = sniff(&bytes[..bytes.len().min(SNIFF)]);
-        let what = if stub.is_empty() { String::new() } else { format!(" ({stub})") };
+        let what = if stub.is_empty() {
+            String::new()
+        } else {
+            format!(" ({stub})")
+        };
         f.push(
             Finding::suspicious(format!(
                 "{} bytes precede the first entry{what} — a self-extracting stub or a prepended file",
@@ -380,9 +431,15 @@ fn findings(bytes: &[u8], z: &mut Zip, cd_off: usize, cd_size: usize) {
         }
     }
     let declared: std::collections::HashSet<u64> = z.members.iter().map(|m| m.local_off).collect();
-    let hidden = local_offsets.iter().filter(|o| !declared.contains(o)).count();
+    let hidden = local_offsets
+        .iter()
+        .filter(|o| !declared.contains(o))
+        .count();
     if hidden > 0 {
-        let at = local_offsets.iter().find(|o| !declared.contains(o)).copied();
+        let at = local_offsets
+            .iter()
+            .find(|o| !declared.contains(o))
+            .copied();
         let mut finding = Finding::suspicious(format!(
             "{hidden} local file header(s) are not listed in the central directory — \
              hidden from any tool that reads the directory"
@@ -527,7 +584,10 @@ fn findings(bytes: &[u8], z: &mut Zip, cd_off: usize, cd_size: usize) {
 
     // ZIP64 and data-descriptor records are worth noting but not alarming.
     if u32le(bytes, cd_off.saturating_sub(20)) == SIG_EOCD64
-        || bytes.windows(4).take(4096).any(|w| u32le(w, 0) == SIG_LOC64)
+        || bytes
+            .windows(4)
+            .take(4096)
+            .any(|w| u32le(w, 0) == SIG_LOC64)
     {
         f.push(Finding::info("ZIP64 record present"));
     }
@@ -550,7 +610,11 @@ mod tests {
 
     impl Builder {
         fn new() -> Self {
-            Self { out: Vec::new(), dir: Vec::new(), count: 0 }
+            Self {
+                out: Vec::new(),
+                dir: Vec::new(),
+                count: 0,
+            }
         }
 
         fn add(&mut self, name: &str, data: &[u8]) -> &mut Self {
@@ -566,9 +630,12 @@ mod tests {
             self.out.extend_from_slice(&flags.to_le_bytes());
             self.out.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
             self.out.extend_from_slice(&0u32.to_le_bytes());
-            self.out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-            self.out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-            self.out.extend_from_slice(&(local_name.len() as u16).to_le_bytes());
+            self.out
+                .extend_from_slice(&(data.len() as u32).to_le_bytes());
+            self.out
+                .extend_from_slice(&(data.len() as u32).to_le_bytes());
+            self.out
+                .extend_from_slice(&(local_name.len() as u16).to_le_bytes());
             self.out.extend_from_slice(&0u16.to_le_bytes());
             self.out.extend_from_slice(local_name.as_bytes());
             self.out.extend_from_slice(data);
@@ -578,9 +645,12 @@ mod tests {
             self.dir.extend_from_slice(&flags.to_le_bytes());
             self.dir.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
             self.dir.extend_from_slice(&0u32.to_le_bytes());
-            self.dir.extend_from_slice(&(data.len() as u32).to_le_bytes());
-            self.dir.extend_from_slice(&(data.len() as u32).to_le_bytes());
-            self.dir.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            self.dir
+                .extend_from_slice(&(data.len() as u32).to_le_bytes());
+            self.dir
+                .extend_from_slice(&(data.len() as u32).to_le_bytes());
+            self.dir
+                .extend_from_slice(&(name.len() as u16).to_le_bytes());
             self.dir.extend_from_slice(&0u16.to_le_bytes());
             self.dir.extend_from_slice(&0u16.to_le_bytes());
             self.dir.extend_from_slice(&0u16.to_le_bytes());
@@ -618,7 +688,11 @@ mod tests {
         b.add("holiday-photo.jpg", b"MZ\x90\x00 this is a PE");
         let z = parse(&b.finish()).expect("zip");
         assert_eq!(z.members[0].content, "PE/DOS executable");
-        assert!(any(&z, "is a PE/DOS executable despite the .jpg"), "{:?}", z.findings);
+        assert!(
+            any(&z, "is a PE/DOS executable despite the .jpg"),
+            "{:?}",
+            z.findings
+        );
     }
 
     #[test]
@@ -635,7 +709,11 @@ mod tests {
         b.add("report.pdf.exe", b"MZ");
         b.add("../../etc/cron.d/x", b"root");
         let z = parse(&b.finish()).expect("zip");
-        assert!(any(&z, "double extension: looks like .pdf, is .exe"), "{:?}", z.findings);
+        assert!(
+            any(&z, "double extension: looks like .pdf, is .exe"),
+            "{:?}",
+            z.findings
+        );
         assert!(any(&z, "path traversal"));
     }
 
@@ -664,7 +742,11 @@ mod tests {
         // The directory offsets are now wrong, which is exactly the situation a
         // real hidden-entry archive creates; the parser must still report it.
         let z = parse(&bytes).expect("zip");
-        assert!(any(&z, "not listed in the central directory"), "{:?}", z.findings);
+        assert!(
+            any(&z, "not listed in the central directory"),
+            "{:?}",
+            z.findings
+        );
     }
 
     #[test]
@@ -699,12 +781,19 @@ mod tests {
         let mut bytes = stub.to_vec();
         bytes.extend_from_slice(&inner);
 
-        assert!(is_zip(&bytes), "an SFX must still be recognised as an archive");
+        assert!(
+            is_zip(&bytes),
+            "an SFX must still be recognised as an archive"
+        );
         let z = parse(&bytes).expect("zip");
         assert_eq!(z.members.len(), 1);
         // The shifted offset must land on a real local header.
         let lo = z.members[0].local_off as usize;
-        assert_eq!(&bytes[lo..lo + 4], b"PK\x03\x04", "offsets are rebased past the stub");
+        assert_eq!(
+            &bytes[lo..lo + 4],
+            b"PK\x03\x04",
+            "offsets are rebased past the stub"
+        );
         assert_eq!(z.members[0].content, "PE/DOS executable");
         assert!(any(&z, "precede the first entry"), "{:?}", z.findings);
     }
@@ -715,8 +804,11 @@ mod tests {
         b.add("notes.txt", b"just some text");
         b.add("data.csv", b"a,b,c");
         let z = parse(&b.finish()).expect("zip");
-        let suspicious: Vec<&Finding> =
-            z.findings.iter().filter(|f| f.severity == Severity::Suspicious).collect();
+        let suspicious: Vec<&Finding> = z
+            .findings
+            .iter()
+            .filter(|f| f.severity == Severity::Suspicious)
+            .collect();
         assert!(suspicious.is_empty(), "{suspicious:?}");
     }
 

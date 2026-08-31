@@ -44,46 +44,83 @@ pub fn run(module: &[u8], data: Vec<u8>) -> Result<Outcome> {
     let engine = Engine::new(&config).context("wasmtime engine")?;
     let module = Module::new(&engine, module).context("compile plugin module")?;
 
-    let mut store = Store::new(&engine, HostState { data, log: Vec::new(), modified: false });
+    let mut store = Store::new(
+        &engine,
+        HostState {
+            data,
+            log: Vec::new(),
+            modified: false,
+        },
+    );
     store.set_fuel(2_000_000_000).ok();
 
     let mut linker: Linker<HostState> = Linker::new(&engine);
-    linker.func_wrap("host", "len", |caller: Caller<'_, HostState>| caller.data().data.len() as i64)?;
+    linker.func_wrap("host", "len", |caller: Caller<'_, HostState>| {
+        caller.data().data.len() as i64
+    })?;
     linker.func_wrap("host", "read", |caller: Caller<'_, HostState>, off: i64| {
-        caller.data().data.get(off as usize).map(|&b| b as i32).unwrap_or(-1)
-    })?;
-    linker.func_wrap("host", "write", |mut caller: Caller<'_, HostState>, off: i64, val: i32| {
-        let st = caller.data_mut();
-        if let Some(x) = st.data.get_mut(off as usize) {
-            *x = val as u8;
-            st.modified = true;
-        }
-    })?;
-    linker.func_wrap("host", "find", |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| -> i64 {
-        let Some(needle) = wasm_mem(&mut caller, ptr, len) else { return -1 };
-        let data = &caller.data().data;
-        if needle.is_empty() || data.len() < needle.len() {
-            return -1;
-        }
-        (0..=data.len() - needle.len())
-            .find(|&i| &data[i..i + needle.len()] == needle.as_slice())
-            .map(|i| i as i64)
+        caller
+            .data()
+            .data
+            .get(off as usize)
+            .map(|&b| b as i32)
             .unwrap_or(-1)
     })?;
-    linker.func_wrap("host", "log", |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| {
-        if let Some(bytes) = wasm_mem(&mut caller, ptr, len) {
-            caller.data_mut().log.push(String::from_utf8_lossy(&bytes).into_owned());
-        }
-    })?;
+    linker.func_wrap(
+        "host",
+        "write",
+        |mut caller: Caller<'_, HostState>, off: i64, val: i32| {
+            let st = caller.data_mut();
+            if let Some(x) = st.data.get_mut(off as usize) {
+                *x = val as u8;
+                st.modified = true;
+            }
+        },
+    )?;
+    linker.func_wrap(
+        "host",
+        "find",
+        |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| -> i64 {
+            let Some(needle) = wasm_mem(&mut caller, ptr, len) else {
+                return -1;
+            };
+            let data = &caller.data().data;
+            if needle.is_empty() || data.len() < needle.len() {
+                return -1;
+            }
+            (0..=data.len() - needle.len())
+                .find(|&i| &data[i..i + needle.len()] == needle.as_slice())
+                .map(|i| i as i64)
+                .unwrap_or(-1)
+        },
+    )?;
+    linker.func_wrap(
+        "host",
+        "log",
+        |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| {
+            if let Some(bytes) = wasm_mem(&mut caller, ptr, len) {
+                caller
+                    .data_mut()
+                    .log
+                    .push(String::from_utf8_lossy(&bytes).into_owned());
+            }
+        },
+    )?;
 
-    let instance = linker.instantiate(&mut store, &module).context("instantiate plugin")?;
+    let instance = linker
+        .instantiate(&mut store, &module)
+        .context("instantiate plugin")?;
     let run = instance
         .get_typed_func::<(), ()>(&mut store, "run")
         .context("plugin must export `run()`")?;
     run.call(&mut store, ()).context("plugin trapped")?;
 
     let st = store.into_data();
-    Ok(Outcome { data: st.data, log: st.log, modified: st.modified })
+    Ok(Outcome {
+        data: st.data,
+        log: st.log,
+        modified: st.modified,
+    })
 }
 
 #[cfg(test)]

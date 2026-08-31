@@ -229,7 +229,10 @@ pub fn analyze(names: &[String]) -> ImportReport {
 /// something — and it is not for Mach-O/ELF, where linkers legitimately emit a
 /// handful of entries.
 pub fn analyze_with(names: &[String], iat_size_matters: bool) -> ImportReport {
-    let mut report = ImportReport { total_imports: names.len(), ..Default::default() };
+    let mut report = ImportReport {
+        total_imports: names.len(),
+        ..Default::default()
+    };
     for full in names {
         let func = full.rsplit('!').next().unwrap_or(full).to_string();
         if let Some((category, note, strong)) = lookup(full) {
@@ -250,31 +253,48 @@ pub fn analyze_with(names: &[String], iat_size_matters: bool) -> ImportReport {
         report.hits.iter().map(|h| h.category).collect();
     // Only categories backed by at least one strong API contribute weight; the
     // rest are still shown, because they are context for the strong ones.
-    let scoring: std::collections::BTreeSet<Category> =
-        report.hits.iter().filter(|h| h.strong).map(|h| h.category).collect();
+    let scoring: std::collections::BTreeSet<Category> = report
+        .hits
+        .iter()
+        .filter(|h| h.strong)
+        .map(|h| h.category)
+        .collect();
     let mut score: u32 = scoring.iter().map(|c| c.weight() as u32).sum();
 
     let has = |c: Category| present.contains(&c);
-    if iat_size_matters && has(Category::DynamicResolve) && report.total_imports > 0 && report.total_imports <= 15 {
+    if iat_size_matters
+        && has(Category::DynamicResolve)
+        && report.total_imports > 0
+        && report.total_imports <= 15
+    {
         report.notes.push(format!(
             "only {} imports but resolves APIs at runtime — the real import table is hidden",
             report.total_imports
         ));
         score += 25;
     } else if iat_size_matters && report.total_imports > 0 && report.total_imports <= 8 {
-        report.notes.push(format!("tiny import table ({}) — packed or dynamically resolved", report.total_imports));
+        report.notes.push(format!(
+            "tiny import table ({}) — packed or dynamically resolved",
+            report.total_imports
+        ));
         score += 15;
     }
     if has(Category::Injection) && has(Category::Memory) {
-        report.notes.push("allocate + write + execute in another process: injection chain".into());
+        report
+            .notes
+            .push("allocate + write + execute in another process: injection chain".into());
         score += 10;
     }
     if has(Category::Crypto) && has(Category::FileSystem) {
-        report.notes.push("crypto + file enumeration: ransomware shape".into());
+        report
+            .notes
+            .push("crypto + file enumeration: ransomware shape".into());
         score += 10;
     }
     if has(Category::Capture) && has(Category::Network) {
-        report.notes.push("capture + network: spyware/exfiltration shape".into());
+        report
+            .notes
+            .push("capture + network: spyware/exfiltration shape".into());
         score += 10;
     }
     report.score = score.min(100) as u8;
@@ -291,9 +311,18 @@ mod tests {
 
     #[test]
     fn matches_with_dll_prefix_and_ansi_suffix() {
-        assert_eq!(categorize("kernel32.dll!CreateFileW").map(|(c, _)| c), Some(Category::FileSystem));
-        assert_eq!(categorize("CreateRemoteThread").map(|(c, _)| c), Some(Category::Injection));
-        assert_eq!(categorize("advapi32.dll!RegSetValueExA").map(|(c, _)| c), Some(Category::Persistence));
+        assert_eq!(
+            categorize("kernel32.dll!CreateFileW").map(|(c, _)| c),
+            Some(Category::FileSystem)
+        );
+        assert_eq!(
+            categorize("CreateRemoteThread").map(|(c, _)| c),
+            Some(Category::Injection)
+        );
+        assert_eq!(
+            categorize("advapi32.dll!RegSetValueExA").map(|(c, _)| c),
+            Some(Category::Persistence)
+        );
         assert!(categorize("kernel32.dll!lstrlenW").is_none());
     }
 
@@ -334,13 +363,20 @@ mod tests {
         ]));
         assert!(!r.hits.is_empty(), "they are still reported");
         assert!(r.hits.iter().all(|h| !h.strong));
-        assert!(r.score < 20, "weak APIs alone should stay quiet, got {}", r.score);
+        assert!(
+            r.score < 20,
+            "weak APIs alone should stay quiet, got {}",
+            r.score
+        );
     }
 
     #[test]
     fn weak_apis_still_count_toward_combination_rules() {
         // Tiny IAT plus runtime resolution: individually weak, together loud.
-        let r = analyze(&names(&["kernel32.dll!LoadLibraryA", "kernel32.dll!GetProcAddress"]));
+        let r = analyze(&names(&[
+            "kernel32.dll!LoadLibraryA",
+            "kernel32.dll!GetProcAddress",
+        ]));
         assert!(r.notes.iter().any(|n| n.contains("hidden")), "{r:?}");
     }
 
@@ -362,7 +398,10 @@ mod tests {
 
     #[test]
     fn tiny_iat_with_dynamic_resolve_is_flagged() {
-        let r = analyze(&names(&["kernel32.dll!LoadLibraryA", "kernel32.dll!GetProcAddress"]));
+        let r = analyze(&names(&[
+            "kernel32.dll!LoadLibraryA",
+            "kernel32.dll!GetProcAddress",
+        ]));
         assert!(r.notes.iter().any(|n| n.contains("hidden")), "{r:?}");
     }
 }

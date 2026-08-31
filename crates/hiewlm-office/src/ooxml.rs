@@ -48,10 +48,14 @@ const MAX_INFLATE_PART: u64 = 8 * 1024 * 1024;
 const MAX_INFLATE_TOTAL: u64 = 64 * 1024 * 1024;
 
 fn u16le(b: &[u8], off: usize) -> u16 {
-    b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]])).unwrap_or(0)
+    b.get(off..off + 2)
+        .map(|s| u16::from_le_bytes([s[0], s[1]]))
+        .unwrap_or(0)
 }
 fn u32le(b: &[u8], off: usize) -> u32 {
-    b.get(off..off + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]])).unwrap_or(0)
+    b.get(off..off + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        .unwrap_or(0)
 }
 
 /// Does this look like a ZIP (and therefore possibly an OOXML package)?
@@ -101,10 +105,9 @@ pub fn parse(bytes: &[u8]) -> Option<Package> {
         let extra_len = u16le(bytes, p + 30) as usize;
         let comment_len = u16le(bytes, p + 32) as usize;
         let local_off = u32le(bytes, p + 42) as u64;
-        let name = String::from_utf8_lossy(
-            bytes.get(p + 46..p + 46 + name_len).unwrap_or_default(),
-        )
-        .into_owned();
+        let name =
+            String::from_utf8_lossy(bytes.get(p + 46..p + 46 + name_len).unwrap_or_default())
+                .into_owned();
 
         pkg.parts.push(Part {
             name: name.clone(),
@@ -185,7 +188,9 @@ fn parse_rels(source: &str, xml: &str) -> Vec<Relationship> {
         let kind = attr(tag, "Type")
             .map(|t| t.rsplit('/').next().unwrap_or(&t).to_string())
             .unwrap_or_default();
-        let Some(target) = attr(tag, "Target") else { continue };
+        let Some(target) = attr(tag, "Target") else {
+            continue;
+        };
         let external = attr(tag, "TargetMode")
             .map(|m| m.eq_ignore_ascii_case("External"))
             .unwrap_or(false);
@@ -295,7 +300,10 @@ mod tests {
 
     #[test]
     fn lists_parts_with_their_offsets() {
-        let zip = build_zip(&[("[Content_Types].xml", b"<Types/>"), ("word/document.xml", b"<w:document/>")]);
+        let zip = build_zip(&[
+            ("[Content_Types].xml", b"<Types/>"),
+            ("word/document.xml", b"<w:document/>"),
+        ]);
         let pkg = parse(&zip).expect("package");
         assert_eq!(pkg.parts.len(), 2);
         assert_eq!(pkg.parts[0].name, "[Content_Types].xml");
@@ -314,7 +322,10 @@ mod tests {
         assert_eq!(ext[0].kind, "attachedTemplate");
         assert_eq!(ext[0].target, "http://evil.example.top/t.dotm");
         // The internal one is parsed too, just not external.
-        assert!(pkg.relationships.iter().any(|r| r.kind == "styles" && !r.external));
+        assert!(pkg
+            .relationships
+            .iter()
+            .any(|r| r.kind == "styles" && !r.external));
     }
 
     #[test]
@@ -322,7 +333,10 @@ mod tests {
         let props = br#"<cp:coreProperties><dc:creator>Bob</dc:creator><cp:lastModifiedBy>attacker</cp:lastModifiedBy></cp:coreProperties>"#;
         let zip = build_zip(&[("docProps/core.xml", props)]);
         let pkg = parse(&zip).expect("package");
-        assert!(pkg.metadata.iter().any(|(k, v)| k == "dc:creator" && v == "Bob"));
+        assert!(pkg
+            .metadata
+            .iter()
+            .any(|(k, v)| k == "dc:creator" && v == "Bob"));
         assert!(pkg.metadata.iter().any(|(_, v)| v == "attacker"));
     }
 

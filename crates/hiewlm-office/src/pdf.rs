@@ -55,7 +55,10 @@ fn find_from(hay: &[u8], needle: &[u8], start: usize) -> Option<usize> {
     if needle.is_empty() || hay.len() < needle.len() || start >= hay.len() {
         return None;
     }
-    hay[start..].windows(needle.len()).position(|w| w == needle).map(|p| p + start)
+    hay[start..]
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .map(|p| p + start)
 }
 
 fn count_occurrences(hay: &[u8], needle: &[u8]) -> (usize, Option<usize>) {
@@ -106,10 +109,15 @@ fn scan_objects(bytes: &[u8]) -> Vec<Object> {
         if i == num_end {
             continue;
         }
-        let number = std::str::from_utf8(&bytes[i..num_end]).ok().and_then(|s| s.parse().ok());
-        let generation =
-            std::str::from_utf8(&bytes[gen_start..gen_end]).ok().and_then(|s| s.parse().ok());
-        let (Some(number), Some(generation)) = (number, generation) else { continue };
+        let number = std::str::from_utf8(&bytes[i..num_end])
+            .ok()
+            .and_then(|s| s.parse().ok());
+        let generation = std::str::from_utf8(&bytes[gen_start..gen_end])
+            .ok()
+            .and_then(|s| s.parse().ok());
+        let (Some(number), Some(generation)) = (number, generation) else {
+            continue;
+        };
 
         // The object's `/Type`, when it declares one within a short window.
         let end = (p + 512).min(bytes.len());
@@ -125,7 +133,12 @@ fn scan_objects(bytes: &[u8]) -> Vec<Object> {
             })
             .unwrap_or_default();
 
-        out.push(Object { number, generation, offset: i as u64, kind });
+        out.push(Object {
+            number,
+            generation,
+            offset: i as u64,
+            kind,
+        });
         if out.len() >= 100_000 {
             break;
         }
@@ -160,7 +173,10 @@ fn obfuscated_names(bytes: &[u8]) -> Vec<u64> {
 pub fn parse(bytes: &[u8]) -> Option<Pdf> {
     let header_off = header_at(bytes)?;
     let scan = &bytes[..bytes.len().min(SCAN_CAP)];
-    let mut p = Pdf { header_off: header_off as u64, ..Default::default() };
+    let mut p = Pdf {
+        header_off: header_off as u64,
+        ..Default::default()
+    };
 
     p.version = bytes
         .get(header_off + 5..header_off + 8)
@@ -250,18 +266,26 @@ pub fn parse(bytes: &[u8]) -> Option<Pdf> {
         ));
     }
     if bytes.len() > SCAN_CAP {
-        p.findings.push(Finding::info("file larger than the scan cap; results are partial"));
+        p.findings.push(Finding::info(
+            "file larger than the scan cap; results are partial",
+        ));
     }
 
-    p.metadata.push(("Version".into(), format!("PDF-{}", p.version)));
-    p.metadata.push(("Objects".into(), p.objects.len().to_string()));
-    p.metadata.push(("Revisions".into(), p.revisions.to_string()));
+    p.metadata
+        .push(("Version".into(), format!("PDF-{}", p.version)));
+    p.metadata
+        .push(("Objects".into(), p.objects.len().to_string()));
+    p.metadata
+        .push(("Revisions".into(), p.revisions.to_string()));
     Some(p)
 }
 
 /// Severity of the worst finding, for the caller's summary.
 pub fn worst(p: &Pdf) -> Severity {
-    if p.findings.iter().any(|f| f.severity == Severity::Suspicious) {
+    if p.findings
+        .iter()
+        .any(|f| f.severity == Severity::Suspicious)
+    {
         Severity::Suspicious
     } else {
         Severity::Info
@@ -283,15 +307,30 @@ mod tests {
         assert_eq!(p.objects[0].number, 1);
         assert_eq!(p.objects[0].kind, "Catalog");
         assert_eq!(&CLEAN[p.objects[0].offset as usize..][..5], b"1 0 o");
-        assert!(!p.findings.iter().any(|f| f.severity == Severity::Suspicious), "{:?}", p.findings);
+        assert!(
+            !p.findings
+                .iter()
+                .any(|f| f.severity == Severity::Suspicious),
+            "{:?}",
+            p.findings
+        );
     }
 
     #[test]
     fn javascript_that_runs_on_open_is_called_out() {
         let doc = b"%PDF-1.7\n1 0 obj\n<< /OpenAction << /S /JavaScript /JS (app.launchURL) >> >>\nendobj\n%%EOF";
         let p = parse(doc).expect("pdf");
-        assert!(p.findings.iter().any(|f| f.message.contains("runs on open")), "{:?}", p.findings);
-        assert!(p.findings.iter().any(|f| f.message.starts_with("app.launchURL")));
+        assert!(
+            p.findings
+                .iter()
+                .any(|f| f.message.contains("runs on open")),
+            "{:?}",
+            p.findings
+        );
+        assert!(p
+            .findings
+            .iter()
+            .any(|f| f.message.starts_with("app.launchURL")));
     }
 
     #[test]
@@ -300,7 +339,10 @@ mod tests {
         doc.extend_from_slice(CLEAN);
         let p = parse(&doc).expect("pdf");
         assert!(p.header_off > 0);
-        assert!(p.findings.iter().any(|f| f.message.contains("precede the %PDF- header")));
+        assert!(p
+            .findings
+            .iter()
+            .any(|f| f.message.contains("precede the %PDF- header")));
     }
 
     #[test]
@@ -308,7 +350,9 @@ mod tests {
         let doc = b"%PDF-1.4\n1 0 obj\n<< /J#61vaScript 2 0 R >>\nendobj\n%%EOF";
         let p = parse(doc).expect("pdf");
         assert!(
-            p.findings.iter().any(|f| f.message.contains("#hex escapes")),
+            p.findings
+                .iter()
+                .any(|f| f.message.contains("#hex escapes")),
             "{:?}",
             p.findings
         );

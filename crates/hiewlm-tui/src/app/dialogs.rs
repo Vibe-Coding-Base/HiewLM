@@ -12,27 +12,75 @@ impl super::App {
             return;
         };
         match dialog {
-            Dialog::Message { title, body, scroll } => match key.code {
+            Dialog::Message {
+                title,
+                body,
+                scroll,
+            } => match key.code {
                 Esc | Enter | Char('q') => {}
                 Left => {
                     self.hscroll_by(-8);
-                    self.dialog = Some(Dialog::Message { title, body, scroll });
+                    self.dialog = Some(Dialog::Message {
+                        title,
+                        body,
+                        scroll,
+                    });
                 }
                 Right => {
                     self.hscroll_by(8);
-                    self.dialog = Some(Dialog::Message { title, body, scroll });
+                    self.dialog = Some(Dialog::Message {
+                        title,
+                        body,
+                        scroll,
+                    });
                 }
-                Up => self.dialog = Some(Dialog::Message { title, body, scroll: scroll.saturating_sub(1) }),
-                Down => self.dialog = Some(Dialog::Message { title, body, scroll: scroll + 1 }),
-                PageUp => self.dialog = Some(Dialog::Message { title, body, scroll: scroll.saturating_sub(10) }),
-                PageDown => self.dialog = Some(Dialog::Message { title, body, scroll: scroll + 10 }),
-                _ => self.dialog = Some(Dialog::Message { title, body, scroll }),
+                Up => {
+                    self.dialog = Some(Dialog::Message {
+                        title,
+                        body,
+                        scroll: scroll.saturating_sub(1),
+                    })
+                }
+                Down => {
+                    self.dialog = Some(Dialog::Message {
+                        title,
+                        body,
+                        scroll: scroll + 1,
+                    })
+                }
+                PageUp => {
+                    self.dialog = Some(Dialog::Message {
+                        title,
+                        body,
+                        scroll: scroll.saturating_sub(10),
+                    })
+                }
+                PageDown => {
+                    self.dialog = Some(Dialog::Message {
+                        title,
+                        body,
+                        scroll: scroll + 10,
+                    })
+                }
+                _ => {
+                    self.dialog = Some(Dialog::Message {
+                        title,
+                        body,
+                        scroll,
+                    })
+                }
             },
             Dialog::ModeMenu { selected } => match key.code {
-                Up => self.dialog = Some(Dialog::ModeMenu { selected: (selected + MODES - 1) % MODES }),
+                Up => {
+                    self.dialog = Some(Dialog::ModeMenu {
+                        selected: (selected + MODES - 1) % MODES,
+                    })
+                }
                 // Down, Tab, and F4-again all cycle the highlight so the menu feels responsive.
                 Down | Tab | F(4) => {
-                    self.dialog = Some(Dialog::ModeMenu { selected: (selected + 1) % MODES })
+                    self.dialog = Some(Dialog::ModeMenu {
+                        selected: (selected + 1) % MODES,
+                    })
                 }
                 Enter => self.apply(Command::SetMode(mode_at(selected))),
                 Char('1') | Char('h') | Char('H') => self.apply(Command::SetMode(Mode::Hex)),
@@ -69,8 +117,12 @@ impl super::App {
                 }
                 // Up/Down walk the patterns you have already used.
                 Up => {
-                    self.search_hist_pos = (self.search_hist_pos + 1).min(self.search_history.len());
-                    let i = self.search_history.len().saturating_sub(self.search_hist_pos);
+                    self.search_hist_pos =
+                        (self.search_hist_pos + 1).min(self.search_history.len());
+                    let i = self
+                        .search_history
+                        .len()
+                        .saturating_sub(self.search_hist_pos);
                     let input = self.search_history.get(i).cloned().unwrap_or(input);
                     self.dialog = Some(Dialog::Search { input, kind });
                 }
@@ -79,7 +131,10 @@ impl super::App {
                     let input = if self.search_hist_pos == 0 {
                         String::new()
                     } else {
-                        let i = self.search_history.len().saturating_sub(self.search_hist_pos);
+                        let i = self
+                            .search_history
+                            .len()
+                            .saturating_sub(self.search_hist_pos);
                         self.search_history.get(i).cloned().unwrap_or_default()
                     };
                     self.dialog = Some(Dialog::Search { input, kind });
@@ -97,8 +152,16 @@ impl super::App {
             Dialog::DisasmMenu { selected } => {
                 let n = DISASM_OPTIONS.len();
                 match key.code {
-                    Up => self.dialog = Some(Dialog::DisasmMenu { selected: (selected + n - 1) % n }),
-                    Down | Tab => self.dialog = Some(Dialog::DisasmMenu { selected: (selected + 1) % n }),
+                    Up => {
+                        self.dialog = Some(Dialog::DisasmMenu {
+                            selected: (selected + n - 1) % n,
+                        })
+                    }
+                    Down | Tab => {
+                        self.dialog = Some(Dialog::DisasmMenu {
+                            selected: (selected + 1) % n,
+                        })
+                    }
                     Enter => self.set_disasm(selected),
                     Char(c @ '1'..='8') => self.set_disasm(c as usize - '1' as usize),
                     Char('0') => self.set_disasm(0),
@@ -135,8 +198,16 @@ impl super::App {
                 // 0..8 = colors, 8 = random, 9 = clear all.
                 let n = 10;
                 match key.code {
-                    Up => self.dialog = Some(Dialog::ColorMenu { selected: (selected + n - 1) % n }),
-                    Down | Tab => self.dialog = Some(Dialog::ColorMenu { selected: (selected + 1) % n }),
+                    Up => {
+                        self.dialog = Some(Dialog::ColorMenu {
+                            selected: (selected + n - 1) % n,
+                        })
+                    }
+                    Down | Tab => {
+                        self.dialog = Some(Dialog::ColorMenu {
+                            selected: (selected + 1) % n,
+                        })
+                    }
                     Enter => match selected {
                         c if c < 8 => self.color_block(c as u8),
                         8 => {
@@ -158,11 +229,15 @@ impl super::App {
             Dialog::BlockMenu { selected } => match key.code {
                 Up => {
                     let n = BLOCK_MENU_CMDS.len();
-                    self.dialog = Some(Dialog::BlockMenu { selected: (selected + n - 1) % n })
+                    self.dialog = Some(Dialog::BlockMenu {
+                        selected: (selected + n - 1) % n,
+                    })
                 }
                 Down | Tab => {
                     let n = BLOCK_MENU_CMDS.len();
-                    self.dialog = Some(Dialog::BlockMenu { selected: (selected + 1) % n })
+                    self.dialog = Some(Dialog::BlockMenu {
+                        selected: (selected + 1) % n,
+                    })
                 }
                 Enter => self.apply(BLOCK_MENU_CMDS[selected]),
                 Char('w') | Char('W') => self.apply(Command::OpenBlockWrite),
@@ -180,8 +255,16 @@ impl super::App {
             Dialog::CopyMenu { selected } => {
                 let n = crate::ui::COPY_MENU_LABELS.len();
                 match key.code {
-                    Up => self.dialog = Some(Dialog::CopyMenu { selected: (selected + n - 1) % n }),
-                    Down | Tab => self.dialog = Some(Dialog::CopyMenu { selected: (selected + 1) % n }),
+                    Up => {
+                        self.dialog = Some(Dialog::CopyMenu {
+                            selected: (selected + n - 1) % n,
+                        })
+                    }
+                    Down | Tab => {
+                        self.dialog = Some(Dialog::CopyMenu {
+                            selected: (selected + 1) % n,
+                        })
+                    }
                     // Routed through `apply` like every other state change, so
                     // macros can replay a copy.
                     Enter => self.apply(Command::CopyItem(selected)),
@@ -278,7 +361,11 @@ impl super::App {
                 }
                 _ => self.dialog = Some(Dialog::Lens { input }),
             },
-            Dialog::XorHits { items, sel, mut filter } => {
+            Dialog::XorHits {
+                items,
+                sel,
+                mut filter,
+            } => {
                 let view =
                     filter_indices(&items, |it: &(String, u64, String)| it.0.as_str(), &filter);
                 let last = view.len().saturating_sub(1);
@@ -366,7 +453,12 @@ impl super::App {
                 }
                 _ => self.dialog = Some(Dialog::NameBookmark { input }),
             },
-            Dialog::FileHits { title, items, sel, mut filter } => {
+            Dialog::FileHits {
+                title,
+                items,
+                sel,
+                mut filter,
+            } => {
                 let view =
                     filter_indices(&items, |it: &(String, PathBuf, u64)| it.0.as_str(), &filter);
                 let last = view.len().saturating_sub(1);
@@ -406,32 +498,71 @@ impl super::App {
                     _ => {}
                 }
                 if !close {
-                    self.dialog = Some(Dialog::FileHits { title, items, sel, filter });
+                    self.dialog = Some(Dialog::FileHits {
+                        title,
+                        items,
+                        sel,
+                        filter,
+                    });
                 }
                 if let Some((path, off)) = open {
                     self.reload(path, off);
                 }
             }
-            Dialog::FilePicker { dir, entries, sel, purpose } => {
+            Dialog::FilePicker {
+                dir,
+                entries,
+                sel,
+                purpose,
+            } => {
                 let len = entries.len().max(1);
                 match key.code {
-                    Up => self.dialog = Some(Dialog::FilePicker { dir, entries, sel: sel.saturating_sub(1), purpose }),
-                    Down => self.dialog = Some(Dialog::FilePicker { dir, entries, sel: (sel + 1).min(len - 1), purpose }),
+                    Up => {
+                        self.dialog = Some(Dialog::FilePicker {
+                            dir,
+                            entries,
+                            sel: sel.saturating_sub(1),
+                            purpose,
+                        })
+                    }
+                    Down => {
+                        self.dialog = Some(Dialog::FilePicker {
+                            dir,
+                            entries,
+                            sel: (sel + 1).min(len - 1),
+                            purpose,
+                        })
+                    }
                     Left | Backspace => {
                         let up = dir.parent().map(|p| p.to_path_buf()).unwrap_or(dir);
                         let entries = Self::list_dir(&up);
-                        self.dialog = Some(Dialog::FilePicker { dir: up, entries, sel: 0, purpose });
+                        self.dialog = Some(Dialog::FilePicker {
+                            dir: up,
+                            entries,
+                            sel: 0,
+                            purpose,
+                        });
                     }
                     Enter | Right => match entries.get(sel) {
                         Some(entry) if entry.name == ".." => {
                             let up = dir.parent().map(|p| p.to_path_buf()).unwrap_or(dir);
                             let entries = Self::list_dir(&up);
-                            self.dialog = Some(Dialog::FilePicker { dir: up, entries, sel: 0, purpose });
+                            self.dialog = Some(Dialog::FilePicker {
+                                dir: up,
+                                entries,
+                                sel: 0,
+                                purpose,
+                            });
                         }
                         Some(entry) if entry.is_dir => {
                             let sub = dir.join(&entry.name);
                             let entries = Self::list_dir(&sub);
-                            self.dialog = Some(Dialog::FilePicker { dir: sub, entries, sel: 0, purpose });
+                            self.dialog = Some(Dialog::FilePicker {
+                                dir: sub,
+                                entries,
+                                sel: 0,
+                                purpose,
+                            });
                         }
                         Some(entry) => {
                             let path = dir.join(&entry.name);
@@ -440,10 +571,22 @@ impl super::App {
                         None => {}
                     },
                     Esc => {}
-                    _ => self.dialog = Some(Dialog::FilePicker { dir, entries, sel, purpose }),
+                    _ => {
+                        self.dialog = Some(Dialog::FilePicker {
+                            dir,
+                            entries,
+                            sel,
+                            purpose,
+                        })
+                    }
                 }
             }
-            Dialog::JumpList { title, items, sel, mut filter } => {
+            Dialog::JumpList {
+                title,
+                items,
+                sel,
+                mut filter,
+            } => {
                 let view = filter_indices(&items, |it: &(String, u64)| it.0.as_str(), &filter);
                 let last = view.len().saturating_sub(1);
                 let mut sel = sel;
@@ -481,13 +624,22 @@ impl super::App {
                     _ => {}
                 }
                 if !close {
-                    self.dialog = Some(Dialog::JumpList { title, items, sel, filter });
+                    self.dialog = Some(Dialog::JumpList {
+                        title,
+                        items,
+                        sel,
+                        filter,
+                    });
                 }
                 if let Some(off) = jump {
                     self.goto_offset(off);
                 }
             }
-            Dialog::Triage { pane, sel, mut filter } => {
+            Dialog::Triage {
+                pane,
+                sel,
+                mut filter,
+            } => {
                 let last = self.triage_entries(pane, &filter).len().saturating_sub(1);
                 let mut sel = sel;
                 let mut pane = pane;
@@ -535,7 +687,11 @@ impl super::App {
                     self.triage_activate(pane, sel, &filter);
                 }
             }
-            Dialog::Header { pane, sel, mut filter } => {
+            Dialog::Header {
+                pane,
+                sel,
+                mut filter,
+            } => {
                 let len = self.header_entries(pane, &filter).len().max(1);
                 match key.code {
                     // Panes switch with arrows/Tab so letters stay free for filtering.
@@ -550,28 +706,56 @@ impl super::App {
                         self.dialog = Some(Dialog::Header { pane, sel, filter });
                     }
                     Tab | Right => {
-                        self.dialog = Some(Dialog::Header { pane: pane.next(), sel: 0, filter })
+                        self.dialog = Some(Dialog::Header {
+                            pane: pane.next(),
+                            sel: 0,
+                            filter,
+                        })
                     }
                     Left => {
-                        self.dialog = Some(Dialog::Header { pane: pane.prev(), sel: 0, filter })
+                        self.dialog = Some(Dialog::Header {
+                            pane: pane.prev(),
+                            sel: 0,
+                            filter,
+                        })
                     }
                     Up => {
-                        self.dialog = Some(Dialog::Header { pane, sel: sel.saturating_sub(1), filter })
+                        self.dialog = Some(Dialog::Header {
+                            pane,
+                            sel: sel.saturating_sub(1),
+                            filter,
+                        })
                     }
                     Down => {
-                        self.dialog = Some(Dialog::Header { pane, sel: (sel + 1).min(len - 1), filter })
+                        self.dialog = Some(Dialog::Header {
+                            pane,
+                            sel: (sel + 1).min(len - 1),
+                            filter,
+                        })
                     }
                     Enter => self.header_activate(pane, sel, &filter),
                     Backspace => {
                         filter.pop();
-                        self.dialog = Some(Dialog::Header { pane, sel: 0, filter });
+                        self.dialog = Some(Dialog::Header {
+                            pane,
+                            sel: 0,
+                            filter,
+                        });
                     }
                     Char(c) => {
                         filter.push(c);
-                        self.dialog = Some(Dialog::Header { pane, sel: 0, filter });
+                        self.dialog = Some(Dialog::Header {
+                            pane,
+                            sel: 0,
+                            filter,
+                        });
                     }
                     Esc if !filter.is_empty() => {
-                        self.dialog = Some(Dialog::Header { pane, sel: 0, filter: String::new() });
+                        self.dialog = Some(Dialog::Header {
+                            pane,
+                            sel: 0,
+                            filter: String::new(),
+                        });
                     }
                     Esc => {}
                     _ => self.dialog = Some(Dialog::Header { pane, sel, filter }),

@@ -77,11 +77,7 @@ pub fn table(name: &str, min_fields: usize) -> Vec<Row> {
 
 /// [`table`], reading overrides from an explicit directory. Test-only.
 #[cfg(test)]
-pub(crate) fn table_in(
-    dir: Option<&std::path::Path>,
-    name: &str,
-    min_fields: usize,
-) -> Vec<Row> {
+pub(crate) fn table_in(dir: Option<&std::path::Path>, name: &str, min_fields: usize) -> Vec<Row> {
     parse(&source_in(dir, name), min_fields)
 }
 

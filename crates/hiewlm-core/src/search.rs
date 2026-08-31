@@ -23,7 +23,11 @@ pub struct Pattern {
 impl Pattern {
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         let mask = vec![true; bytes.len()];
-        Self { bytes, mask, ci: false }
+        Self {
+            bytes,
+            mask,
+            ci: false,
+        }
     }
 
     pub fn from_text(text: &str) -> Self {
@@ -60,7 +64,11 @@ impl Pattern {
         if bytes.is_empty() {
             return Err(HexParseError);
         }
-        Ok(Self { bytes, mask, ci: false })
+        Ok(Self {
+            bytes,
+            mask,
+            ci: false,
+        })
     }
 
     fn split_pairs(tok: &str) -> Result<Vec<String>, HexParseError> {
@@ -108,7 +116,12 @@ impl Pattern {
             .zip(&self.bytes)
             .zip(&self.mask)
             .all(|((&got, &want), &active)| {
-                !active || if ci { got.to_ascii_lowercase() == want } else { got == want }
+                !active
+                    || if ci {
+                        got.to_ascii_lowercase() == want
+                    } else {
+                        got == want
+                    }
             })
     }
 }
@@ -200,14 +213,24 @@ mod tests {
     #[test]
     fn find_text_forward() {
         let b = buf(b"the quick brown fox");
-        let hit = find(&b, &Pattern::from_text("brown"), FileOffset(0), Direction::Forward);
+        let hit = find(
+            &b,
+            &Pattern::from_text("brown"),
+            FileOffset(0),
+            Direction::Forward,
+        );
         assert_eq!(hit, Some(FileOffset(10)));
     }
 
     #[test]
     fn find_backward() {
         let b = buf(b"aXbXc");
-        let hit = find(&b, &Pattern::from_text("X"), FileOffset(4), Direction::Backward);
+        let hit = find(
+            &b,
+            &Pattern::from_text("X"),
+            FileOffset(4),
+            Direction::Backward,
+        );
         assert_eq!(hit, Some(FileOffset(3)));
     }
 
@@ -215,23 +238,39 @@ mod tests {
     fn hex_with_wildcard() {
         let b = buf(&[0xde, 0xad, 0xbe, 0xef]);
         let pat = Pattern::from_hex("de ?? be").unwrap();
-        assert_eq!(find(&b, &pat, FileOffset(0), Direction::Forward), Some(FileOffset(0)));
+        assert_eq!(
+            find(&b, &pat, FileOffset(0), Direction::Forward),
+            Some(FileOffset(0))
+        );
     }
 
     #[test]
     fn case_insensitive_text_matches_any_case() {
         let b = buf(b"call VirtualAllocEx now");
         let pat = Pattern::from_text_ci("virtualallocex");
-        assert_eq!(find(&b, &pat, FileOffset(0), Direction::Forward), Some(FileOffset(5)));
+        assert_eq!(
+            find(&b, &pat, FileOffset(0), Direction::Forward),
+            Some(FileOffset(5))
+        );
         // ...and it is not offered for replacement, which would change the case.
         assert!(pat.literal_bytes().is_none());
-        assert!(Pattern::from_text("VirtualAllocEx").literal_bytes().is_some());
+        assert!(Pattern::from_text("VirtualAllocEx")
+            .literal_bytes()
+            .is_some());
     }
 
     #[test]
     fn no_match_returns_none() {
         let b = buf(b"abc");
-        assert_eq!(find(&b, &Pattern::from_text("zzz"), FileOffset(0), Direction::Forward), None);
+        assert_eq!(
+            find(
+                &b,
+                &Pattern::from_text("zzz"),
+                FileOffset(0),
+                Direction::Forward
+            ),
+            None
+        );
     }
 
     #[test]

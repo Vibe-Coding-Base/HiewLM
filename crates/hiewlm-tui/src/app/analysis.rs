@@ -29,7 +29,10 @@ impl super::App {
         let items: Vec<(String, u64)> = found
             .iter()
             .map(|(off, slot, text)| {
-                (format!("!{}  [{slot:+#x}]  \"{text}\"", self.display_addr(*off)), *off)
+                (
+                    format!("!{}  [{slot:+#x}]  \"{text}\"", self.display_addr(*off)),
+                    *off,
+                )
             })
             .collect();
         self.dialog = Some(Dialog::JumpList {
@@ -48,7 +51,12 @@ impl super::App {
     /// The recovered function start at or before the cursor, else the cursor.
     pub(super) fn function_start_at_cursor(&self) -> u64 {
         let cur = self.cursor_insn_start();
-        self.analyze().functions.range(..=cur).next_back().copied().unwrap_or(cur)
+        self.analyze()
+            .functions
+            .range(..=cur)
+            .next_back()
+            .copied()
+            .unwrap_or(cur)
     }
 
     /// Replay a function's stack stores and return `(instruction offset, stack
@@ -62,7 +70,9 @@ impl super::App {
         let mut left = budget;
 
         while left > 0 && off < self.buffer.len() {
-            let Some(ins) = self.disasm_from(off, 1).into_iter().next() else { break };
+            let Some(ins) = self.disasm_from(off, 1).into_iter().next() else {
+                break;
+            };
             left -= 1;
             if let Some((disp, value, size)) = ins.stack_store {
                 for i in 0..size as i64 {
@@ -110,11 +120,16 @@ impl super::App {
     /// `call [rip+0x2f10]  ; kernel32.dll!VirtualAlloc` tells you what the
     /// function does. Same for `lea rcx, [rip+0x1c4]  ; "http://..."`.
     pub fn annotate(&self, ins: &Insn) -> Option<String> {
-        for va in [ins.target, ins.mem_target, ins.imm_target].into_iter().flatten() {
+        for va in [ins.target, ins.mem_target, ins.imm_target]
+            .into_iter()
+            .flatten()
+        {
             if let Some(name) = self.sym_by_va.get(&va) {
                 return Some(name.clone());
             }
-            let Some(off) = self.va_to_off(va) else { continue };
+            let Some(off) = self.va_to_off(va) else {
+                continue;
+            };
             if off >= self.buffer.len() {
                 continue;
             }
@@ -149,7 +164,12 @@ impl super::App {
         self.view_bytes(off, &mut buf);
 
         let printable = |b: u8| (0x20..0x7f).contains(&b);
-        let ascii: String = buf.iter().copied().take_while(|&b| printable(b)).map(|b| b as char).collect();
+        let ascii: String = buf
+            .iter()
+            .copied()
+            .take_while(|&b| printable(b))
+            .map(|b| b as char)
+            .collect();
         if ascii.chars().count() >= MIN {
             return Some(ascii);
         }
@@ -161,5 +181,4 @@ impl super::App {
             .collect();
         (wide.chars().count() >= MIN).then_some(wide)
     }
-
 }

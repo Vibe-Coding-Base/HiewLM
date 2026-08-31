@@ -4,7 +4,6 @@
 //! was 6300 lines, and a third of that was this module.
 
 use super::help::PALETTE;
-use super::*;
 
 use super::*;
 

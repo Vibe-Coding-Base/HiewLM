@@ -6,7 +6,29 @@ safe for viewing malware (it only reads data — the target file is never execut
 
 Full design: [docs/develop/00-overall-design.md](docs/develop/00-overall-design.md).
 
-## Status — M0–M5 done (except HEM shim & GUI)
+## Status — M0–M6 done (except HEM shim & GUI)
+
+M6 (packaging, richer rules, and Office documents):
+
+- **Office document analysis** — a fourth view mode, `Doc`, for OLE2
+  (`.doc`/`.xls`/`.ppt`), OOXML (`.docx`/`.xlsx`/`.pptx`) and RTF. Panes for
+  **Structure** (storages, parts and objects, `Enter` jumps to the bytes),
+  **Findings**, **Macros** (VBA is *decompressed*, not merely detected, with its
+  keywords grouped: auto-exec, execution, download, obfuscation, memory) and
+  **Info** (metadata plus external references — a remote template is reported,
+  never fetched). Also `hiewlmc office`, and the findings feed the triage score.
+- **Rules live in data files** (`crates/hiewlm-core/data/*.txt`), embedded at
+  build time and overridable from `<config>/hiewlm/rules/`. `hiewlmc rules`
+  shows what is loaded. Enriched to **359 API rules** across six new behaviour
+  categories (evasion, credentials, ransom, lateral, discovery, COM, with direct
+  syscall equivalents), **84 packer rules** that distinguish packer / protector /
+  obfuscator / installer / runtime, and **283 indicator entries**.
+- **Smaller binaries**: wasmtime and Rhai are opt-in like YARA already was, so
+  `hiewlmc` is 8.8 MB instead of 15 MB (`--features full` for everything).
+- **Popups scroll sideways** — a long string is no longer cut at the panel edge.
+- Build artifacts are named `os-arch` (`hiewlm-macos-arm64`), not `host`.
+
+
 
 M5 (don't lose analysis work, don't be blind on non-Windows samples):
 
@@ -159,6 +181,20 @@ distro/Homebrew Rust ships std for the host only, so cross-builds go through a
 Basic keys: `1` help · `2` triage · `Enter` cycle mode · `3` edit · `5` goto · `7` find ·
 `9` save · `q` quit · `:` command palette.
 
+### Build profiles
+
+Nothing heavy is on by default — a binary you carry around should not pay for
+features you do not use:
+
+```sh
+cargo build --release                       # 8.8 MB hiewlmc
+cargo build --release --features full       # + YARA, Rhai scripting, WASM plugins
+FEATURES=full ./scripts/build-release.sh    # same, into dist/hiewlm-macos-arm64
+```
+
+`hiewlmc script` and `hiewlmc plugin` still appear in `--help` without their
+features and tell you how to enable themselves.
+
 ### YARA support
 
 YARA scanning uses [yara-x](https://github.com/VirusTotal/yara-x) (pure Rust — no
@@ -200,6 +236,8 @@ hiewlmc triage  <file> --yara rules.yar      # fold a YARA scan into the verdict
 hiewlmc yara    <file> rules.yar|rules_dir/  # scan only  (needs --features yara)
 hiewlmc triage  <file> --format markdown     # report for a ticket
 hiewlmc xorkey  <file> --at ADDR --count N   # recover a repeating XOR key
+hiewlmc office  <file> [--macros]            # document structure, macros, findings
+hiewlmc rules   [--dump apis]                # what detection rules are loaded
 hiewlmc strings <file> --ioc                 # indicators only (URL/IP/registry/…)
 hiewlmc plugins                              # list container plugins
 hiewlmc --plugin all container <file>        # ZIP/PDF structure + findings
@@ -221,6 +259,7 @@ cargo clippy      # clean, no warnings
 |---|---|
 | `hiewlm-core` | Buffer (memmap + piece-table + journal), addressing, search, registry, crypt engine, container plugin API, struct templates, string/IOC extraction, import scoring, ssdeep, xor key hunting — pure, no UI. |
 | `hiewlm-fmt` | Format detection (PE/ELF/Mach-O incl. fat, COFF, ar, NE/LE/LX/TE/NLM) → arch/bits/entry/VA map, imports/exports, header fields; PE overlay/TLS/debug/Authenticode/anomalies. |
+| `hiewlm-office` | Document analysis: OLE2/CFB, OOXML (with inflate), RTF, and MS-OVBA macro decompression. |
 | `hiewlm-triage` | The triage verdict: hashes, packer, capabilities, anomalies, indicators, entropy map, YARA — rendered as panes the TUI and CLI share. |
 | `hiewlm-asm` | Disassembly: x86/x86-64 (iced-x86, branch targets + flow), ARM/ARM64/MIPS/RISC-V/PPC/SPARC (Capstone), WASM bytecode; plus an x86 text assembler. |
 | `hiewlm-tui` | ratatui/crossterm UI, state machine, keymap, theme; the `hiewlm` binary. |

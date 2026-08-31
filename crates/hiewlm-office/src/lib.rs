@@ -13,6 +13,7 @@
 pub mod cfb;
 pub mod pdf;
 pub mod rules;
+pub mod zip;
 pub mod ooxml;
 pub mod rtf;
 pub mod vba;
@@ -28,6 +29,8 @@ pub enum DocKind {
     Ooxml,
     Rtf,
     Pdf,
+    /// A plain ZIP archive (an OOXML package is reported as `Ooxml` instead).
+    Zip,
 }
 
 impl DocKind {
@@ -37,6 +40,7 @@ impl DocKind {
             DocKind::Ooxml => "OOXML package",
             DocKind::Rtf => "RTF document",
             DocKind::Pdf => "PDF document",
+            DocKind::Zip => "ZIP archive",
         }
     }
 }
@@ -95,9 +99,9 @@ pub fn parse(bytes: &[u8]) -> Option<Document> {
         return parse_ole(bytes);
     }
     if ooxml::is_zip(bytes) {
-        // A ZIP is only a document if it looks like an OOXML package; an
-        // ordinary archive is the zip plugin's business.
-        return parse_ooxml(bytes);
+        // An OOXML package gets the document treatment; anything else in a ZIP
+        // gets the archive treatment, which asks different questions.
+        return parse_ooxml(bytes).or_else(|| parse_zip(bytes));
     }
     if rtf::is_rtf(bytes) {
         return parse_rtf(bytes);
@@ -351,6 +355,52 @@ fn parse_pdf(bytes: &[u8]) -> Option<Document> {
     Some(doc)
 }
 
+// ── ZIP ──────────────────────────────────────────────────────────────────────
+
+fn parse_zip(bytes: &[u8]) -> Option<Document> {
+    let z = zip::parse(bytes)?;
+    let mut doc = Document {
+        kind: DocKind::Zip,
+        format: format!("{} ({} entries)", z.kind, z.members.len()),
+        nodes: Vec::new(),
+        findings: z.findings.clone(),
+        metadata: vec![
+            ("Archive kind".into(), z.kind.to_string()),
+            ("Entries".into(), z.members.len().to_string()),
+            (
+                "Encrypted".into(),
+                z.members.iter().filter(|m| m.encrypted).count().to_string(),
+            ),
+        ],
+        macros: Vec::new(),
+        external: Vec::new(),
+    };
+    for m in &z.members {
+        let depth = m.name.matches('/').count();
+        // The content type is the column that matters: it is what the member
+        // *is*, next to what it claims to be.
+        let mut detail = String::new();
+        if !m.content.is_empty() {
+            detail.push_str(m.content);
+        }
+        if m.encrypted {
+            detail.push_str(if m.aes { "  encrypted (AES)" } else { "  encrypted (ZipCrypto)" });
+        }
+        if !m.flags.is_empty() {
+            detail.push_str("  ⚠");
+        }
+        doc.nodes.push(Node {
+            path: m.name.clone(),
+            kind: if m.is_dir { "dir" } else { "entry" },
+            size: m.uncompressed,
+            depth,
+            file_off: Some(m.local_off),
+            detail,
+        });
+    }
+    Some(doc)
+}
+
 // ── Shared ───────────────────────────────────────────────────────────────────
 
 /// Turn recovered macros into findings and nodes.
@@ -422,17 +472,58 @@ mod tests {
     }
 
     #[test]
+    fn a_zip_is_analysed_as_an_archive() {
+        // Built by hand rather than by the zip module's own helper, so the two
+        // are not testing each other's assumptions.
+        let mut data = Vec::new();
+        let name = "photo.jpg";
+        let payload: &[u8] = b"MZ\x90\x00 not a photo";
+        data.extend_from_slice(b"PK\x03\x04");
+        data.extend_from_slice(&[20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        data.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(name.as_bytes());
+        data.extend_from_slice(payload);
+        let cd_off = data.len() as u32;
+        let mut dir = Vec::new();
+        dir.extend_from_slice(b"PK\x01\x02");
+        dir.extend_from_slice(&[20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        dir.extend_from_slice(&0u32.to_le_bytes());
+        dir.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        dir.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        dir.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        for _ in 0..4 {
+            dir.extend_from_slice(&0u16.to_le_bytes());
+        }
+        dir.extend_from_slice(&0u32.to_le_bytes());
+        dir.extend_from_slice(&0u32.to_le_bytes());
+        dir.extend_from_slice(name.as_bytes());
+        let dir_len = dir.len() as u32;
+        data.extend_from_slice(&dir);
+        data.extend_from_slice(b"PK\x05\x06");
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(&dir_len.to_le_bytes());
+        data.extend_from_slice(&cd_off.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+
+        let d = parse(&data).expect("document");
+        assert_eq!(d.kind, DocKind::Zip);
+        assert_eq!(d.nodes.len(), 1);
+        assert!(d.nodes[0].detail.contains("PE/DOS executable"), "{:?}", d.nodes[0]);
+        assert!(d.findings.iter().any(|f| f.message.contains("despite the .jpg")));
+    }
+
+    #[test]
     fn a_plain_file_is_not_a_document() {
         assert!(parse(b"MZ\x90\x00 this is a PE").is_none());
         assert!(parse(b"").is_none());
-        // A ZIP that is not an OOXML package belongs to the zip plugin.
-        let plain_zip = {
-            let mut v = b"PK\x03\x04".to_vec();
-            v.extend(std::iter::repeat(0u8).take(64));
-            v.extend(b"PK\x05\x06");
-            v.extend(std::iter::repeat(0u8).take(18));
-            v
-        };
-        assert!(parse(&plain_zip).is_none());
+        // A truncated ZIP with no usable directory is still not a document.
+        assert!(parse(b"PK\x03\x04 truncated").is_none());
     }
 }

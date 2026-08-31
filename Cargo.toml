@@ -11,7 +11,6 @@ members = [
     "crates/hiewlm-tui",
     "crates/hiewlm-cli",
     "crates/hiewlm-plugin",
-    "crates/hiewlm-plugin-zip",
 ]
 
 [workspace.package]

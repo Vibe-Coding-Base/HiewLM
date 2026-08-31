@@ -497,8 +497,11 @@ fn docx_bytes() -> Vec<u8> {
 }
 
 /// An app holding a document, opened the way the real one is.
-fn doc_app() -> App {
-    let path = std::env::temp_dir().join("hiewlm_modemenu_test.docx");
+///
+/// Each caller gets its own file: tests run in parallel, and sharing one path
+/// meant two of them writing and reading it at the same time.
+fn doc_app(tag: &str) -> App {
+    let path = std::env::temp_dir().join(format!("hiewlm_doc_{tag}.docx"));
     fs::write(&path, docx_bytes()).unwrap();
     let a = App::open(path).unwrap();
     assert!(a.doc_supported(), "the fixture must parse as a document");
@@ -510,7 +513,7 @@ fn mode_menu_offers_every_mode() {
     // Doc shipped unreachable from the menu: the list and its wrap-around were
     // still written for three modes.
     use crossterm::event::{KeyCode, KeyEvent};
-    let mut a = doc_app();
+    let mut a = doc_app("modemenu");
     a.apply(Command::OpenModeMenu);
     a.handle_key(KeyEvent::from(KeyCode::Char('4')));
     assert_eq!(a.mode, Mode::Doc, "`4` in the mode menu must reach Doc");
@@ -528,7 +531,7 @@ fn mode_menu_offers_every_mode() {
 
 #[test]
 fn enter_cycles_into_doc_only_for_documents() {
-    let mut a = doc_app();
+    let mut a = doc_app("cycle");
     a.mode = Mode::Text;
     a.apply(Command::CycleMode);
     assert_eq!(a.mode, Mode::Doc);
@@ -549,7 +552,7 @@ fn enter_cycles_into_doc_only_for_documents() {
 
 #[test]
 fn doc_view_lists_parts_and_navigates() {
-    let mut a = doc_app();
+    let mut a = doc_app("view");
     a.apply(Command::SetMode(Mode::Doc));
     let rows = a.doc_rows();
     assert!(rows.iter().any(|(l, _)| l.contains("word/document.xml")), "{rows:?}");
@@ -1392,7 +1395,7 @@ fn plugin_container_lists_members_not_functions() {
     a.open_names();
     match &a.dialog {
         Some(Dialog::JumpList { title, items, .. }) => {
-            assert!(title.starts_with("Members"), "{title}");
+            assert!(title.starts_with("Parts & names"), "{title}");
             assert!(items.iter().all(|(l, _)| !l.contains("func")));
         }
         _ => panic!("expected members list"),
@@ -1414,7 +1417,7 @@ fn container_names_list_members_not_functions() {
     a.open_names();
     match &a.dialog {
         Some(Dialog::JumpList { title, items, .. }) => {
-            assert!(title.starts_with("Members"));
+            assert!(title.starts_with("Parts & names"), "{title}");
             assert!(items.iter().all(|(l, _)| !l.contains("func")));
         }
         _ => panic!("expected members list"),

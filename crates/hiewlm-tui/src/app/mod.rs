@@ -286,8 +286,9 @@ pub struct App {
     pub exports: Vec<(String, u64)>,
     pub header_fields: Vec<(String, String)>,
     pub resources: Vec<hiewlm_core::Resource>,
-    /// Parsed container structure (ZIP/PDF), when a container plugin claimed
-    /// the file. Members are listed by F12 instead of recovered functions.
+    /// Structure from a user-supplied container plugin, if one claimed the file.
+    /// ZIP, PDF and Office are handled by the document analyser now, which gives
+    /// them a navigable view; this stays as the extension point.
     pub container: Option<hiewlm_core::Container>,
     /// Parsed document structure, when the file is an Office document.
     pub document: Option<hiewlm_office::Document>,
@@ -462,7 +463,6 @@ impl App {
         // not claim. They only read bytes — nothing is decompressed or run.
         let container = if format == Format::Raw {
             let mut reg = hiewlm_core::ContainerRegistry::new();
-            reg.register(Box::new(hiewlm_plugin_zip::ZipPlugin));
             reg.enable(&cfg.plugins());
             let cap = buffer.len().min(256 * 1024 * 1024) as usize;
             let mut data = vec![0u8; cap];
@@ -1450,7 +1450,17 @@ impl App {
     /// Named locations: entry, sections, and user comments.
     fn names_list(&self) -> Vec<(String, u64)> {
         let mut items = Vec::new();
-        // Plugin-parsed containers (ZIP/PDF) list their members.
+        // A document's parts are named locations like any other.
+        if let Some(d) = &self.document {
+            for n in &d.nodes {
+                if let Some(off) = n.file_off {
+                    items.push((
+                        format!("{:<9} {}  {}", n.kind, self.display_addr(off), n.path),
+                        off,
+                    ));
+                }
+            }
+        }
         if let Some(c) = &self.container {
             for m in &c.members {
                 items.push((
@@ -1619,7 +1629,8 @@ impl App {
     fn open_names(&mut self) {
         let mut items = self.names_list();
         // Function recovery is only meaningful for code images, not containers.
-        let is_container = self.format.is_container() || self.container.is_some();
+        let is_container =
+            self.format.is_container() || self.container.is_some() || self.document.is_some();
         if !is_container {
             for &off in &self.analyze().functions {
                 items.push((format!("func      {}", self.display_addr(off)), off));
@@ -1630,7 +1641,7 @@ impl App {
             return;
         }
         let title = if is_container {
-            format!("Members ({})", items.len())
+            format!("Parts & names ({})", items.len())
         } else {
             format!("Names & functions ({})", items.len())
         };

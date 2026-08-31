@@ -28,8 +28,12 @@ struct Cli {
 fn registry(enable: &[String]) -> Result<hiewlm_core::ContainerRegistry> {
     let mut reg = hiewlm_core::ContainerRegistry::new();
     reg.register(Box::new(hiewlm_plugin_zip::ZipPlugin));
-    reg.register(Box::new(hiewlm_plugin_pdf::PdfPlugin));
-    let unknown = reg.enable(enable);
+    // `pdf` used to be a container plugin; PDF is now handled by the document
+    // analyser, which gives it a structure view instead of a member list. The
+    // name is still accepted so existing scripts do not break.
+    let enable: Vec<String> =
+        enable.iter().filter(|n| !n.eq_ignore_ascii_case("pdf")).cloned().collect();
+    let unknown = reg.enable(&enable);
     if !unknown.is_empty() {
         bail!(
             "unknown plugin(s): {}. Available: {}",

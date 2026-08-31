@@ -259,14 +259,13 @@ cargo clippy      # clean, no warnings
 |---|---|
 | `hiewlm-core` | Buffer (memmap + piece-table + journal), addressing, search, registry, crypt engine, container plugin API, struct templates, string/IOC extraction, import scoring, ssdeep, xor key hunting — pure, no UI. |
 | `hiewlm-fmt` | Format detection (PE/ELF/Mach-O incl. fat, COFF, ar, NE/LE/LX/TE/NLM) → arch/bits/entry/VA map, imports/exports, header fields; PE overlay/TLS/debug/Authenticode/anomalies. |
-| `hiewlm-office` | Document analysis: OLE2/CFB, OOXML (with inflate), RTF, and MS-OVBA macro decompression. |
+| `hiewlm-office` | Document analysis: OLE2/CFB, OOXML (with inflate), RTF, **PDF**, and MS-OVBA macro decompression. |
 | `hiewlm-triage` | The triage verdict: hashes, packer, capabilities, anomalies, indicators, entropy map, YARA — rendered as panes the TUI and CLI share. |
 | `hiewlm-asm` | Disassembly: x86/x86-64 (iced-x86, branch targets + flow), ARM/ARM64/MIPS/RISC-V/PPC/SPARC (Capstone), WASM bytecode; plus an x86 text assembler. |
 | `hiewlm-tui` | ratatui/crossterm UI, state machine, keymap, theme; the `hiewlm` binary. |
 | `hiewlm-cli` | Headless batch tool (`hiewlmc`): info/hex/disasm/asm/search/replace/patch/hash/strings/entropy/packer/script/plugin/container for scripts & CI. |
 | `hiewlm-plugin` | Sandboxed WASM plugin host (wasmtime): fuel-bounded, host ABI `len/read/write/find/log`, no fs/network. |
 | `hiewlm-plugin-zip` | Container plugin: ZIP structure, member list, traversal/dropper/zip-bomb checks. |
-| `hiewlm-plugin-pdf` | Container plugin: PDF object map + active-content (JS/launch/embedded) checks. |
 
 ## Roadmap
 

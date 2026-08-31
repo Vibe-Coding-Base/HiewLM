@@ -46,7 +46,10 @@ pub struct Cfb {
 impl Cfb {
     /// The contents of a stream by path, if it was read.
     pub fn stream(&self, path: &str) -> Option<&[u8]> {
-        self.streams.iter().find(|(p, _)| p == path).map(|(_, d)| d.as_slice())
+        self.streams
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, d)| d.as_slice())
     }
 
     /// Streams whose path contains `needle` (case-insensitive).
@@ -61,7 +64,9 @@ impl Cfb {
 
     pub fn has_entry(&self, name: &str) -> bool {
         let n = name.to_ascii_lowercase();
-        self.entries.iter().any(|e| e.name.to_ascii_lowercase() == n)
+        self.entries
+            .iter()
+            .any(|e| e.name.to_ascii_lowercase() == n)
     }
 }
 
@@ -75,10 +80,14 @@ const MAX_STREAM: usize = 8 * 1024 * 1024;
 const MAX_CHAIN: usize = 1 << 20;
 
 fn u16le(b: &[u8], off: usize) -> u16 {
-    b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]])).unwrap_or(0)
+    b.get(off..off + 2)
+        .map(|s| u16::from_le_bytes([s[0], s[1]]))
+        .unwrap_or(0)
 }
 fn u32le(b: &[u8], off: usize) -> u32 {
-    b.get(off..off + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]])).unwrap_or(0)
+    b.get(off..off + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        .unwrap_or(0)
 }
 fn u64le(b: &[u8], off: usize) -> u64 {
     b.get(off..off + 8)
@@ -194,12 +203,22 @@ pub fn parse(bytes: &[u8]) -> Option<Cfb> {
     // The root entry's stream is the mini-stream container.
     let root_start = u32le(&dir_bytes, 116);
     let root_size = u64le(&dir_bytes, 120) as usize;
-    let mini_stream = read_chain(bytes, &fat, root_start, sector_size, root_size.min(MAX_STREAM));
+    let mini_stream = read_chain(
+        bytes,
+        &fat,
+        root_start,
+        sector_size,
+        root_size.min(MAX_STREAM),
+    );
     let mini_fat_bytes = read_chain(bytes, &fat, mini_fat_start, sector_size, MAX_STREAM);
-    let mini_fat: Vec<u32> =
-        (0..mini_fat_bytes.len() / 4).map(|i| u32le(&mini_fat_bytes, i * 4)).collect();
+    let mini_fat: Vec<u32> = (0..mini_fat_bytes.len() / 4)
+        .map(|i| u32le(&mini_fat_bytes, i * 4))
+        .collect();
 
-    let mut cfb = Cfb { sector_size, ..Default::default() };
+    let mut cfb = Cfb {
+        sector_size,
+        ..Default::default()
+    };
     // Walk the red-black tree by child/sibling links, depth-first, bounded.
     let mut stack = vec![(0usize, 0usize, String::new())];
     let mut visited = std::collections::HashSet::new();
@@ -218,7 +237,11 @@ pub fn parse(bytes: &[u8]) -> Option<Cfb> {
         };
         let size = u64le(&dir_bytes, e + 120);
         let start = u32le(&dir_bytes, e + 116);
-        let path = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
+        let path = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
 
         let in_mini = kind == EntryKind::Stream && (size as usize) < mini_cutoff;
         let file_off = (!in_mini && kind == EntryKind::Stream && start < FREE_SECT)
@@ -246,8 +269,16 @@ pub fn parse(bytes: &[u8]) -> Option<Cfb> {
         // Siblings share this node's depth and prefix; the child starts a level.
         // The root is the container, not a directory, so it contributes no path
         // component — `Macros/VBA/ThisDocument`, not `Root Entry/Macros/...`.
-        let child_prefix = if kind == EntryKind::Root { String::new() } else { path.clone() };
-        let child_depth = if kind == EntryKind::Root { depth } else { depth + 1 };
+        let child_prefix = if kind == EntryKind::Root {
+            String::new()
+        } else {
+            path.clone()
+        };
+        let child_depth = if kind == EntryKind::Root {
+            depth
+        } else {
+            depth + 1
+        };
         let left = u32le(&dir_bytes, e + 68);
         let right = u32le(&dir_bytes, e + 72);
         let child = u32le(&dir_bytes, e + 76);
@@ -307,8 +338,8 @@ mod tests {
         b[32..34].copy_from_slice(&6u16.to_le_bytes()); // 64-byte mini sectors
         b[44..48].copy_from_slice(&1u32.to_le_bytes()); // one FAT sector
         b[48..52].copy_from_slice(&1u32.to_le_bytes()); // directory at sector 1
-        // A small mini-stream cutoff so a short payload still travels through the
-        // main FAT, which is the path worth testing.
+                                                        // A small mini-stream cutoff so a short payload still travels through the
+                                                        // main FAT, which is the path worth testing.
         b[56..60].copy_from_slice(&64u32.to_le_bytes()); // mini cutoff
         b[60..64].copy_from_slice(&END_OF_CHAIN.to_le_bytes()); // no mini FAT
         b[68..72].copy_from_slice(&END_OF_CHAIN.to_le_bytes()); // no DIFAT
@@ -358,7 +389,11 @@ mod tests {
         let e = c.entries.iter().find(|e| e.name == "WordDocument").unwrap();
         assert_eq!(e.kind, EntryKind::Stream);
         assert_eq!(e.size, 200);
-        assert_eq!(e.file_off, Some(512 * 3), "streams point at real file offsets");
+        assert_eq!(
+            e.file_off,
+            Some(512 * 3),
+            "streams point at real file offsets"
+        );
     }
 
     #[test]

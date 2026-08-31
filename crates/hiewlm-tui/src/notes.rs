@@ -120,7 +120,13 @@ fn default_store_dir() -> Option<PathBuf> {
 fn notes_path(key: &str) -> Option<PathBuf> {
     let safe: String = key
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     Some(store_dir()?.join(format!("{safe}.toml")))
 }
@@ -170,7 +176,11 @@ mod tests {
         let notes = Notes {
             key: "sha256:deadbeef".into(),
             last_path: "/samples/x.bin".into(),
-            markers: vec![Marker { start: 1, end: 4, color: 2 }],
+            markers: vec![Marker {
+                start: 1,
+                end: 4,
+                color: 2,
+            }],
             comments: vec![(0x10, "decrypt loop".into())],
             bookmarks: vec![("config blob".into(), 0x200)],
             slots: vec![(1, 0x40)],
@@ -183,7 +193,10 @@ mod tests {
         assert_eq!(back.markers.len(), 1);
 
         // Emptying the notes removes the file rather than leaving a husk.
-        let empty = Notes { key: "sha256:deadbeef".into(), ..Default::default() };
+        let empty = Notes {
+            key: "sha256:deadbeef".into(),
+            ..Default::default()
+        };
         save(&empty).unwrap();
         assert!(load("sha256:deadbeef").is_none());
     }

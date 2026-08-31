@@ -20,9 +20,9 @@ pub enum YaraError {
 impl std::fmt::Display for YaraError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            YaraError::Unsupported => f.write_str(
-                "this build has no YARA support — rebuild with `--features yara`",
-            ),
+            YaraError::Unsupported => {
+                f.write_str("this build has no YARA support — rebuild with `--features yara`")
+            }
             YaraError::Compile(m) => write!(f, "rule error: {m}"),
             YaraError::Io(m) => write!(f, "cannot read rules: {m}"),
             YaraError::Scan(m) => write!(f, "scan failed: {m}"),
@@ -41,7 +41,9 @@ pub fn scan(rules_source: &str, data: &[u8]) -> Result<Vec<YaraHit>, YaraError> 
         .map_err(|e| YaraError::Compile(e.to_string()))?;
     let rules = compiler.build();
     let mut scanner = yara_x::Scanner::new(&rules);
-    let results = scanner.scan(data).map_err(|e| YaraError::Scan(e.to_string()))?;
+    let results = scanner
+        .scan(data)
+        .map_err(|e| YaraError::Scan(e.to_string()))?;
 
     let mut out = Vec::new();
     for rule in results.matching_rules() {
@@ -100,7 +102,10 @@ pub fn read_rules(path: &std::path::Path) -> Result<String, YaraError> {
             .collect();
         files.sort();
         if files.is_empty() {
-            return Err(YaraError::Io(format!("no .yar/.yara files in {}", path.display())));
+            return Err(YaraError::Io(format!(
+                "no .yar/.yara files in {}",
+                path.display()
+            )));
         }
         for f in files {
             let text = std::fs::read_to_string(&f).map_err(|e| YaraError::Io(e.to_string()))?;

@@ -17,13 +17,25 @@ const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 pub fn base64(data: &[u8]) -> String {
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = u32::from(b[0]) << 16 | u32::from(b[1]) << 8 | u32::from(b[2]);
         let idx = [(n >> 18) & 63, (n >> 12) & 63, (n >> 6) & 63, n & 63];
         out.push(B64[idx[0] as usize] as char);
         out.push(B64[idx[1] as usize] as char);
-        out.push(if chunk.len() > 1 { B64[idx[2] as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { B64[idx[3] as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            B64[idx[2] as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            B64[idx[3] as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -50,7 +62,11 @@ pub fn copy(text: &str) -> Result<usize, String> {
 
 /// `de ad be ef` — what a search box or a YARA rule wants.
 pub fn as_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
+    bytes
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A C array literal, for dropping into a harness.
@@ -58,7 +74,12 @@ pub fn as_c_array(bytes: &[u8]) -> String {
     let mut s = String::from("unsigned char data[] = {\n");
     for row in bytes.chunks(12) {
         s.push_str("    ");
-        s.push_str(&row.iter().map(|b| format!("0x{b:02x}")).collect::<Vec<_>>().join(", "));
+        s.push_str(
+            &row.iter()
+                .map(|b| format!("0x{b:02x}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
         s.push_str(",\n");
     }
     s.push_str("};\n");

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --workspace --release
+      - name: Test
+        run: cargo test --workspace --release
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --release
+      - name: Format
+        run: cargo fmt --all --check
+
+  # The heavy optional features are built once rather than on every platform:
+  # they are slow to compile and platform-independent.
+  features:
+    name: optional features
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build and test with YARA, scripting and WASM
+        run: cargo test --workspace --release --features hiewlm-cli/full,hiewlm-tui/yara
+
+  security:
+    name: security guarantees
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The guard that no code path can load or execute target-file content.
+      - name: no_exec guard
+        run: cargo test -p hiewlm-core --test no_exec

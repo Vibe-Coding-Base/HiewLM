@@ -95,7 +95,9 @@ fn filetype_name(t: u32) -> &'static str {
 }
 
 fn u32le(b: &[u8], off: usize) -> u32 {
-    b.get(off..off + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]])).unwrap_or(0)
+    b.get(off..off + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        .unwrap_or(0)
 }
 fn u64le(b: &[u8], off: usize) -> u64 {
     b.get(off..off + 8)
@@ -109,7 +111,13 @@ fn name16(b: &[u8], off: usize) -> String {
         .map(|s| {
             s.iter()
                 .take_while(|&&c| c != 0)
-                .map(|&c| if (0x20..0x7f).contains(&c) { c as char } else { '?' })
+                .map(|&c| {
+                    if (0x20..0x7f).contains(&c) {
+                        c as char
+                    } else {
+                        '?'
+                    }
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -127,7 +135,13 @@ fn lc_str(b: &[u8], cmd: usize, cmdsize: usize, str_off_field: usize) -> Option<
         .get(start..end)?
         .iter()
         .take_while(|&&c| c != 0)
-        .map(|&c| if (0x20..0x7f).contains(&c) { c as char } else { '?' })
+        .map(|&c| {
+            if (0x20..0x7f).contains(&c) {
+                c as char
+            } else {
+                '?'
+            }
+        })
         .collect();
     (!s.is_empty()).then_some(s)
 }
@@ -197,7 +211,10 @@ fn parse_at(bytes: &[u8]) -> Option<MachoDetails> {
         // Big-endian (PowerPC-era) images are rare enough to leave to goblin.
         _ => return None,
     };
-    let mut d = MachoDetails { is_64, ..Default::default() };
+    let mut d = MachoDetails {
+        is_64,
+        ..Default::default()
+    };
     d.filetype = u32le(bytes, 12);
     d.filetype_name = filetype_name(d.filetype);
     let ncmds = u32le(bytes, 16) as usize;
@@ -303,7 +320,9 @@ fn anomalies(d: &MachoDetails, file_len: u64) -> Vec<Finding> {
             );
         }
         if s.name == "__TEXT" && s.writable() {
-            out.push(Finding::suspicious("__TEXT is writable — self-modifying code").at(s.file_off));
+            out.push(
+                Finding::suspicious("__TEXT is writable — self-modifying code").at(s.file_off),
+            );
         }
         if s.file_end() > file_len && s.name != "__PAGEZERO" {
             out.push(
@@ -336,17 +355,25 @@ fn anomalies(d: &MachoDetails, file_len: u64) -> Vec<Finding> {
 
     for p in &d.dylibs {
         if p.starts_with("/tmp/") || p.starts_with("/var/tmp/") || p.starts_with("./") {
-            out.push(Finding::suspicious(format!("links a library from a writable path: {p}")));
+            out.push(Finding::suspicious(format!(
+                "links a library from a writable path: {p}"
+            )));
         }
     }
     for p in &d.rpaths {
         if p.starts_with("/tmp/") || p.starts_with("/var/tmp/") {
-            out.push(Finding::suspicious(format!("rpath points at a writable path: {p}")));
+            out.push(Finding::suspicious(format!(
+                "rpath points at a writable path: {p}"
+            )));
         }
     }
 
     if let Some((off, size)) = d.overlay {
-        let sev = if size > 4096 { Severity::Suspicious } else { Severity::Info };
+        let sev = if size > 4096 {
+            Severity::Suspicious
+        } else {
+            Severity::Info
+        };
         out.push(Finding {
             severity: sev,
             message: format!("overlay: {size} bytes appended after the last segment"),
@@ -420,14 +447,23 @@ mod tests {
     #[test]
     fn unsigned_executable_is_flagged() {
         let d = parse(&build_macho(RX, false, 0)).expect("macho");
-        assert!(d.anomalies.iter().any(|f| f.message.contains("no LC_CODE_SIGNATURE")));
+        assert!(d
+            .anomalies
+            .iter()
+            .any(|f| f.message.contains("no LC_CODE_SIGNATURE")));
     }
 
     #[test]
     fn writable_text_is_flagged() {
         let d = parse(&build_macho(RWX, true, 0)).expect("macho");
-        assert!(d.anomalies.iter().any(|f| f.message.contains("writable AND executable")));
-        assert!(d.anomalies.iter().any(|f| f.message.contains("__TEXT is writable")));
+        assert!(d
+            .anomalies
+            .iter()
+            .any(|f| f.message.contains("writable AND executable")));
+        assert!(d
+            .anomalies
+            .iter()
+            .any(|f| f.message.contains("__TEXT is writable")));
     }
 
     #[test]

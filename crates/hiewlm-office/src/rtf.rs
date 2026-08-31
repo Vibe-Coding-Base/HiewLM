@@ -111,7 +111,8 @@ mod tests {
 
     #[test]
     fn detects_dde_without_macros() {
-        let doc = br#"{\rtf1{\field{\*\fldinst {DDEAUTO c:\\windows\\system32\\cmd.exe "/c calc"}}}}"#;
+        let doc =
+            br#"{\rtf1{\field{\*\fldinst {DDEAUTO c:\\windows\\system32\\cmd.exe "/c calc"}}}}"#;
         let r = parse(doc).expect("rtf");
         assert!(r.hits.iter().any(|h| h.what == "DDEAUTO"), "{:?}", r.hits);
     }

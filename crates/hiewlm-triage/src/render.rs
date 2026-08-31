@@ -71,8 +71,19 @@ pub fn pane_lines(r: &TriageReport, pane: Pane) -> Vec<(String, Option<u64>)> {
 
 fn overview(r: &TriageReport) -> Vec<(String, Option<u64>)> {
     let mut v = vec![
-        kv("Verdict", format!("{} ({}/100)  {}", r.verdict().to_uppercase(), r.score, r.badge_line())),
-        kv("File", format!("{}  {} bytes ({})", r.name, r.size, human(r.size))),
+        kv(
+            "Verdict",
+            format!(
+                "{} ({}/100)  {}",
+                r.verdict().to_uppercase(),
+                r.score,
+                r.badge_line()
+            ),
+        ),
+        kv(
+            "File",
+            format!("{}  {} bytes ({})", r.name, r.size, human(r.size)),
+        ),
         // Arch and bitness are meaningless for a document or an archive.
         kv(
             "Format",
@@ -105,12 +116,18 @@ fn overview(r: &TriageReport) -> Vec<(String, Option<u64>)> {
     if let Some(p) = &r.packer {
         v.push(kv("Packer", p));
     }
-    v.push(kv("Imports", format!("{} ({} exports)", r.import_count, r.export_count)));
-    v.push(kv("Signature", if r.signed {
-        r.signature_note.clone().unwrap_or_else(|| "present".into())
-    } else {
-        "unsigned".into()
-    }));
+    v.push(kv(
+        "Imports",
+        format!("{} ({} exports)", r.import_count, r.export_count),
+    ));
+    v.push(kv(
+        "Signature",
+        if r.signed {
+            r.signature_note.clone().unwrap_or_else(|| "present".into())
+        } else {
+            "unsigned".into()
+        },
+    ));
     if let Some(p) = &r.pdb_path {
         v.push(kv("PDB path", p));
     }
@@ -118,7 +135,10 @@ fn overview(r: &TriageReport) -> Vec<(String, Option<u64>)> {
         v.push(kv(k, val));
     }
     if let Some((off, size)) = r.overlay {
-        v.push((format!("{:<16} {size} bytes at {off:#x}   [Enter jumps]", "Overlay"), Some(off)));
+        v.push((
+            format!("{:<16} {size} bytes at {off:#x}   [Enter jumps]", "Overlay"),
+            Some(off),
+        ));
     }
     v.push((String::new(), None));
     v.push(kv("MD5", &r.hashes.md5));
@@ -147,10 +167,16 @@ fn risk(r: &TriageReport) -> Vec<(String, Option<u64>)> {
         v.push((format!("[{}] {}", f.severity, f.message), f.offset));
     }
     for f in &r.container_findings {
-        v.push((format!("[{}] container: {}", f.severity, f.message), f.offset));
+        v.push((
+            format!("[{}] container: {}", f.severity, f.message),
+            f.offset,
+        ));
     }
     for f in &r.doc_findings {
-        v.push((format!("[{}] document: {}", f.severity, f.message), f.offset));
+        v.push((
+            format!("[{}] document: {}", f.severity, f.message),
+            f.offset,
+        ));
     }
     for e in &r.external_refs {
         v.push((format!("[suspicious] external reference: {e}"), None));
@@ -202,7 +228,10 @@ fn capabilities(r: &TriageReport) -> Vec<(String, Option<u64>)> {
         return vec![("(no recognised APIs in the import table)".into(), None)];
     }
     let mut v = vec![(
-        format!("import risk {}/100 · {} imports", r.import_score, r.import_count),
+        format!(
+            "import risk {}/100 · {} imports",
+            r.import_score, r.import_count
+        ),
         None,
     )];
     for c in &r.capabilities {
@@ -222,7 +251,10 @@ fn iocs(r: &TriageReport) -> Vec<(String, Option<u64>)> {
         .map(|h| {
             let preview: String = h.preview.chars().take(90).collect();
             (
-                format!("{:08X} HIDDEN {:<14} {preview}   (lens: {})", h.offset, h.needle, h.recipe),
+                format!(
+                    "{:08X} HIDDEN {:<14} {preview}   (lens: {})",
+                    h.offset, h.needle, h.recipe
+                ),
                 Some(h.offset),
             )
         })
@@ -247,7 +279,10 @@ fn indicator_rows(r: &TriageReport) -> Vec<(String, Option<u64>)> {
                 format!("   ({ctx})")
             };
             (
-                format!("{:08X} {:<6} {:<22} {value}{context}", i.offset, i.enc, i.kinds),
+                format!(
+                    "{:08X} {:<6} {:<22} {value}{context}",
+                    i.offset, i.enc, i.kinds
+                ),
                 Some(i.offset),
             )
         })
@@ -296,8 +331,15 @@ fn yara(r: &TriageReport) -> Vec<(String, Option<u64>)> {
     }
     let mut v = Vec::new();
     for h in &r.yara {
-        let tags = if h.tags.is_empty() { String::new() } else { format!(" [{}]", h.tags.join(" ")) };
-        v.push((format!("rule {}{tags}", h.rule), h.matches.first().map(|m| m.0)));
+        let tags = if h.tags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", h.tags.join(" "))
+        };
+        v.push((
+            format!("rule {}{tags}", h.rule),
+            h.matches.first().map(|m| m.0),
+        ));
         for (off, len, id) in h.matches.iter().take(32) {
             v.push((format!("    {off:08X}  {len:>5}  {id}"), Some(*off)));
         }
@@ -335,7 +377,11 @@ pub fn markdown(r: &TriageReport) -> String {
         "**{}** ({}/100){}\n\n",
         r.verdict().to_uppercase(),
         r.score,
-        if r.badges.is_empty() { String::new() } else { format!(" · `{}`", r.badge_line()) }
+        if r.badges.is_empty() {
+            String::new()
+        } else {
+            format!(" · `{}`", r.badge_line())
+        }
     ));
 
     m.push_str("## Identity\n\n");
@@ -345,8 +391,16 @@ pub fn markdown(r: &TriageReport) -> String {
             m.push_str(&format!("| {k} | `{v}` |\n"));
         }
     };
-    row(&mut m, "Size", &format!("{} bytes ({})", r.size, human(r.size)));
-    row(&mut m, "Format", &format!("{} / {} / {}-bit", r.format, r.arch, r.bits));
+    row(
+        &mut m,
+        "Size",
+        &format!("{} bytes ({})", r.size, human(r.size)),
+    );
+    row(
+        &mut m,
+        "Format",
+        &format!("{} / {} / {}-bit", r.format, r.arch, r.bits),
+    );
     row(&mut m, "SHA-256", &r.hashes.sha256);
     row(&mut m, "SHA-1", &r.hashes.sha1);
     row(&mut m, "MD5", &r.hashes.md5);
@@ -364,7 +418,11 @@ pub fn markdown(r: &TriageReport) -> String {
     if let Some(p) = &r.packer {
         row(&mut m, "Packer", p);
     }
-    row(&mut m, "Signature", if r.signed { "present" } else { "unsigned" });
+    row(
+        &mut m,
+        "Signature",
+        if r.signed { "present" } else { "unsigned" },
+    );
     if let Some(p) = &r.pdb_path {
         row(&mut m, "PDB path", p);
     }
@@ -373,7 +431,11 @@ pub fn markdown(r: &TriageReport) -> String {
     if !r.anomalies.is_empty() || !r.container_findings.is_empty() || !r.import_notes.is_empty() {
         m.push_str("## Findings\n\n");
         for f in r.anomalies.iter().chain(&r.container_findings) {
-            let mark = if f.severity == "suspicious" { "**!**" } else { "-" };
+            let mark = if f.severity == "suspicious" {
+                "**!**"
+            } else {
+                "-"
+            };
             match f.offset {
                 Some(o) => m.push_str(&format!("{mark} {} (`{o:#x}`)\n", f.message)),
                 None => m.push_str(&format!("{mark} {}\n", f.message)),
@@ -386,7 +448,10 @@ pub fn markdown(r: &TriageReport) -> String {
     }
 
     if !r.capabilities.is_empty() {
-        m.push_str(&format!("## Capabilities (import risk {}/100)\n\n", r.import_score));
+        m.push_str(&format!(
+            "## Capabilities (import risk {}/100)\n\n",
+            r.import_score
+        ));
         m.push_str("| Category | APIs |\n|---|---|\n");
         for c in &r.capabilities {
             m.push_str(&format!("| {} | {} |\n", c.category, c.apis.join(", ")));
@@ -399,7 +464,10 @@ pub fn markdown(r: &TriageReport) -> String {
         m.push_str("| Offset | Recipe | Decoded |\n|---|---|---|\n");
         for h in &r.hidden {
             let preview: String = h.preview.chars().take(80).collect();
-            m.push_str(&format!("| `{:08X}` | `{}` | `{}` |\n", h.offset, h.recipe, preview));
+            m.push_str(&format!(
+                "| `{:08X}` | `{}` | `{}` |\n",
+                h.offset, h.recipe, preview
+            ));
         }
         m.push('\n');
     }
@@ -409,7 +477,10 @@ pub fn markdown(r: &TriageReport) -> String {
         m.push_str("| Offset | Kind | Value |\n|---|---|---|\n");
         for i in r.indicators.iter().take(100) {
             let value: String = i.value.chars().take(110).collect();
-            m.push_str(&format!("| `{:08X}` | {} | `{}` |\n", i.offset, i.kinds, value));
+            m.push_str(&format!(
+                "| `{:08X}` | {} | `{}` |\n",
+                i.offset, i.kinds, value
+            ));
         }
         m.push('\n');
     }
@@ -430,9 +501,16 @@ pub fn markdown(r: &TriageReport) -> String {
     if !r.yara.is_empty() {
         m.push_str("## YARA\n\n");
         for h in &r.yara {
-            let tags =
-                if h.tags.is_empty() { String::new() } else { format!(" [{}]", h.tags.join(" ")) };
-            m.push_str(&format!("- **{}**{tags} — {} match(es)\n", h.rule, h.matches.len()));
+            let tags = if h.tags.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", h.tags.join(" "))
+            };
+            m.push_str(&format!(
+                "- **{}**{tags} — {} match(es)\n",
+                h.rule,
+                h.matches.len()
+            ));
         }
         m.push('\n');
     }
@@ -481,7 +559,10 @@ mod tests {
         let t = text(&report());
         assert!(t.contains("SHA-256"));
         assert!(t.contains("http://c2.example.top/gate.php"), "{t}");
-        assert!(!t.contains("== YARA =="), "empty YARA pane is skipped on the CLI");
+        assert!(
+            !t.contains("== YARA =="),
+            "empty YARA pane is skipped on the CLI"
+        );
     }
 
     #[test]

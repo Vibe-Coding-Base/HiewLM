@@ -57,7 +57,10 @@ fn parse_bytes(bytes: &[u8]) -> Option<ExecutableModel> {
                             .map(|m| (m.header_offset, m.size()))
                             .unwrap_or((0, 0));
                         // va carries the member header offset for F12 to jump.
-                        Sym { name: format!("{name}  ({size} bytes)"), va: off }
+                        Sym {
+                            name: format!("{name}  ({size} bytes)"),
+                            va: off,
+                        }
                     })
                     .collect();
                 return Some(ExecutableModel {
@@ -91,7 +94,11 @@ fn machine_arch(machine: u16) -> Arch {
 
 fn from_coff(coff: &goblin::pe::Coff) -> ExecutableModel {
     let arch = machine_arch(coff.header.machine);
-    let bits = if arch == Arch::X86_64 || arch == Arch::Arm64 { 64 } else { 32 };
+    let bits = if arch == Arch::X86_64 || arch == Arch::Arm64 {
+        64
+    } else {
+        32
+    };
     let mut sections = Vec::new();
     for s in &coff.sections {
         sections.push(SectionMap {
@@ -102,10 +109,22 @@ fn from_coff(coff: &goblin::pe::Coff) -> ExecutableModel {
         });
     }
     let header_fields = vec![
-        ("Machine".into(), format!("{:#06x} ({})", coff.header.machine, arch.label())),
-        ("Sections".into(), coff.header.number_of_sections.to_string()),
-        ("TimeDateStamp".into(), fmt_timestamp(coff.header.time_date_stamp)),
-        ("Symbols".into(), coff.header.number_of_symbol_table.to_string()),
+        (
+            "Machine".into(),
+            format!("{:#06x} ({})", coff.header.machine, arch.label()),
+        ),
+        (
+            "Sections".into(),
+            coff.header.number_of_sections.to_string(),
+        ),
+        (
+            "TimeDateStamp".into(),
+            fmt_timestamp(coff.header.time_date_stamp),
+        ),
+        (
+            "Symbols".into(),
+            coff.header.number_of_symbol_table.to_string(),
+        ),
     ];
     ExecutableModel {
         format: Format::Coff,
@@ -123,17 +142,18 @@ fn from_coff(coff: &goblin::pe::Coff) -> ExecutableModel {
 /// DOS/OS-2/EFI headers goblin doesn't cover: identified by magic. Sections aren't
 /// parsed yet — this reports the format and key header fields.
 fn detect_legacy(bytes: &[u8]) -> Option<ExecutableModel> {
-    let minimal = |format: Format, arch: Arch, bits: u8, fields: Vec<(String, String)>| ExecutableModel {
-        format,
-        arch,
-        bits,
-        address_space: AddressSpace::flat(),
-        entry: None,
-        imports: Vec::new(),
-        exports: Vec::new(),
-        header_fields: fields,
-        resources: Vec::new(),
-    };
+    let minimal =
+        |format: Format, arch: Arch, bits: u8, fields: Vec<(String, String)>| ExecutableModel {
+            format,
+            arch,
+            bits,
+            address_space: AddressSpace::flat(),
+            entry: None,
+            imports: Vec::new(),
+            exports: Vec::new(),
+            header_fields: fields,
+            resources: Vec::new(),
+        };
 
     // TE (Terse Executable, EFI): "VZ" magic, Machine at offset 2.
     if bytes.len() >= 4 && &bytes[0..2] == b"VZ" {
@@ -142,10 +162,17 @@ fn detect_legacy(bytes: &[u8]) -> Option<ExecutableModel> {
         return Some(minimal(
             Format::Te,
             arch,
-            if arch == Arch::X86_64 || arch == Arch::Arm64 { 64 } else { 32 },
+            if arch == Arch::X86_64 || arch == Arch::Arm64 {
+                64
+            } else {
+                32
+            },
             vec![
                 ("Signature".into(), "VZ (TE)".into()),
-                ("Machine".into(), format!("{machine:#06x} ({})", arch.label())),
+                (
+                    "Machine".into(),
+                    format!("{machine:#06x} ({})", arch.label()),
+                ),
             ],
         ));
     }
@@ -155,7 +182,9 @@ fn detect_legacy(bytes: &[u8]) -> Option<ExecutableModel> {
     const NLM_SIG: &[u8] = b"NetWare Loadable Module\x1a";
     if bytes.len() >= 130 && bytes.starts_with(NLM_SIG) {
         let u32_at = |o: usize| -> u32 {
-            bytes.get(o..o + 4).map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            bytes
+                .get(o..o + 4)
+                .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         };
         // moduleName is a Pascal string: one length byte, then the characters.
         let name_len = bytes.get(28).copied().unwrap_or(0).min(13) as usize;
@@ -180,16 +209,18 @@ fn detect_legacy(bytes: &[u8]) -> Option<ExecutableModel> {
             6 => "6 (NLM utility)",
             7 => "7 (OS)",
             8 => "8 (paged high OS)",
-            n => return Some(minimal(
-                Format::Nlm,
-                Arch::X86,
-                32,
-                vec![
-                    ("Signature".into(), "NetWare Loadable Module".into()),
-                    ("Module".into(), name),
-                    ("Module type".into(), n.to_string()),
-                ],
-            )),
+            n => {
+                return Some(minimal(
+                    Format::Nlm,
+                    Arch::X86,
+                    32,
+                    vec![
+                        ("Signature".into(), "NetWare Loadable Module".into()),
+                        ("Module".into(), name),
+                        ("Module type".into(), n.to_string()),
+                    ],
+                ))
+            }
         };
 
         // Map the code image so offsets and disassembly line up.
@@ -228,8 +259,14 @@ fn detect_legacy(bytes: &[u8]) -> Option<ExecutableModel> {
                 ("Module".into(), name),
                 ("Version".into(), u32_at(24).to_string()),
                 ("Module type".into(), module_type.into()),
-                ("Code image".into(), format!("{code_off:#x} ({code_size} bytes)")),
-                ("Data image".into(), format!("{data_off:#x} ({data_size} bytes)")),
+                (
+                    "Code image".into(),
+                    format!("{code_off:#x} ({code_size} bytes)"),
+                ),
+                (
+                    "Data image".into(),
+                    format!("{data_off:#x} ({data_size} bytes)"),
+                ),
                 ("BSS size".into(), u32_at(58).to_string()),
                 ("Code start".into(), format!("{code_start:#x}")),
                 ("Exit proc".into(), format!("{:#x}", u32_at(114))),
@@ -260,7 +297,10 @@ fn detect_legacy(bytes: &[u8]) -> Option<ExecutableModel> {
                 Arch::Unknown,
                 bits,
                 vec![
-                    ("Signature".into(), String::from_utf8_lossy(sig).into_owned()),
+                    (
+                        "Signature".into(),
+                        String::from_utf8_lossy(sig).into_owned(),
+                    ),
                     ("New header @".into(), format!("{e_lfanew:#x}")),
                 ],
             ));
@@ -308,21 +348,50 @@ fn from_elf(elf: &goblin::elf::Elf) -> ExecutableModel {
             continue;
         }
         if sym.st_shndx == 0 {
-            imports.push(Sym { name: name.to_string(), va: 0 });
+            imports.push(Sym {
+                name: name.to_string(),
+                va: 0,
+            });
         } else if sym.st_bind() == goblin::elf::sym::STB_GLOBAL {
-            exports.push(Sym { name: name.to_string(), va: sym.st_value });
+            exports.push(Sym {
+                name: name.to_string(),
+                va: sym.st_value,
+            });
         }
     }
 
     let h = &elf.header;
     let header_fields = vec![
-        ("Class".into(), if elf.is_64 { "ELF64".into() } else { "ELF32".into() }),
-        ("Endian".into(), if elf.little_endian { "little".into() } else { "big".into() }),
+        (
+            "Class".into(),
+            if elf.is_64 {
+                "ELF64".into()
+            } else {
+                "ELF32".into()
+            },
+        ),
+        (
+            "Endian".into(),
+            if elf.little_endian {
+                "little".into()
+            } else {
+                "big".into()
+            },
+        ),
         ("Type".into(), format!("{:#06x}", h.e_type)),
-        ("Machine".into(), format!("{:#06x} ({})", h.e_machine, arch.label())),
+        (
+            "Machine".into(),
+            format!("{:#06x} ({})", h.e_machine, arch.label()),
+        ),
         ("Entry".into(), format!("{:#018x}", h.e_entry)),
-        ("PH off/num".into(), format!("{:#x} / {}", h.e_phoff, h.e_phnum)),
-        ("SH off/num".into(), format!("{:#x} / {}", h.e_shoff, h.e_shnum)),
+        (
+            "PH off/num".into(),
+            format!("{:#x} / {}", h.e_phoff, h.e_phnum),
+        ),
+        (
+            "SH off/num".into(),
+            format!("{:#x} / {}", h.e_shoff, h.e_shnum),
+        ),
         ("Flags".into(), format!("{:#010x}", h.e_flags)),
     ];
 
@@ -343,10 +412,16 @@ fn from_elf(elf: &goblin::elf::Elf) -> ExecutableModel {
 /// Parse the .NET (CLR) metadata: COR20 header + metadata root/streams. Returns
 /// header fields to append; empty when the PE is not a .NET assembly.
 fn parse_dotnet(pe: &goblin::pe::PE, bytes: &[u8]) -> Vec<(String, String)> {
-    let Some(opt) = pe.header.optional_header.as_ref() else { return Vec::new() };
+    let Some(opt) = pe.header.optional_header.as_ref() else {
+        return Vec::new();
+    };
     let dd = opt.data_directories.get_clr_runtime_header();
-    let Some(cor) = dd.filter(|d| d.virtual_address != 0) else { return Vec::new() };
-    let Some(cor_off) = rva_to_off(&pe.sections, cor.virtual_address) else { return Vec::new() };
+    let Some(cor) = dd.filter(|d| d.virtual_address != 0) else {
+        return Vec::new();
+    };
+    let Some(cor_off) = rva_to_off(&pe.sections, cor.virtual_address) else {
+        return Vec::new();
+    };
     let cor = cor_off as usize;
     if cor + 24 > bytes.len() {
         return Vec::new();
@@ -357,8 +432,14 @@ fn parse_dotnet(pe: &goblin::pe::PE, bytes: &[u8]) -> Vec<(String, String)> {
         format!("{}.{}", rd_u16(bytes, cor + 4), rd_u16(bytes, cor + 6)),
     ));
     let md_rva = rd_u32(bytes, cor + 8);
-    fields.push(("CLR flags".into(), format!("{:#010x}", rd_u32(bytes, cor + 16))));
-    fields.push(("EntryPoint token".into(), format!("{:#010x}", rd_u32(bytes, cor + 20))));
+    fields.push((
+        "CLR flags".into(),
+        format!("{:#010x}", rd_u32(bytes, cor + 16)),
+    ));
+    fields.push((
+        "EntryPoint token".into(),
+        format!("{:#010x}", rd_u32(bytes, cor + 20)),
+    ));
 
     // Metadata root (BSJB).
     if let Some(md_off) = rva_to_off(&pe.sections, md_rva) {
@@ -425,20 +506,38 @@ fn from_pe(pe: &goblin::pe::PE, bytes: &[u8]) -> ExecutableModel {
     let imports = pe
         .imports
         .iter()
-        .map(|i| Sym { name: format!("{}!{}", i.dll, i.name), va: image_base + i.rva as u64 })
+        .map(|i| Sym {
+            name: format!("{}!{}", i.dll, i.name),
+            va: image_base + i.rva as u64,
+        })
         .collect();
     let exports = pe
         .exports
         .iter()
-        .filter_map(|e| e.name.map(|n| Sym { name: n.to_string(), va: image_base + e.rva as u64 }))
+        .filter_map(|e| {
+            e.name.map(|n| Sym {
+                name: n.to_string(),
+                va: image_base + e.rva as u64,
+            })
+        })
         .collect();
 
     let coff = &pe.header.coff_header;
     let mut header_fields = vec![
-        ("Machine".into(), format!("{:#06x} ({})", coff.machine, arch.label())),
+        (
+            "Machine".into(),
+            format!("{:#06x} ({})", coff.machine, arch.label()),
+        ),
         ("Sections".into(), coff.number_of_sections.to_string()),
         ("TimeDateStamp".into(), fmt_timestamp(coff.time_date_stamp)),
-        ("Characteristics".into(), format!("{:#06x} [{}]", coff.characteristics, pe_characteristics(coff.characteristics))),
+        (
+            "Characteristics".into(),
+            format!(
+                "{:#06x} [{}]",
+                coff.characteristics,
+                pe_characteristics(coff.characteristics)
+            ),
+        ),
         ("ImageBase".into(), format!("{image_base:#018x}")),
         ("Entry (RVA)".into(), format!("{:#x}", pe.entry)),
     ];
@@ -448,18 +547,49 @@ fn from_pe(pe: &goblin::pe::PE, bytes: &[u8]) -> ExecutableModel {
         let magic = if s.magic == 0x20b { "PE32+" } else { "PE32" };
         header_fields.extend([
             ("Magic".into(), format!("{:#06x} ({magic})", s.magic)),
-            ("LinkerVersion".into(), format!("{}.{}", s.major_linker_version, s.minor_linker_version)),
+            (
+                "LinkerVersion".into(),
+                format!("{}.{}", s.major_linker_version, s.minor_linker_version),
+            ),
             ("SizeOfCode".into(), format!("{:#x}", s.size_of_code)),
-            ("SectionAlignment".into(), format!("{:#x}", w.section_alignment)),
+            (
+                "SectionAlignment".into(),
+                format!("{:#x}", w.section_alignment),
+            ),
             ("FileAlignment".into(), format!("{:#x}", w.file_alignment)),
-            ("OSVersion".into(), format!("{}.{}", w.major_operating_system_version, w.minor_operating_system_version)),
-            ("SubsystemVersion".into(), format!("{}.{}", w.major_subsystem_version, w.minor_subsystem_version)),
-            ("Subsystem".into(), format!("{} ({})", w.subsystem, subsystem_name(w.subsystem))),
-            ("DllCharacteristics".into(), format!("{:#06x} [{}]", w.dll_characteristics, dll_characteristics(w.dll_characteristics))),
+            (
+                "OSVersion".into(),
+                format!(
+                    "{}.{}",
+                    w.major_operating_system_version, w.minor_operating_system_version
+                ),
+            ),
+            (
+                "SubsystemVersion".into(),
+                format!(
+                    "{}.{}",
+                    w.major_subsystem_version, w.minor_subsystem_version
+                ),
+            ),
+            (
+                "Subsystem".into(),
+                format!("{} ({})", w.subsystem, subsystem_name(w.subsystem)),
+            ),
+            (
+                "DllCharacteristics".into(),
+                format!(
+                    "{:#06x} [{}]",
+                    w.dll_characteristics,
+                    dll_characteristics(w.dll_characteristics)
+                ),
+            ),
             ("SizeOfImage".into(), format!("{:#x}", w.size_of_image)),
             ("SizeOfHeaders".into(), format!("{:#x}", w.size_of_headers)),
             ("CheckSum".into(), format!("{:#010x}", w.check_sum)),
-            ("DataDirectories".into(), w.number_of_rva_and_sizes.to_string()),
+            (
+                "DataDirectories".into(),
+                w.number_of_rva_and_sizes.to_string(),
+            ),
         ]);
     }
 
@@ -468,7 +598,10 @@ fn from_pe(pe: &goblin::pe::PE, bytes: &[u8]) -> ExecutableModel {
     // Rich header (comp-id tool fingerprint).
     let e_lfanew = rd_u32(bytes, 0x3c) as usize;
     if let Some((n, key)) = parse_rich(bytes, e_lfanew) {
-        header_fields.push(("RichHeader".into(), format!("{n} comp entries (xor key {key:#010x})")));
+        header_fields.push((
+            "RichHeader".into(),
+            format!("{n} comp entries (xor key {key:#010x})"),
+        ));
     }
     // VERSION resource strings (ProductName, FileVersion, CompanyName, …).
     if let Some(v) = resources.iter().find(|r| r.type_name == "VERSION") {
@@ -518,36 +651,50 @@ fn subsystem_name(s: u16) -> &'static str {
 }
 
 fn flags_join(value: u16, table: &[(u16, &str)]) -> String {
-    let names: Vec<&str> = table.iter().filter(|(bit, _)| value & bit != 0).map(|(_, n)| *n).collect();
-    if names.is_empty() { "-".into() } else { names.join(" ") }
+    let names: Vec<&str> = table
+        .iter()
+        .filter(|(bit, _)| value & bit != 0)
+        .map(|(_, n)| *n)
+        .collect();
+    if names.is_empty() {
+        "-".into()
+    } else {
+        names.join(" ")
+    }
 }
 
 fn pe_characteristics(c: u16) -> String {
-    flags_join(c, &[
-        (0x0001, "RELOCS_STRIPPED"),
-        (0x0002, "EXECUTABLE"),
-        (0x0020, "LARGE_ADDRESS_AWARE"),
-        (0x0100, "32BIT"),
-        (0x0200, "DEBUG_STRIPPED"),
-        (0x2000, "DLL"),
-        (0x1000, "SYSTEM"),
-    ])
+    flags_join(
+        c,
+        &[
+            (0x0001, "RELOCS_STRIPPED"),
+            (0x0002, "EXECUTABLE"),
+            (0x0020, "LARGE_ADDRESS_AWARE"),
+            (0x0100, "32BIT"),
+            (0x0200, "DEBUG_STRIPPED"),
+            (0x2000, "DLL"),
+            (0x1000, "SYSTEM"),
+        ],
+    )
 }
 
 fn dll_characteristics(c: u16) -> String {
-    flags_join(c, &[
-        (0x0020, "HIGH_ENTROPY_VA"),
-        (0x0040, "DYNAMIC_BASE(ASLR)"),
-        (0x0080, "FORCE_INTEGRITY"),
-        (0x0100, "NX_COMPAT(DEP)"),
-        (0x0200, "NO_ISOLATION"),
-        (0x0400, "NO_SEH"),
-        (0x0800, "NO_BIND"),
-        (0x1000, "APPCONTAINER"),
-        (0x2000, "WDM_DRIVER"),
-        (0x4000, "GUARD_CF"),
-        (0x8000, "TERMINAL_SERVER_AWARE"),
-    ])
+    flags_join(
+        c,
+        &[
+            (0x0020, "HIGH_ENTROPY_VA"),
+            (0x0040, "DYNAMIC_BASE(ASLR)"),
+            (0x0080, "FORCE_INTEGRITY"),
+            (0x0100, "NX_COMPAT(DEP)"),
+            (0x0200, "NO_ISOLATION"),
+            (0x0400, "NO_SEH"),
+            (0x0800, "NO_BIND"),
+            (0x1000, "APPCONTAINER"),
+            (0x2000, "WDM_DRIVER"),
+            (0x4000, "GUARD_CF"),
+            (0x8000, "TERMINAL_SERVER_AWARE"),
+        ],
+    )
 }
 
 fn rva_to_off(sections: &[goblin::pe::section_table::SectionTable], rva: u32) -> Option<u64> {
@@ -584,10 +731,14 @@ fn rt_name(id: u32) -> String {
 }
 
 fn rd_u16(b: &[u8], off: usize) -> u16 {
-    b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]])).unwrap_or(0)
+    b.get(off..off + 2)
+        .map(|s| u16::from_le_bytes([s[0], s[1]]))
+        .unwrap_or(0)
 }
 fn rd_u32(b: &[u8], off: usize) -> u32 {
-    b.get(off..off + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]])).unwrap_or(0)
+    b.get(off..off + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        .unwrap_or(0)
 }
 
 /// Read the entries `(id_or_name_field, offset_field)` of a resource directory at
@@ -738,12 +889,18 @@ fn parse_rich(b: &[u8], e_lfanew: usize) -> Option<(usize, u32)> {
 
 /// Walk the 3-level PE resource tree (type → name → language) into flat leaves.
 fn parse_pe_resources(pe: &goblin::pe::PE, bytes: &[u8]) -> Vec<Resource> {
-    let Some(opt) = pe.header.optional_header.as_ref() else { return Vec::new() };
-    let Some(rdir) = opt.data_directories.get_resource_table() else { return Vec::new() };
+    let Some(opt) = pe.header.optional_header.as_ref() else {
+        return Vec::new();
+    };
+    let Some(rdir) = opt.data_directories.get_resource_table() else {
+        return Vec::new();
+    };
     if rdir.virtual_address == 0 {
         return Vec::new();
     }
-    let Some(base64) = rva_to_off(&pe.sections, rdir.virtual_address) else { return Vec::new() };
+    let Some(base64) = rva_to_off(&pe.sections, rdir.virtual_address) else {
+        return Vec::new();
+    };
     let base = base64 as usize;
     if base + 16 > bytes.len() {
         return Vec::new();
@@ -816,7 +973,14 @@ fn macho_platform(p: u32) -> String {
 
 fn macho_uuid(u: &[u8; 16]) -> String {
     let h: String = u.iter().map(|b| format!("{b:02X}")).collect();
-    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
 }
 
 fn from_macho(m: &goblin::mach::MachO, base_off: u64) -> ExecutableModel {
@@ -854,22 +1018,37 @@ fn from_macho(m: &goblin::mach::MachO, base_off: u64) -> ExecutableModel {
             continue;
         }
         if nlist.is_undefined() {
-            imports.push(Sym { name: name.to_string(), va: 0 });
+            imports.push(Sym {
+                name: name.to_string(),
+                va: 0,
+            });
         } else if nlist.is_global() {
-            exports.push(Sym { name: name.to_string(), va: nlist.n_value });
+            exports.push(Sym {
+                name: name.to_string(),
+                va: nlist.n_value,
+            });
         }
     }
     // Fall back to the export trie if the symbol table gave nothing.
     if exports.is_empty() {
         if let Ok(list) = m.exports() {
-            exports = list.iter().map(|e| Sym { name: e.name.clone(), va: e.offset }).collect();
+            exports = list
+                .iter()
+                .map(|e| Sym {
+                    name: e.name.clone(),
+                    va: e.offset,
+                })
+                .collect();
         }
     }
 
     let h = &m.header;
     let mut header_fields = vec![
         ("Magic".into(), format!("{:#010x}", h.magic)),
-        ("CPU type".into(), format!("{:#x} ({})", h.cputype, arch.label())),
+        (
+            "CPU type".into(),
+            format!("{:#x} ({})", h.cputype, arch.label()),
+        ),
         ("CPU subtype".into(), format!("{:#x}", h.cpusubtype)),
         ("File type".into(), format!("{:#x}", h.filetype)),
         ("Load commands".into(), h.ncmds.to_string()),
@@ -970,7 +1149,12 @@ mod tests {
         assert_eq!(m.arch, Arch::X86);
         assert_eq!(m.bits, 32);
         assert_eq!(m.entry, Some(0x210)); // codeImageOffset + codeStartOffset
-        let f = |k: &str| m.header_fields.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        let f = |k: &str| {
+            m.header_fields
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone())
+        };
         assert_eq!(f("Module").as_deref(), Some("HELLO"));
         assert!(f("Module type").unwrap().contains("LAN driver"));
         // The code image is mapped so disassembly and offsets line up.

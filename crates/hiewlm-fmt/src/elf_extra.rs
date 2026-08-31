@@ -111,17 +111,29 @@ impl Rd<'_> {
     fn u16(&self, off: usize) -> u16 {
         let s = self.b.get(off..off + 2).unwrap_or(&[0, 0]);
         let a = [s[0], s[1]];
-        if self.le { u16::from_le_bytes(a) } else { u16::from_be_bytes(a) }
+        if self.le {
+            u16::from_le_bytes(a)
+        } else {
+            u16::from_be_bytes(a)
+        }
     }
     fn u32(&self, off: usize) -> u32 {
         let s = self.b.get(off..off + 4).unwrap_or(&[0; 4]);
         let a = [s[0], s[1], s[2], s[3]];
-        if self.le { u32::from_le_bytes(a) } else { u32::from_be_bytes(a) }
+        if self.le {
+            u32::from_le_bytes(a)
+        } else {
+            u32::from_be_bytes(a)
+        }
     }
     fn u64(&self, off: usize) -> u64 {
         let s = self.b.get(off..off + 8).unwrap_or(&[0; 8]);
         let a = [s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]];
-        if self.le { u64::from_le_bytes(a) } else { u64::from_be_bytes(a) }
+        if self.le {
+            u64::from_le_bytes(a)
+        } else {
+            u64::from_be_bytes(a)
+        }
     }
     /// A NUL-terminated string at a file offset.
     fn cstr(&self, off: usize, max: usize) -> Option<String> {
@@ -130,7 +142,13 @@ impl Rd<'_> {
         let s: String = slice
             .iter()
             .take_while(|&&c| c != 0)
-            .map(|&c| if (0x20..0x7f).contains(&c) { c as char } else { '?' })
+            .map(|&c| {
+                if (0x20..0x7f).contains(&c) {
+                    c as char
+                } else {
+                    '?'
+                }
+            })
             .collect();
         (!s.is_empty()).then_some(s)
     }
@@ -148,13 +166,28 @@ pub fn parse(bytes: &[u8]) -> Option<ElfDetails> {
         _ => return None,
     };
     let little_endian = bytes[5] != 2;
-    let r = Rd { b: bytes, le: little_endian };
+    let r = Rd {
+        b: bytes,
+        le: little_endian,
+    };
 
-    let mut d = ElfDetails { is_64, little_endian, ..Default::default() };
+    let mut d = ElfDetails {
+        is_64,
+        little_endian,
+        ..Default::default()
+    };
     d.e_type = r.u16(16);
     d.type_name = elf_type_name(d.e_type);
     let (entry, phoff, shoff, phentsize, phnum, shentsize, shnum) = if is_64 {
-        (r.u64(24), r.u64(32), r.u64(40), r.u16(54), r.u16(56), r.u16(58), r.u16(60))
+        (
+            r.u64(24),
+            r.u64(32),
+            r.u64(40),
+            r.u16(54),
+            r.u16(56),
+            r.u16(58),
+            r.u16(60),
+        )
     } else {
         (
             r.u32(24) as u64,
@@ -170,14 +203,29 @@ pub fn parse(bytes: &[u8]) -> Option<ElfDetails> {
     d.no_section_headers = shoff == 0 || shnum == 0;
 
     // -- Program headers ----------------------------------------------------
-    let entsize = if phentsize == 0 { if is_64 { 56 } else { 32 } } else { phentsize as usize };
+    let entsize = if phentsize == 0 {
+        if is_64 {
+            56
+        } else {
+            32
+        }
+    } else {
+        phentsize as usize
+    };
     for i in 0..(phnum as usize).min(256) {
         let p = phoff as usize + i * entsize;
         if p + entsize > bytes.len() {
             break;
         }
         let (kind, flags, offset, vaddr, filesz, memsz) = if is_64 {
-            (r.u32(p), r.u32(p + 4), r.u64(p + 8), r.u64(p + 16), r.u64(p + 32), r.u64(p + 40))
+            (
+                r.u32(p),
+                r.u32(p + 4),
+                r.u64(p + 8),
+                r.u64(p + 16),
+                r.u64(p + 32),
+                r.u64(p + 40),
+            )
         } else {
             (
                 r.u32(p),
@@ -289,10 +337,16 @@ fn anomalies(d: &ElfDetails, file_len: u64) -> Vec<Finding> {
     }
 
     if let Some((off, size)) = d.overlay {
-        let sev = if size > 4096 { Severity::Suspicious } else { Severity::Info };
+        let sev = if size > 4096 {
+            Severity::Suspicious
+        } else {
+            Severity::Info
+        };
         out.push(Finding {
             severity: sev,
-            message: format!("overlay: {size} bytes appended after everything the headers describe"),
+            message: format!(
+                "overlay: {size} bytes appended after everything the headers describe"
+            ),
             offset: Some(off),
         });
     }
@@ -373,14 +427,20 @@ mod tests {
     #[test]
     fn flags_writable_executable_segment() {
         let d = parse(&build_elf(RWX, 0, false)).expect("elf");
-        assert!(d.anomalies.iter().any(|f| f.message.contains("writable AND executable")));
+        assert!(d
+            .anomalies
+            .iter()
+            .any(|f| f.message.contains("writable AND executable")));
     }
 
     #[test]
     fn missing_section_headers_are_reported() {
         let d = parse(&build_elf(RX, 0, true)).expect("elf");
         assert!(d.no_section_headers);
-        assert!(d.anomalies.iter().any(|f| f.message.contains("no section header table")));
+        assert!(d
+            .anomalies
+            .iter()
+            .any(|f| f.message.contains("no section header table")));
     }
 
     #[test]

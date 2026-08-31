@@ -121,7 +121,9 @@ pub fn modules(cfb: &Cfb) -> Vec<Module> {
         {
             continue;
         }
-        let Some(raw) = decompress(data) else { continue };
+        let Some(raw) = decompress(data) else {
+            continue;
+        };
         let text: String = raw
             .iter()
             .map(|&b| if b == b'\r' { '\n' } else { b as char })
@@ -132,7 +134,11 @@ pub fn modules(cfb: &Cfb) -> Vec<Module> {
             continue;
         }
         let keywords = scan_keywords(&text);
-        out.push(Module { path: path.to_string(), source: text, keywords });
+        out.push(Module {
+            path: path.to_string(),
+            source: text,
+            keywords,
+        });
     }
     out
 }
@@ -155,7 +161,11 @@ mod tests {
     fn decompresses_an_uncompressed_chunk() {
         let text = b"Sub AutoOpen()\r\n  Shell \"cmd.exe\"\r\nEnd Sub";
         let got = decompress(&raw_container(text)).expect("decompressed");
-        assert!(got.starts_with(b"Sub AutoOpen()"), "{:?}", String::from_utf8_lossy(&got));
+        assert!(
+            got.starts_with(b"Sub AutoOpen()"),
+            "{:?}",
+            String::from_utf8_lossy(&got)
+        );
     }
 
     #[test]
@@ -196,7 +206,10 @@ mod tests {
                    Set h = CreateObject(\"MSXML2.XMLHTTP\")";
         let k = scan_keywords(src);
         for group in ["memory:", "evasion:", "lure:", "download:", "execution:"] {
-            assert!(k.iter().any(|x| x.starts_with(group)), "missing {group} in {k:?}");
+            assert!(
+                k.iter().any(|x| x.starts_with(group)),
+                "missing {group} in {k:?}"
+            );
         }
     }
 

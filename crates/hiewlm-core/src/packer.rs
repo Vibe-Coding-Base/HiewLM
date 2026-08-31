@@ -128,7 +128,11 @@ fn rules() -> &'static [PackerRule] {
                     "marker" => Rule::Marker(row[3].as_bytes().to_vec()),
                     _ => return None,
                 };
-                Some(PackerRule { name: row[2].clone(), kind, rule })
+                Some(PackerRule {
+                    name: row[2].clone(),
+                    kind,
+                    rule,
+                })
             })
             .collect()
     })
@@ -210,8 +214,9 @@ pub fn detect(
                 .iter()
                 .find(|s| s.name.to_ascii_lowercase().contains(want))
                 .map(|s| (How::SectionName, s.name.clone())),
-            Rule::Marker(needle) => find_bytes(file, needle)
-                .map(|at| (How::Marker, format!("{:#x}", at))),
+            Rule::Marker(needle) => {
+                find_bytes(file, needle).map(|at| (How::Marker, format!("{:#x}", at)))
+            }
         };
         if let Some((how, detail)) = hit {
             report.matches.push(Match {
@@ -224,8 +229,12 @@ pub fn detect(
     }
 
     // The strongest kind decides the headline; within a kind, the first match.
-    report.matches.sort_by_key(|m| std::cmp::Reverse(m.kind.weight()));
-    report.matches.dedup_by(|a, b| a.name == b.name && a.how == b.how);
+    report
+        .matches
+        .sort_by_key(|m| std::cmp::Reverse(m.kind.weight()));
+    report
+        .matches
+        .dedup_by(|a, b| a.name == b.name && a.how == b.how);
 
     // "Packed" is a claim about structure and needs structural evidence. A build
     // marker is a product *name* appearing in the file, which any document,
@@ -243,9 +252,13 @@ pub fn detect(
         report.kind = Some(best.kind);
         score += best.kind.weight();
         for m in &report.matches {
-            report
-                .indicators
-                .push(format!("{} [{}] via {} ({})", m.name, m.kind.label(), m.how.label(), m.detail));
+            report.indicators.push(format!(
+                "{} [{}] via {} ({})",
+                m.name,
+                m.kind.label(),
+                m.how.label(),
+                m.detail
+            ));
         }
     }
 
@@ -253,13 +266,17 @@ pub fn detect(
     let high: Vec<&SectionInfo> = sections.iter().filter(|s| s.entropy >= 7.2).collect();
     if !high.is_empty() {
         let names: Vec<&str> = high.iter().map(|s| s.name.as_str()).collect();
-        report.indicators.push(format!("high entropy sections: {}", names.join(", ")));
+        report
+            .indicators
+            .push(format!("high entropy sections: {}", names.join(", ")));
         score += 25 * high.len().min(2) as i32;
     }
 
     // A tiny import table means the real imports are resolved at runtime.
     if import_count > 0 && import_count <= 5 {
-        report.indicators.push(format!("very few imports ({import_count})"));
+        report
+            .indicators
+            .push(format!("very few imports ({import_count})"));
         score += 20;
     }
 
@@ -282,7 +299,10 @@ mod tests {
     fn sections(names: &[(&str, f32)]) -> Vec<SectionInfo> {
         names
             .iter()
-            .map(|(n, e)| SectionInfo { name: (*n).into(), entropy: *e })
+            .map(|(n, e)| SectionInfo {
+                name: (*n).into(),
+                entropy: *e,
+            })
             .collect()
     }
 
@@ -308,10 +328,19 @@ mod tests {
         // PyInstaller is not malicious and not compression — but knowing it is
         // there is what tells you to go looking for the embedded archive.
         let file = b"....PyInstaller: FormatMessageW failed....";
-        let r = detect(&[0x55, 0x48, 0x89, 0xe5], &sections(&[(".text", 6.0)]), 90, file);
+        let r = detect(
+            &[0x55, 0x48, 0x89, 0xe5],
+            &sections(&[(".text", 6.0)]),
+            90,
+            file,
+        );
         assert_eq!(r.kind, Some(Kind::Runtime));
         assert!(r.name.as_deref().unwrap().contains("PyInstaller"));
-        assert!(r.likelihood < 50, "a Python bundle must not read as packed: {}", r.likelihood);
+        assert!(
+            r.likelihood < 50,
+            "a Python bundle must not read as packed: {}",
+            r.likelihood
+        );
     }
 
     #[test]
@@ -319,7 +348,12 @@ mod tests {
         // Exactly how hiewLM identified itself as Themida-protected: its own
         // rule table, embedded in the binary, contains the word.
         let file = b"packers.txt: marker | protector | Themida/WinLicense | Themida";
-        let r = detect(&[0x55, 0x48, 0x89, 0xe5], &sections(&[(".text", 6.0)]), 120, file);
+        let r = detect(
+            &[0x55, 0x48, 0x89, 0xe5],
+            &sections(&[(".text", 6.0)]),
+            120,
+            file,
+        );
         assert!(!r.identified(), "a mention is not evidence: {:?}", r.name);
         assert!(r.likelihood < 50, "{}", r.likelihood);
         // The match is still visible, just not load-bearing.
@@ -354,7 +388,12 @@ mod tests {
     #[test]
     fn clean_binary_low_score() {
         let secs = sections(&[(".text", 5.5)]);
-        let r = detect(&[0x55, 0x48, 0x89, 0xe5], &secs, 120, b"nothing to see here");
+        let r = detect(
+            &[0x55, 0x48, 0x89, 0xe5],
+            &secs,
+            120,
+            b"nothing to see here",
+        );
         assert!(!r.identified());
         assert!(r.likelihood < 50);
     }
@@ -372,6 +411,10 @@ mod tests {
     fn every_builtin_packer_rule_is_well_formed() {
         // A malformed line would silently disappear; make that a test failure.
         let raw = crate::ruledata::table("packers", 4);
-        assert_eq!(rules().len(), raw.len(), "some packer rules failed to parse");
+        assert_eq!(
+            rules().len(),
+            raw.len(),
+            "some packer rules failed to parse"
+        );
     }
 }

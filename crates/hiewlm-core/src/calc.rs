@@ -20,7 +20,11 @@ pub struct Ctx {
 
 pub fn eval(expr: &str, ctx: &Ctx) -> Result<u64, String> {
     let tokens = tokenize(expr)?;
-    let mut p = Parser { tokens: &tokens, pos: 0, ctx };
+    let mut p = Parser {
+        tokens: &tokens,
+        pos: 0,
+        ctx,
+    };
     let v = p.parse_or()?;
     if p.pos != p.tokens.len() {
         return Err(format!("unexpected token near position {}", p.pos));
@@ -292,7 +296,13 @@ mod tests {
 
     #[test]
     fn operands_and_errors() {
-        let ctx = Ctx { offset: 0x1000, b: 0xAB, w: 0x1234, d: 0xdead, q: 0xbeef };
+        let ctx = Ctx {
+            offset: 0x1000,
+            b: 0xAB,
+            w: 0x1234,
+            d: 0xdead,
+            q: 0xbeef,
+        };
         assert_eq!(eval("@o + 4", &ctx).unwrap(), 0x1004);
         assert_eq!(eval("@w", &ctx).unwrap(), 0x1234);
         assert_eq!(eval("@d ^ @d", &ctx).unwrap(), 0);

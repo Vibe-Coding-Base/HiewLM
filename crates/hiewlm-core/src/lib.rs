@@ -18,14 +18,14 @@ pub mod ruledata;
 pub mod search;
 pub mod strings;
 pub mod structdef;
-pub mod xorsearch;
 pub mod timefmt;
+pub mod xorsearch;
 
-pub use apiscore::{analyze as analyze_imports, ApiHit, Category as ApiCategory, ImportReport};
 pub use addr::{AddressSpace, FileOffset, GlobalOff, LocalOff, SectionMap, Va};
+pub use apiscore::{analyze as analyze_imports, ApiHit, Category as ApiCategory, ImportReport};
 pub use buffer::{DataSource, EditBuffer, FileSource, MemSource};
 pub use container::{Container, ContainerParser, ContainerRegistry, Finding, Member, Severity};
-pub use crypt::{Recipe as CryptRecipe, CryptError};
+pub use crypt::{CryptError, Recipe as CryptRecipe};
 pub use fuzzy::{compare as ssdeep_compare, ssdeep};
 pub use registry::{
     Arch, Confidence, ExecutableModel, Format, FormatParser, FormatRegistry, Resource, Sym,

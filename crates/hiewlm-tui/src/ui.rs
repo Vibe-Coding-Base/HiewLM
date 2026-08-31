@@ -64,29 +64,34 @@ pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
             }
             Dialog::Triage { pane, sel, filter } => {
                 let entries = app.triage_entries(*pane, filter);
-                let tabs: Vec<&str> =
-                    hiewlm_triage::Pane::ALL.iter().map(|p| p.label()).collect();
-                let title = format!(
-                    " Triage — {}  [{}] ",
-                    pane.label(),
-                    tabs.join(" ")
-                );
+                let tabs: Vec<&str> = hiewlm_triage::Pane::ALL.iter().map(|p| p.label()).collect();
+                let title = format!(" Triage — {}  [{}] ", pane.label(), tabs.join(" "));
                 draw_pane_list(f, area, &title, &entries, *sel, filter, app.hscroll, theme)
             }
-            Dialog::JumpList { title, items, sel, filter } => {
-                draw_jump_list(f, area, title, items, *sel, filter, app.hscroll, theme)
-            }
-            Dialog::FileHits { title, items, sel, filter } => {
+            Dialog::JumpList {
+                title,
+                items,
+                sel,
+                filter,
+            } => draw_jump_list(f, area, title, items, *sel, filter, app.hscroll, theme),
+            Dialog::FileHits {
+                title,
+                items,
+                sel,
+                filter,
+            } => {
                 let labels: Vec<(String, u64)> =
                     items.iter().map(|(l, _, o)| (l.clone(), *o)).collect();
                 draw_jump_list(f, area, title, &labels, *sel, filter, app.hscroll, theme)
             }
-            Dialog::FilePicker { dir, entries, sel, .. } => {
-                draw_file_picker(f, area, dir, entries, *sel, theme)
-            }
-            Dialog::Message { title, body, scroll } => {
-                draw_message(f, area, title, body, *scroll, app.hscroll, theme)
-            }
+            Dialog::FilePicker {
+                dir, entries, sel, ..
+            } => draw_file_picker(f, area, dir, entries, *sel, theme),
+            Dialog::Message {
+                title,
+                body,
+                scroll,
+            } => draw_message(f, area, title, body, *scroll, app.hscroll, theme),
             Dialog::Calc { input } => draw_calc(f, area, app, input, theme),
             Dialog::Assemble { input } => draw_assemble(f, area, app, input, theme),
             _ => draw_dialog(f, area, app, dialog, theme),
@@ -111,7 +116,11 @@ fn draw_file_picker(
     let first = if sel >= inner { sel - inner + 1 } else { 0 };
     let mut lines = Vec::with_capacity(inner);
     for (i, e) in entries.iter().enumerate().skip(first).take(inner) {
-        let label = if e.is_dir { format!(" {}/", e.name) } else { format!(" {}", e.name) };
+        let label = if e.is_dir {
+            format!(" {}/", e.name)
+        } else {
+            format!(" {}", e.name)
+        };
         let style = if i == sel {
             theme.selection()
         } else if e.is_dir {
@@ -127,7 +136,10 @@ fn draw_file_picker(
         .title(title)
         .borders(Borders::ALL)
         .style(theme.dialog());
-    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+    f.render_widget(
+        Paragraph::new(lines).block(block).style(theme.dialog()),
+        rect,
+    );
 }
 
 /// A centered, scrollable list of labelled entries (names, xrefs, strings).
@@ -153,7 +165,11 @@ fn draw_jump_list(
     let first = if sel >= inner { sel - inner + 1 } else { 0 };
     let mut lines = Vec::with_capacity(inner);
     if view.is_empty() {
-        let msg = if filter.is_empty() { "  (none)" } else { "  (no match)" };
+        let msg = if filter.is_empty() {
+            "  (none)"
+        } else {
+            "  (no match)"
+        };
         lines.push(Line::from(Span::raw(msg)));
     }
     for (i, (label, _)) in view.iter().enumerate().skip(first).take(inner) {
@@ -178,7 +194,10 @@ fn draw_jump_list(
         .borders(Borders::ALL)
         .style(theme.dialog());
     f.render_widget(
-        Paragraph::new(lines).block(block).style(theme.dialog()).scroll((0, hscroll as u16)),
+        Paragraph::new(lines)
+            .block(block)
+            .style(theme.dialog())
+            .scroll((0, hscroll as u16)),
         rect,
     );
 }
@@ -201,14 +220,24 @@ fn draw_palette(f: &mut Frame, area: Rect, input: &str, sel: usize, theme: &Them
         lines.push(Line::from(Span::raw("   (no command matches)")));
     }
     for (i, (name, keys, _)) in matches.iter().enumerate().skip(first).take(inner) {
-        let style = if i == sel { theme.selection() } else { theme.dialog() };
-        lines.push(Line::from(Span::styled(format!(" {name:<44} {keys}"), style)));
+        let style = if i == sel {
+            theme.selection()
+        } else {
+            theme.dialog()
+        };
+        lines.push(Line::from(Span::styled(
+            format!(" {name:<44} {keys}"),
+            style,
+        )));
     }
     let block = Block::default()
         .title(" Commands  (type to filter · ↑↓ · Enter runs · Esc) ")
         .borders(Borders::ALL)
         .style(theme.dialog());
-    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+    f.render_widget(
+        Paragraph::new(lines).block(block).style(theme.dialog()),
+        rect,
+    );
 }
 
 /// Rows that report something worth noticing are drawn in the warning colour.
@@ -240,7 +269,11 @@ fn draw_pane_list(
     let first = if sel >= inner { sel - inner + 1 } else { 0 };
     let mut lines = Vec::with_capacity(inner);
     if entries.is_empty() {
-        let msg = if filter.is_empty() { "  (none)" } else { "  (no match)" };
+        let msg = if filter.is_empty() {
+            "  (none)"
+        } else {
+            "  (no match)"
+        };
         lines.push(Line::from(Span::raw(msg)));
     }
     for (i, (label, jump)) in entries.iter().enumerate().skip(first).take(inner) {
@@ -255,7 +288,11 @@ fn draw_pane_list(
         };
         lines.push(Line::from(Span::styled(format!(" {label}"), style)));
     }
-    let filt = if filter.is_empty() { String::new() } else { format!("[/{filter}] ") };
+    let filt = if filter.is_empty() {
+        String::new()
+    } else {
+        format!("[/{filter}] ")
+    };
     let block = Block::default()
         .title(format!(
             "{title}{filt} (←→ pane · Shift+←→ scroll · type=filter · Enter jump · Esc) "
@@ -263,7 +300,10 @@ fn draw_pane_list(
         .borders(Borders::ALL)
         .style(theme.dialog());
     f.render_widget(
-        Paragraph::new(lines).block(block).style(theme.dialog()).scroll((0, hscroll as u16)),
+        Paragraph::new(lines)
+            .block(block)
+            .style(theme.dialog())
+            .scroll((0, hscroll as u16)),
         rect,
     );
 }
@@ -291,7 +331,11 @@ fn draw_header(
 
     let mut lines = Vec::with_capacity(inner);
     if entries.is_empty() {
-        let msg = if filter.is_empty() { "  (none)" } else { "  (no match)" };
+        let msg = if filter.is_empty() {
+            "  (none)"
+        } else {
+            "  (no match)"
+        };
         lines.push(Line::from(Span::raw(msg)));
     }
     for (i, (label, jump)) in entries.iter().enumerate().skip(first).take(inner) {
@@ -328,7 +372,10 @@ fn draw_header(
         .title(title)
         .borders(Borders::ALL)
         .style(theme.dialog());
-    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+    f.render_widget(
+        Paragraph::new(lines).block(block).style(theme.dialog()),
+        rect,
+    );
 }
 
 fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
@@ -343,7 +390,11 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         Some((s, e)) => format!(" sel:{}", e - s + 1),
         None => String::new(),
     };
-    let diff = if app.has_diff() { format!(" diff:{}", app.diff_name) } else { String::new() };
+    let diff = if app.has_diff() {
+        format!(" diff:{}", app.diff_name)
+    } else {
+        String::new()
+    };
     let lens = match app.lens_label() {
         Some(l) => format!(" lens:{l}"),
         None => String::new(),
@@ -368,7 +419,10 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         size = app.buffer.len(),
         status = app.status,
     );
-    let para = Paragraph::new(Line::from(Span::styled(pad_line(&text, area.width), theme.status())));
+    let para = Paragraph::new(Line::from(Span::styled(
+        pad_line(&text, area.width),
+        theme.status(),
+    )));
     f.render_widget(para, area);
 }
 
@@ -382,7 +436,9 @@ fn draw_doc(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         let lines = vec![
             Line::from(""),
             Line::from(Span::raw("  Not an Office document.")),
-            Line::from(Span::raw("  Doc mode reads OLE2 (.doc/.xls/.ppt), OOXML (.docx/.xlsx/.pptx) and RTF.")),
+            Line::from(Span::raw(
+                "  Doc mode reads OLE2 (.doc/.xls/.ppt), OOXML (.docx/.xlsx/.pptx) and RTF.",
+            )),
         ];
         f.render_widget(Paragraph::new(lines).style(theme.base()), area);
         return;
@@ -397,17 +453,21 @@ fn draw_doc(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     };
 
     // Pane bar, with the active pane highlighted.
-    let mut tabs: Vec<Span> = vec![Span::styled(
-        format!(" {} ", doc.format),
-        theme.status(),
-    )];
+    let mut tabs: Vec<Span> = vec![Span::styled(format!(" {} ", doc.format), theme.status())];
     for p in crate::app::DocPane::ALL {
-        let style = if p == app.doc_pane { theme.selection() } else { theme.bar() };
+        let style = if p == app.doc_pane {
+            theme.selection()
+        } else {
+            theme.bar()
+        };
         tabs.push(Span::styled(format!(" {} ", p.label()), style));
     }
     let flagged = doc.suspicious_count();
     if flagged > 0 {
-        tabs.push(Span::styled(format!("  {flagged} SUSPICIOUS "), theme.warn()));
+        tabs.push(Span::styled(
+            format!("  {flagged} SUSPICIOUS "),
+            theme.warn(),
+        ));
     }
 
     let mut lines = vec![Line::from(tabs)];
@@ -424,7 +484,9 @@ fn draw_doc(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         lines.push(Line::from(Span::styled(label.clone(), style)));
     }
     f.render_widget(
-        Paragraph::new(lines).style(theme.base()).scroll((0, app.hscroll as u16)),
+        Paragraph::new(lines)
+            .style(theme.base())
+            .scroll((0, app.hscroll as u16)),
         area,
     );
 }
@@ -458,11 +520,17 @@ fn draw_split(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let bpr = (avail / 3).clamp(4, app.bytes_per_row);
 
     let title = |name: &str, len: u64| {
-        Line::from(Span::styled(format!(" {name}  ({len} bytes)"), theme.status()))
+        Line::from(Span::styled(
+            format!(" {name}  ({len} bytes)"),
+            theme.status(),
+        ))
     };
 
     let mut left = vec![title(
-        app.path.file_name().and_then(|n| n.to_str()).unwrap_or("this file"),
+        app.path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("this file"),
         app.buffer.len(),
     )];
     let mut right = vec![title(app.diff_label(), app.diff_len())];
@@ -475,8 +543,14 @@ fn draw_split(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         }
         let others = app.diff_bytes(row_off, bpr);
 
-        let mut lspans = vec![Span::styled(format!("{row_off:08X}: "), Style::default().fg(theme.offset))];
-        let mut rspans = vec![Span::styled(format!("{row_off:08X}: "), Style::default().fg(theme.offset))];
+        let mut lspans = vec![Span::styled(
+            format!("{row_off:08X}: "),
+            Style::default().fg(theme.offset),
+        )];
+        let mut rspans = vec![Span::styled(
+            format!("{row_off:08X}: "),
+            Style::default().fg(theme.offset),
+        )];
         for (i, other) in others.iter().enumerate().take(bpr) {
             let at = row_off + i as u64;
             let differs = app.byte_differs(at);
@@ -505,7 +579,13 @@ fn in_ranges(off: u64, ranges: &[(u64, u64)]) -> bool {
     ranges.iter().any(|(s, e)| off >= *s && off <= *e)
 }
 
-fn hex_line<'a>(app: &App, theme: &Theme, row_off: u64, bpr: usize, hits: &[(u64, u64)]) -> Line<'a> {
+fn hex_line<'a>(
+    app: &App,
+    theme: &Theme,
+    row_off: u64,
+    bpr: usize,
+    hits: &[(u64, u64)],
+) -> Line<'a> {
     let sel = app.selection();
     let selected = |off: u64| sel.is_some_and(|(s, e)| off >= s && off <= e);
     let mut spans = vec![Span::styled(
@@ -542,7 +622,11 @@ fn hex_line<'a>(app: &App, theme: &Theme, row_off: u64, bpr: usize, hits: &[(u64
         let off = row_off + i as u64;
         if off < app.buffer.len() {
             let b = app.view_byte(off);
-            let ch = if (0x20..0x7f).contains(&b) { b as char } else { '.' };
+            let ch = if (0x20..0x7f).contains(&b) {
+                b as char
+            } else {
+                '.'
+            };
             let style = if off == app.cursor && !app.edit_focus_hex() {
                 theme.cursor()
             } else if app.byte_differs(off) {
@@ -625,7 +709,9 @@ fn draw_code(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
                 "  Decode mode: {} disassembly is not supported yet.",
                 app.arch.label()
             ))),
-            Line::from(Span::raw("  x86/x86-64 works now; ARM etc. come via Capstone later.")),
+            Line::from(Span::raw(
+                "  x86/x86-64 works now; ARM etc. come via Capstone later.",
+            )),
         ];
         f.render_widget(Paragraph::new(lines).style(theme.base()), area);
         return;
@@ -643,7 +729,11 @@ fn draw_code(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             .map(|b| format!("{b:02X}"))
             .collect::<Vec<_>>()
             .join(" ");
-        let bytes = if ins.len > 8 { format!("{shown}..") } else { shown };
+        let bytes = if ins.len > 8 {
+            format!("{shown}..")
+        } else {
+            shown
+        };
         // A marker on branch/call instructions ("f" follows the one under the cursor).
         let mark = if ins.target.is_some() { "»" } else { " " };
         // A user comment wins; otherwise show what the instruction resolves to
@@ -676,25 +766,48 @@ fn draw_code(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             ));
             lines.push(Line::from(spans));
         } else if is_cursor {
-            let line = format!("{}: {:<24} {} {}", app.display_addr(ins.offset), bytes, mark, text);
+            let line = format!(
+                "{}: {:<24} {} {}",
+                app.display_addr(ins.offset),
+                bytes,
+                mark,
+                text
+            );
             lines.push(Line::from(Span::styled(line, theme.cursor())));
         } else {
             // Syntax-colored tokens (accurate for x86/x64, heuristic for others).
             let mut spans = vec![
-                Span::styled(format!("{}: ", app.display_addr(ins.offset)), Style::default().fg(theme.offset)),
-                Span::styled(format!("{bytes:<24} "), Style::default().fg(theme.ascii_other)),
+                Span::styled(
+                    format!("{}: ", app.display_addr(ins.offset)),
+                    Style::default().fg(theme.offset),
+                ),
+                Span::styled(
+                    format!("{bytes:<24} "),
+                    Style::default().fg(theme.ascii_other),
+                ),
                 Span::styled(format!("{mark} "), Style::default().fg(theme.bar_key)),
             ];
             for (tok, kind) in &ins.tokens {
-                spans.push(Span::styled(tok.clone(), Style::default().fg(theme.token(*kind))));
+                spans.push(Span::styled(
+                    tok.clone(),
+                    Style::default().fg(theme.token(*kind)),
+                ));
             }
             if let Some(c) = app.comment_at(ins.offset) {
-                spans.push(Span::styled(format!("  ; {c}"), Style::default().fg(theme.tok_comment)));
+                spans.push(Span::styled(
+                    format!("  ; {c}"),
+                    Style::default().fg(theme.tok_comment),
+                ));
             }
             lines.push(Line::from(spans));
         }
     }
-    f.render_widget(Paragraph::new(lines).style(theme.base()).alignment(Alignment::Left), area);
+    f.render_widget(
+        Paragraph::new(lines)
+            .style(theme.base())
+            .alignment(Alignment::Left),
+        area,
+    );
 }
 
 /// The Fn-bar follows the mode, HIEW-style: the keys that matter where you are.
@@ -722,11 +835,20 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         (";", "Cmnt"),
         ("A", "Asm"),
     ];
-    const HEX_EXTRA: &[(&str, &str)] =
-        &[("*", "Mark"), ("b", "Blk"), ("s", "Str"), ("R", "Yara"), ("Y", "Copy")];
+    const HEX_EXTRA: &[(&str, &str)] = &[
+        ("*", "Mark"),
+        ("b", "Blk"),
+        ("s", "Str"),
+        ("R", "Yara"),
+        ("Y", "Copy"),
+    ];
     const TEXT_EXTRA: &[(&str, &str)] = &[("E", "Enc"), ("s", "Str"), ("*", "Mark")];
-    const DOC_EXTRA: &[(&str, &str)] =
-        &[("←→", "Pane"), ("↑↓", "Row"), ("Enter", "Goto"), ("<>", "Scroll")];
+    const DOC_EXTRA: &[(&str, &str)] = &[
+        ("←→", "Pane"),
+        ("↑↓", "Row"),
+        ("Enter", "Goto"),
+        ("<>", "Scroll"),
+    ];
     const TAIL: &[(&str, &str)] = &[("F12", "Names"), ("q", "Quit")];
 
     let mut owned: Vec<(&str, &str)>;
@@ -747,7 +869,9 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     for (k, label) in items {
         spans.push(Span::styled(
             (*k).to_string(),
-            ratatui::style::Style::default().bg(theme.bg).fg(theme.bar_key),
+            ratatui::style::Style::default()
+                .bg(theme.bg)
+                .fg(theme.bar_key),
         ));
         spans.push(Span::styled(format!("{label} "), theme.bar()));
     }
@@ -792,7 +916,9 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             vec![
                 Line::from(format!("Address: {input}_")),
                 Line::from(""),
-                Line::from(Span::raw("n hex · +n/-n relative · .va · nt decimal · Enter/Esc")),
+                Line::from(Span::raw(
+                    "n hex · +n/-n relative · .va · nt decimal · Enter/Esc",
+                )),
             ],
             5,
         ),
@@ -803,7 +929,9 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                 vec![
                     Line::from(format!("Pattern: {input}_")),
                     Line::from(""),
-                    Line::from(Span::raw("Tab toggles hex/text · Enter search · Esc cancel")),
+                    Line::from(Span::raw(
+                        "Tab toggles hex/text · Enter search · Esc cancel",
+                    )),
                 ],
                 5,
             )
@@ -871,7 +999,11 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                     Line::from(format!("{marker}{n}"))
                 })
                 .collect();
-            ("Copy to system clipboard".into(), lines, COPY_MENU_LABELS.len() as u16 + 2)
+            (
+                "Copy to system clipboard".into(),
+                lines,
+                COPY_MENU_LABELS.len() as u16 + 2,
+            )
         }
         Dialog::BlockMenu { selected } => {
             let lines = BLOCK_MENU_LABELS
@@ -914,10 +1046,14 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
         Dialog::Crypt { input } => {
             let mut lines = vec![Line::from(format!("Recipe: {input}_")), Line::from("")];
             if input.trim().is_empty() {
-                lines.push(Line::from(Span::raw("xor 5a · add 10 · sub 1 · rol 3 · ror 2")));
+                lines.push(Line::from(Span::raw(
+                    "xor 5a · add 10 · sub 1 · rol 3 · ror 2",
+                )));
                 lines.push(Line::from(Span::raw("not · neg · and 0f · or f0")));
                 lines.push(Line::from(Span::raw("chain with commas:  xor dead, rol 3")));
-                lines.push(Line::from(Span::raw("keys: hex (5a, deadbeef) or \"text\"")));
+                lines.push(Line::from(Span::raw(
+                    "keys: hex (5a, deadbeef) or \"text\"",
+                )));
             } else {
                 match hiewlm_core::crypt::parse(input) {
                     Ok(r) => {
@@ -931,7 +1067,9 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                     Err(e) => lines.push(Line::from(Span::raw(format!("{e}")))),
                 }
             }
-            lines.push(Line::from(Span::raw("Enter applies to the block · Esc cancel")));
+            lines.push(Line::from(Span::raw(
+                "Enter applies to the block · Esc cancel",
+            )));
             let h = lines.len() as u16 + 2;
             ("Crypt engine".into(), lines, h)
         }
@@ -944,12 +1082,18 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                 )),
             ];
             if input.trim().is_empty() {
-                lines.push(Line::from(Span::raw("xor 5a · add 10 · rol 3 · not · xor deadbeef")));
-                lines.push(Line::from(Span::raw("Alt+X hunts for the key automatically.")));
+                lines.push(Line::from(Span::raw(
+                    "xor 5a · add 10 · rol 3 · not · xor deadbeef",
+                )));
+                lines.push(Line::from(Span::raw(
+                    "Alt+X hunts for the key automatically.",
+                )));
                 lines.push(Line::from(Span::raw("Empty + Enter turns the lens off.")));
             } else {
                 match hiewlm_core::crypt::parse(input) {
-                    Ok(r) => lines.push(Line::from(Span::raw(format!("{} step(s), ok", r.0.len())))),
+                    Ok(r) => {
+                        lines.push(Line::from(Span::raw(format!("{} step(s), ok", r.0.len()))))
+                    }
                     Err(e) => lines.push(Line::from(Span::raw(format!("{e}")))),
                 }
             }
@@ -971,7 +1115,9 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             vec![
                 Line::from(format!("Name: {input}_")),
                 Line::from(""),
-                Line::from(Span::raw("Enter to save (blank = auto) · jump via F12 · Esc")),
+                Line::from(Span::raw(
+                    "Enter to save (blank = auto) · jump via F12 · Esc",
+                )),
             ],
             5,
         ),
@@ -1069,32 +1215,40 @@ fn draw_message(
         .borders(Borders::ALL)
         .style(theme.dialog());
     f.render_widget(
-        Paragraph::new(view).block(block).style(theme.dialog()).scroll((0, hscroll as u16)),
+        Paragraph::new(view)
+            .block(block)
+            .style(theme.dialog())
+            .scroll((0, hscroll as u16)),
         rect,
     );
 }
 
 /// The 64-bit calculator (Alt+=): live evaluation shown in hex/dec/oct/bin.
 fn draw_calc(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Theme) {
-    let mut lines = vec![
-        Line::from(format!(" = {input}_")),
-        Line::from(""),
-    ];
+    let mut lines = vec![Line::from(format!(" = {input}_")), Line::from("")];
     if input.trim().is_empty() {
         lines.push(Line::from(Span::raw(" enter an expression:")));
         lines.push(Line::from(Span::raw("   + - * / % & | ^ ~ << >>  ( )")));
         lines.push(Line::from(Span::raw("   0x.. hex · 0b.. bin · Nt decimal")));
-        lines.push(Line::from(Span::raw("   @o offset · @b @w @d @q at cursor")));
+        lines.push(Line::from(Span::raw(
+            "   @o offset · @b @w @d @q at cursor",
+        )));
     } else {
         match hiewlm_core::calc::eval(input, &app.calc_ctx()) {
             Ok(v) => {
-                lines.push(Line::from(Span::styled(format!("   hex  {v:#x}"), Style::default().fg(theme.tok_number))));
+                lines.push(Line::from(Span::styled(
+                    format!("   hex  {v:#x}"),
+                    Style::default().fg(theme.tok_number),
+                )));
                 lines.push(Line::from(format!("   dec  {v}")));
                 lines.push(Line::from(format!("   i64  {}", v as i64)));
                 lines.push(Line::from(format!("   oct  {v:#o}")));
                 lines.push(Line::from(format!("   bin  {v:#b}")));
             }
-            Err(e) => lines.push(Line::from(Span::styled(format!("   {e}"), Style::default().fg(theme.diff_bg)))),
+            Err(e) => lines.push(Line::from(Span::styled(
+                format!("   {e}"),
+                Style::default().fg(theme.diff_bg),
+            ))),
         }
     }
 
@@ -1106,7 +1260,10 @@ fn draw_calc(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Theme) {
         .title(" Calculator  (type · Esc) ")
         .borders(Borders::ALL)
         .style(theme.dialog());
-    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+    f.render_widget(
+        Paragraph::new(lines).block(block).style(theme.dialog()),
+        rect,
+    );
 }
 
 fn centered(area: Rect, w: u16, h: u16) -> Rect {
@@ -1148,7 +1305,9 @@ fn draw_assemble(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Them
         lines.push(Line::from(Span::raw("   xor eax, eax    mov rax, rbx")));
         lines.push(Line::from(Span::raw("   jmp 401000      call rax")));
         lines.push(Line::from(Span::raw("   push rbp        ret")));
-        lines.push(Line::from(Span::raw(" numbers are hex; use Nt for decimal")));
+        lines.push(Line::from(Span::raw(
+            " numbers are hex; use Nt for decimal",
+        )));
     } else {
         match app.assemble_preview(input) {
             Ok((bytes, slot)) => {
@@ -1167,7 +1326,11 @@ fn draw_assemble(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Them
                     lines.push(Line::from(format!(
                         "   {} byte(s){}  — Enter to patch",
                         bytes.len(),
-                        if pad > 0 { format!(" + {pad} NOP") } else { String::new() }
+                        if pad > 0 {
+                            format!(" + {pad} NOP")
+                        } else {
+                            String::new()
+                        }
                     )));
                 }
             }
@@ -1186,7 +1349,10 @@ fn draw_assemble(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Them
         .title(" Assemble  (Enter patches · Esc) ")
         .borders(Borders::ALL)
         .style(theme.dialog());
-    f.render_widget(Paragraph::new(lines).block(block).style(theme.dialog()), rect);
+    f.render_widget(
+        Paragraph::new(lines).block(block).style(theme.dialog()),
+        rect,
+    );
 }
 
 #[cfg(test)]
@@ -1269,7 +1435,10 @@ mod tests {
                 }
             }
         }
-        assert!(found_reg, "expected register-colored tokens in the disassembly");
+        assert!(
+            found_reg,
+            "expected register-colored tokens in the disassembly"
+        );
     }
 
     #[test]
@@ -1292,13 +1461,17 @@ mod tests {
         app.apply(Command::ToggleMark);
         app.apply(Command::Step(2)); // select offsets 0..=2
         app.apply(Command::ColorBlock); // opens the color menu
-        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('1'))); // color 0
+        app.handle_key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char('1'),
+        )); // color 0
         let buf = render_buffer(&mut app);
         let theme = Theme::hiew_classic();
         // Offset 0 hex cell (col 10) is inside the marker and not the cursor.
         assert_eq!(buf[(10, 1)].style().bg, theme.marker(0).bg);
         // cleanup the sidecar the command wrote
-        let mut s = std::env::temp_dir().join("hiewlm_ui_marker.bin").into_os_string();
+        let mut s = std::env::temp_dir()
+            .join("hiewlm_ui_marker.bin")
+            .into_os_string();
         s.push(".hiewlm.markers");
         std::fs::remove_file(std::path::PathBuf::from(s)).ok();
     }
@@ -1319,9 +1492,18 @@ mod tests {
     fn hex_view_renders_offset_and_ascii() {
         let mut app = app_with("hexview", b"Hello, hiewLM!");
         let screen = render_to_string(&mut app);
-        assert!(screen.contains("00000000:"), "missing offset column:\n{screen}");
-        assert!(screen.contains("48 65 6C 6C 6F"), "missing hex for 'Hello':\n{screen}");
-        assert!(screen.contains("Hello, hiewLM!"), "missing ascii column:\n{screen}");
+        assert!(
+            screen.contains("00000000:"),
+            "missing offset column:\n{screen}"
+        );
+        assert!(
+            screen.contains("48 65 6C 6C 6F"),
+            "missing hex for 'Hello':\n{screen}"
+        );
+        assert!(
+            screen.contains("Hello, hiewLM!"),
+            "missing ascii column:\n{screen}"
+        );
         assert!(screen.contains("1Help"), "missing Fn-bar:\n{screen}");
         assert!(screen.contains("hex"), "missing mode in status:\n{screen}");
     }
@@ -1331,11 +1513,14 @@ mod tests {
         let mut app = app_with("help", b"data");
         app.apply(crate::app::Command::Help);
         let screen = render_to_string(&mut app); // 80x12 backend
-        // Grouped, readable content is present — the first group is TRIAGE,
-        // because that is where a malware analyst starts.
+                                                 // Grouped, readable content is present — the first group is TRIAGE,
+                                                 // because that is where a malware analyst starts.
         assert!(screen.contains("TRIAGE"), "help content missing:\n{screen}");
         // …and since the help is taller than the box, a scroll indicator shows.
-        assert!(screen.contains("scroll"), "expected scroll indicator:\n{screen}");
+        assert!(
+            screen.contains("scroll"),
+            "expected scroll indicator:\n{screen}"
+        );
         // The box must not exceed the 80-col screen (no horizontal overflow).
         for line in screen.lines() {
             assert!(line.chars().count() <= 80, "row too wide: {line:?}");

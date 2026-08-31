@@ -25,7 +25,11 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(name = "hiewlm", version, about = "HIEW-like hex viewer/editor, cross-platform")]
+#[command(
+    name = "hiewlm",
+    version,
+    about = "HIEW-like hex viewer/editor, cross-platform"
+)]
 struct Cli {
     /// File to open (treated as passive data — its contents are never executed).
     /// A directory opens the folder-triage queue instead, ranked worst-first.

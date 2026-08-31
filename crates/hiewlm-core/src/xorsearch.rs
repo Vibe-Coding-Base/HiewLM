@@ -158,9 +158,7 @@ fn scan_delta(data: &[u8], needles: &[&str], op: Op, hits: &mut Vec<Hit>, max_hi
     if usable.is_empty() || data.len() < 2 {
         return;
     }
-    let table = bucket_by_first(
-        usable.iter().map(|(i, b)| (*i, delta(op, b[0], b[1]))),
-    );
+    let table = bucket_by_first(usable.iter().map(|(i, b)| (*i, delta(op, b[0], b[1]))));
     let by_idx: std::collections::BTreeMap<usize, &[u8]> = usable.into_iter().collect();
 
     for at in 0..data.len() - 1 {
@@ -253,7 +251,11 @@ pub fn search_buffer(
     max_hits: usize,
     max_bytes: u64,
 ) -> Vec<Hit> {
-    let limit = if max_bytes == 0 { buf.len() } else { max_bytes.min(buf.len()) };
+    let limit = if max_bytes == 0 {
+        buf.len()
+    } else {
+        max_bytes.min(buf.len())
+    };
     let longest = needles.iter().map(|n| n.len()).max().unwrap_or(0) as u64;
     let mut hits = Vec::new();
     let step = 1024 * 1024u64;
@@ -439,8 +441,11 @@ pub fn infer_repeating_key(data: &[u8], max_len: usize, top: usize) -> Vec<KeyCa
         // longer key must earn its extra parameters.
         const KEY_BYTE_COST: f32 = 5.545;
         let fit = (total - KEY_BYTE_COST * len as f32) / counted as f32;
-        let decoded: Vec<u8> =
-            data.iter().enumerate().map(|(i, &b)| b ^ key[i % key.len()]).collect();
+        let decoded: Vec<u8> = data
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| b ^ key[i % key.len()])
+            .collect();
         candidates.push(KeyCandidate {
             key: shrink(&key),
             fit,
@@ -448,7 +453,13 @@ pub fn infer_repeating_key(data: &[u8], max_len: usize, top: usize) -> Vec<KeyCa
             preview: decoded
                 .iter()
                 .take(72)
-                .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+                .map(|&b| {
+                    if (0x20..0x7f).contains(&b) {
+                        b as char
+                    } else {
+                        '.'
+                    }
+                })
                 .collect(),
         });
     }
@@ -464,7 +475,10 @@ pub fn infer_repeating_key(data: &[u8], max_len: usize, top: usize) -> Vec<KeyCa
             (true, true) => ca.key.len().cmp(&cb.key.len()),
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
-            (false, false) => cb.fit.partial_cmp(&ca.fit).unwrap_or(std::cmp::Ordering::Equal),
+            (false, false) => cb
+                .fit
+                .partial_cmp(&ca.fit)
+                .unwrap_or(std::cmp::Ordering::Equal),
         }
     });
     let mut seen = std::collections::HashSet::new();
@@ -513,7 +527,6 @@ pub fn key_from_known(data: &[u8], at: usize, known: &str) -> Vec<(Op, u8)> {
     out
 }
 
-
 /// Decode up to 64 bytes around a hit into a printable preview.
 fn decode_preview(data: &[u8], at: usize, op: Op, key: u8) -> String {
     let end = (at + 64).min(data.len());
@@ -539,8 +552,15 @@ mod tests {
         let plain = b"cfg http://c2.example.top/gate.php end";
         let data: Vec<u8> = plain.iter().map(|&b| b ^ 0x5a).collect();
         let hits = search(&data, &DEFAULT_NEEDLES, 32);
-        let hit = hits.iter().find(|h| h.op == Op::Xor && h.key == 0x5a).expect("xor 5a hit");
-        assert!(hit.preview.contains("http://c2.example.top"), "{}", hit.preview);
+        let hit = hits
+            .iter()
+            .find(|h| h.op == Op::Xor && h.key == 0x5a)
+            .expect("xor 5a hit");
+        assert!(
+            hit.preview.contains("http://c2.example.top"),
+            "{}",
+            hit.preview
+        );
         assert_eq!(hit.recipe(), "xor 5a");
     }
 
@@ -548,9 +568,13 @@ mod tests {
     fn finds_add_and_rol_encodings() {
         let plain = b"xx https://evil.top/x";
         let added: Vec<u8> = plain.iter().map(|&b| b.wrapping_add(7)).collect();
-        assert!(search(&added, &DEFAULT_NEEDLES, 32).iter().any(|h| h.op == Op::Add && h.key == 7));
+        assert!(search(&added, &DEFAULT_NEEDLES, 32)
+            .iter()
+            .any(|h| h.op == Op::Add && h.key == 7));
         let rolled: Vec<u8> = plain.iter().map(|&b| b.rotate_left(3)).collect();
-        assert!(search(&rolled, &DEFAULT_NEEDLES, 32).iter().any(|h| h.op == Op::Rol && h.key == 3));
+        assert!(search(&rolled, &DEFAULT_NEEDLES, 32)
+            .iter()
+            .any(|h| h.op == Op::Rol && h.key == 3));
     }
 
     #[test]
@@ -568,7 +592,11 @@ mutex=Global\\SessionLock77;persist=SOFTWARE\\Microsoft\\Windows\\CurrentVersion
 drop=%APPDATA%\\svc.exe;fallback=http://backup.example.top/p.php;sleep=300;jitter=15;";
 
     fn xored(plain: &[u8], key: &[u8]) -> Vec<u8> {
-        plain.iter().enumerate().map(|(i, &b)| b ^ key[i % key.len()]).collect()
+        plain
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| b ^ key[i % key.len()])
+            .collect()
     }
 
     #[test]
@@ -576,9 +604,18 @@ drop=%APPDATA%\\svc.exe;fallback=http://backup.example.top/p.php;sleep=300;jitte
         let key = b"S3cr3t!";
         let cands = infer_repeating_key(&xored(CONFIG, key), 20, 4);
         let best = cands.first().expect("a candidate");
-        assert_eq!(best.key, key, "recovered {:?}", String::from_utf8_lossy(&best.key));
+        assert_eq!(
+            best.key,
+            key,
+            "recovered {:?}",
+            String::from_utf8_lossy(&best.key)
+        );
         assert!(best.score > 0.95, "printable fraction {}", best.score);
-        assert!(best.preview.starts_with("host=c2.example.top"), "{}", best.preview);
+        assert!(
+            best.preview.starts_with("host=c2.example.top"),
+            "{}",
+            best.preview
+        );
         assert_eq!(best.recipe(), "xor 53336372337421");
     }
 
@@ -593,9 +630,17 @@ drop=%APPDATA%\\svc.exe;fallback=http://backup.example.top/p.php;sleep=300;jitte
             .into_iter()
             .next()
             .expect("candidate");
-        assert_eq!(best.key.len(), key.len(), "recovered a key of the wrong length");
+        assert_eq!(
+            best.key.len(),
+            key.len(),
+            "recovered a key of the wrong length"
+        );
         let wrong = best.key.iter().zip(key).filter(|(a, b)| a != b).count();
-        assert!(wrong <= 1, "{wrong} key bytes wrong: {:?}", String::from_utf8_lossy(&best.key));
+        assert!(
+            wrong <= 1,
+            "{wrong} key bytes wrong: {:?}",
+            String::from_utf8_lossy(&best.key)
+        );
         assert!(best.score > 0.95, "printable fraction {}", best.score);
     }
 
@@ -620,8 +665,16 @@ drop=%APPDATA%\\svc.exe;fallback=http://backup.example.top/p.php;sleep=300;jitte
         // marking a bigger block and trying again.
         let key = b"S3cr3t!";
         let short = &xored(CONFIG, key)[..64];
-        let best = infer_repeating_key(short, 16, 3).into_iter().next().expect("candidate");
-        assert!(best.score > 0.9, "printable fraction {} — {}", best.score, best.preview);
+        let best = infer_repeating_key(short, 16, 3)
+            .into_iter()
+            .next()
+            .expect("candidate");
+        assert!(
+            best.score > 0.9,
+            "printable fraction {} — {}",
+            best.score,
+            best.preview
+        );
     }
 
     #[test]
@@ -632,8 +685,12 @@ drop=%APPDATA%\\svc.exe;fallback=http://backup.example.top/p.php;sleep=300;jitte
 
     #[test]
     fn recipe_is_rotated_to_the_block_offset() {
-        let c =
-            KeyCandidate { key: vec![0xaa, 0xbb, 0xcc], score: 1.0, fit: 0.0, preview: String::new() };
+        let c = KeyCandidate {
+            key: vec![0xaa, 0xbb, 0xcc],
+            score: 1.0,
+            fit: 0.0,
+            preview: String::new(),
+        };
         // Applied from the block start, the key reads aa bb cc.
         assert_eq!(c.recipe(), "xor aabbcc");
         // A block starting at offset 1 must present the key rotated, so that the
@@ -657,6 +714,9 @@ drop=%APPDATA%\\svc.exe;fallback=http://backup.example.top/p.php;sleep=300;jitte
         data.extend(std::iter::repeat(0xaau8).take(1000));
         let buf = EditBuffer::new(Arc::new(MemSource::new(data)));
         let hits = search_buffer(&buf, &DEFAULT_NEEDLES, 16, 0);
-        assert!(hits.iter().any(|h| h.key == 0x11 && h.op == Op::Xor), "{hits:?}");
+        assert!(
+            hits.iter().any(|h| h.key == 0x11 && h.op == Op::Xor),
+            "{hits:?}"
+        );
     }
 }

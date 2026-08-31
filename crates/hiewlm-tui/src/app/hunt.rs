@@ -42,9 +42,14 @@ impl super::App {
         };
         let mut rows: Vec<(u8, String, PathBuf)> = Vec::new();
         for path in files {
-            let Ok(src) = FileSource::open(&path) else { continue };
+            let Ok(src) = FileSource::open(&path) else {
+                continue;
+            };
             let buf = EditBuffer::new(Arc::new(src));
-            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
             let r = hiewlm_triage::analyze(&name, &buf, None, &opts);
             rows.push((
                 r.score,
@@ -65,8 +70,10 @@ impl super::App {
             return;
         }
         rows.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        let items: Vec<(String, PathBuf, u64)> =
-            rows.into_iter().map(|(_, label, path)| (label, path, 0)).collect();
+        let items: Vec<(String, PathBuf, u64)> = rows
+            .into_iter()
+            .map(|(_, label, path)| (label, path, 0))
+            .collect();
         self.dialog = Some(Dialog::FileHits {
             title: format!(
                 "Folder triage — {} ({} file(s){})",
@@ -89,7 +96,12 @@ impl super::App {
             return;
         };
         const MAX_HITS: usize = 5000;
-        let hits = find_all(&self.buffer, &pattern, FileOffset(0), FileOffset(self.buffer.len()));
+        let hits = find_all(
+            &self.buffer,
+            &pattern,
+            FileOffset(0),
+            FileOffset(self.buffer.len()),
+        );
         if hits.is_empty() {
             self.set_status("Not found.");
             return;
@@ -104,14 +116,24 @@ impl super::App {
                 self.view_bytes(off, &mut ctx);
                 let text: String = ctx
                     .iter()
-                    .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+                    .map(|&b| {
+                        if (0x20..0x7f).contains(&b) {
+                            b as char
+                        } else {
+                            '.'
+                        }
+                    })
                     .collect();
                 (format!("{}  {text}", self.display_addr(off)), off)
             })
             .collect();
         self.highlight = Some(pattern);
         self.dialog = Some(Dialog::JumpList {
-            title: format!("All matches ({}{})", hits.len(), if truncated { ", capped" } else { "" }),
+            title: format!(
+                "All matches ({}{})",
+                hits.len(),
+                if truncated { ", capped" } else { "" }
+            ),
             items,
             sel: 0,
             filter: String::new(),
@@ -147,10 +169,20 @@ impl super::App {
         }
         let mut items: Vec<(String, u64)> = Vec::new();
         for h in &hits {
-            let tags = if h.tags.is_empty() { String::new() } else { format!(" [{}]", h.tags.join(" ")) };
-            items.push((format!("!rule {}{tags}  ({} match(es))", h.rule, h.matches.len()), h.matches.first().map(|m| m.0).unwrap_or(0)));
+            let tags = if h.tags.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", h.tags.join(" "))
+            };
+            items.push((
+                format!("!rule {}{tags}  ({} match(es))", h.rule, h.matches.len()),
+                h.matches.first().map(|m| m.0).unwrap_or(0),
+            ));
             for (off, len, id) in h.matches.iter().take(64) {
-                items.push((format!("     {}  {len:>5}  {id}", self.display_addr(*off)), *off));
+                items.push((
+                    format!("     {}  {len:>5}  {id}", self.display_addr(*off)),
+                    *off,
+                ));
             }
         }
         let n = hits.len();
@@ -160,7 +192,9 @@ impl super::App {
             sel: 0,
             filter: String::new(),
         });
-        self.set_status(format!("YARA: {n} rule(s) matched · 2 shows the updated verdict"));
+        self.set_status(format!(
+            "YARA: {n} rule(s) matched · 2 shows the updated verdict"
+        ));
     }
 
     // -- View lens (non-destructive decoding) --------------------------
@@ -209,7 +243,9 @@ impl super::App {
             }
             Err(e) => {
                 self.set_status(format!("Lens: {e}"));
-                self.dialog = Some(Dialog::Lens { input: text.to_string() });
+                self.dialog = Some(Dialog::Lens {
+                    input: text.to_string(),
+                });
             }
         }
     }
@@ -244,7 +280,13 @@ impl super::App {
                 let key_text: String = c
                     .key
                     .iter()
-                    .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+                    .map(|&b| {
+                        if (0x20..0x7f).contains(&b) {
+                            b as char
+                        } else {
+                            '.'
+                        }
+                    })
                     .collect();
                 let preview: String = c.preview.chars().take(56).collect();
                 (
@@ -262,7 +304,11 @@ impl super::App {
             })
             .collect();
         self.set_status("Enter puts that key on the lens · best-explaining first · Esc cancels");
-        self.dialog = Some(Dialog::XorHits { items, sel: 0, filter: String::new() });
+        self.dialog = Some(Dialog::XorHits {
+            items,
+            sel: 0,
+            filter: String::new(),
+        });
     }
 
     /// Hunt for plaintext hidden behind a single-byte XOR/ADD/ROL.
@@ -294,7 +340,10 @@ impl super::App {
             })
             .collect();
         self.set_status("Enter jumps there AND sets the lens to that recipe · type to filter");
-        self.dialog = Some(Dialog::XorHits { items, sel: 0, filter: String::new() });
+        self.dialog = Some(Dialog::XorHits {
+            items,
+            sel: 0,
+            filter: String::new(),
+        });
     }
-
 }

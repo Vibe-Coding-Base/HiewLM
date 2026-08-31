@@ -24,7 +24,9 @@ fn locked_app() -> App {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
-    a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(b"0123456789ABCDEF".to_vec())));
+    a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(
+        b"0123456789ABCDEF".to_vec(),
+    )));
     a.notes_key = format!("test-{}", NEXT.fetch_add(1, Ordering::Relaxed));
     a.comments.clear();
     a.named_bookmarks.clear();
@@ -47,19 +49,34 @@ fn disassembly_is_annotated_with_strings_and_imports() {
     a.disasm_bits = 64;
 
     let ins = a.disasm_from(0, 1).into_iter().next().expect("decode");
-    assert_eq!(a.annotate(&ins).as_deref(), Some("\"http://c2.example.top\""));
+    assert_eq!(
+        a.annotate(&ins).as_deref(),
+        Some("\"http://c2.example.top\"")
+    );
 
     // A direct call to a known symbol VA is named.
-    a.sym_by_va.insert(0x20, "kernel32.dll!VirtualAlloc".to_string());
-    let call = Insn { target: Some(0x20), ..ins.clone() };
-    assert_eq!(a.annotate(&call).as_deref(), Some("kernel32.dll!VirtualAlloc"));
+    a.sym_by_va
+        .insert(0x20, "kernel32.dll!VirtualAlloc".to_string());
+    let call = Insn {
+        target: Some(0x20),
+        ..ins.clone()
+    };
+    assert_eq!(
+        a.annotate(&call).as_deref(),
+        Some("kernel32.dll!VirtualAlloc")
+    );
 }
 
 #[test]
 fn documented_letter_aliases_all_exist() {
     use crossterm::event::{KeyCode, KeyEvent};
     // Every Fn-bar action has a letter alias in the help; `m` was missing.
-    for (key, want) in [('m', "Mode"), ('g', "Goto"), ('s', "Strings"), ('h', "Hashes")] {
+    for (key, want) in [
+        ('m', "Mode"),
+        ('g', "Goto"),
+        ('s', "Strings"),
+        ('h', "Hashes"),
+    ] {
         let mut a = app();
         a.handle_key(KeyEvent::from(KeyCode::Char(key)));
         assert!(a.dialog.is_some(), "`{key}` ({want}) opened nothing");
@@ -109,7 +126,10 @@ fn long_rows_scroll_sideways_instead_of_being_cut_off() {
 fn palette_finds_commands_by_words_not_by_key() {
     // The point of the palette: you remember "yara", not that it is `R`.
     let m = palette_matches("yara");
-    assert!(m.iter().any(|(_, _, c)| matches!(c, Command::RunYara)), "{m:?}");
+    assert!(
+        m.iter().any(|(_, _, c)| matches!(c, Command::RunYara)),
+        "{m:?}"
+    );
     assert!(palette_matches("copy clipboard").len() == 1);
     assert!(palette_matches("zzzz").is_empty());
     // An empty query lists everything.
@@ -131,16 +151,17 @@ fn palette_runs_the_selected_command() {
 #[test]
 fn search_all_lists_every_match_with_context() {
     let mut a = app();
-    a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(
-        b"AxxAxxAxx".to_vec(),
-    )));
+    a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(b"AxxAxxAxx".to_vec())));
     a.confirm_search("A", SearchKind::Text);
     a.apply(Command::SearchAll);
     let Some(Dialog::JumpList { title, items, .. }) = &a.dialog else {
         panic!("expected a jump list");
     };
     assert!(title.contains("All matches (3"), "{title}");
-    assert_eq!(items.iter().map(|(_, o)| *o).collect::<Vec<_>>(), vec![0, 3, 6]);
+    assert_eq!(
+        items.iter().map(|(_, o)| *o).collect::<Vec<_>>(),
+        vec![0, 3, 6]
+    );
 }
 
 #[test]
@@ -173,14 +194,22 @@ fn legacy_marker_sidecar_is_imported_once() {
     fs::write(
         &sidecar,
         toml::to_string(&MarkerFile {
-            markers: vec![Marker { start: 2, end: 5, color: 3 }],
+            markers: vec![Marker {
+                start: 2,
+                end: 5,
+                color: 3,
+            }],
         })
         .unwrap(),
     )
     .unwrap();
 
     let a = App::open(path.clone()).unwrap();
-    assert_eq!(a.marker_color_at(3), Some(3), "old markers must not be lost");
+    assert_eq!(
+        a.marker_color_at(3),
+        Some(3),
+        "old markers must not be lost"
+    );
 
     // Now they live in the content-keyed store, so the sidecar is redundant.
     fs::remove_file(&sidecar).ok();
@@ -213,7 +242,10 @@ fn notes_survive_a_rename() {
 
     let b = App::open(renamed.clone()).unwrap();
     assert_eq!(b.comment_at(4), Some("decrypt loop starts here"));
-    assert!(b.named_bookmarks.iter().any(|(n, o)| n == "config blob" && *o == 8));
+    assert!(b
+        .named_bookmarks
+        .iter()
+        .any(|(n, o)| n == "config blob" && *o == 8));
     assert_eq!(b.markers.len(), 1);
     assert!(b.status.contains("Notes restored"), "{}", b.status);
 
@@ -275,7 +307,11 @@ fn folder_triage_ranks_files_worst_first() {
         panic!("expected the folder list");
     };
     assert_eq!(items.len(), 2);
-    assert!(items[0].1.ends_with("nasty.bin"), "worst first: {:?}", items[0].0);
+    assert!(
+        items[0].1.ends_with("nasty.bin"),
+        "worst first: {:?}",
+        items[0].0
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -293,7 +329,10 @@ fn report_is_written_beside_the_sample_while_locked() {
     let md = fs::read_to_string(&out).expect("the report file");
     assert!(md.starts_with("# Triage — hiewlm_report_write.bin"), "{md}");
     assert!(md.contains("SHA-256"));
-    assert!(!a.buffer.is_dirty(), "writing a report must not touch the sample");
+    assert!(
+        !a.buffer.is_dirty(),
+        "writing a report must not touch the sample"
+    );
 
     let _ = fs::remove_file(&out);
     let _ = fs::remove_file(&path);
@@ -304,7 +343,11 @@ fn copy_menu_labels_match_the_copy_actions() {
     let mut a = locked_app();
     a.apply(Command::OpenCopyMenu);
     assert!(matches!(a.dialog, Some(Dialog::CopyMenu { .. })));
-    assert_eq!(crate::ui::COPY_MENU_LABELS.len(), 13, "menu rows index copy_item");
+    assert_eq!(
+        crate::ui::COPY_MENU_LABELS.len(),
+        13,
+        "menu rows index copy_item"
+    );
     // Copying the address never needs a selection and never fails.
     a.apply(Command::CopyItem(8));
     assert!(a.dialog.is_none());
@@ -378,7 +421,10 @@ fn rebuilds_a_string_assembled_on_the_stack() {
 #[test]
 fn stack_string_run_decoding_handles_utf16_and_gaps() {
     // Wide string, NUL-terminated.
-    let wide: Vec<u8> = "cmd.exe".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let wide: Vec<u8> = "cmd.exe"
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
     assert_eq!(super::decode_run(&wide, 4).as_deref(), Some("cmd.exe"));
     // Too short to be worth reporting.
     assert_eq!(super::decode_run(b"ab\0\0", 4), None);
@@ -400,7 +446,12 @@ fallback=http://backup.example.top/p.php;sleep=300;jitter=15;campaign=summer;";
     // so the lens rotation is actually exercised.
     let pad = 5u64;
     let mut data = vec![0u8; pad as usize];
-    data.extend(plain.iter().enumerate().map(|(i, &b)| b ^ key[i % key.len()]));
+    data.extend(
+        plain
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| b ^ key[i % key.len()]),
+    );
 
     let mut a = locked_app();
     a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
@@ -408,12 +459,17 @@ fallback=http://backup.example.top/p.php;sleep=300;jitter=15;campaign=summer;";
     a.cursor = a.max_offset();
     a.apply(Command::XorKey);
 
-    assert!(matches!(a.dialog, Some(Dialog::XorHits { .. })), "expected candidates");
+    assert!(
+        matches!(a.dialog, Some(Dialog::XorHits { .. })),
+        "expected candidates"
+    );
     a.handle_key(KeyEvent::from(KeyCode::Enter));
 
-    let decoded: String =
-        (pad..pad + 19).map(|o| a.view_byte(o) as char).collect();
-    assert_eq!(decoded, "host=c2.example.top", "lens must decode at the block offset");
+    let decoded: String = (pad..pad + 19).map(|o| a.view_byte(o) as char).collect();
+    assert_eq!(
+        decoded, "host=c2.example.top",
+        "lens must decode at the block offset"
+    );
     assert!(!a.buffer.is_dirty(), "the file itself is untouched");
 }
 
@@ -439,7 +495,12 @@ fn xor_search_finds_a_hidden_url_and_offers_its_recipe() {
     let Some(Dialog::XorHits { items, .. }) = &a.dialog else {
         panic!("expected the xor hits list");
     };
-    assert!(items.iter().any(|(_, off, recipe)| *off == 64 && recipe == "xor 33"), "{items:?}");
+    assert!(
+        items
+            .iter()
+            .any(|(_, off, recipe)| *off == 64 && recipe == "xor 33"),
+        "{items:?}"
+    );
 
     // Enter jumps there and puts the recovering recipe on the lens.
     use crossterm::event::{KeyCode, KeyEvent};
@@ -453,8 +514,10 @@ fn xor_search_finds_a_hidden_url_and_offers_its_recipe() {
 /// A minimal but real OOXML package (stored entries), enough that the document
 /// parser recognises it the way it recognises a Word file.
 fn docx_bytes() -> Vec<u8> {
-    let entries: [(&str, &[u8]); 2] =
-        [("[Content_Types].xml", b"<Types/>"), ("word/document.xml", b"<w:document/>")];
+    let entries: [(&str, &[u8]); 2] = [
+        ("[Content_Types].xml", b"<Types/>"),
+        ("word/document.xml", b"<w:document/>"),
+    ];
     let mut out = Vec::new();
     let mut dir = Vec::new();
     for (name, data) in entries {
@@ -522,11 +585,17 @@ fn mode_menu_offers_every_mode() {
     a.apply(Command::OpenModeMenu);
     let mut seen = Vec::new();
     for _ in 0..MODES {
-        let Some(Dialog::ModeMenu { selected }) = &a.dialog else { panic!("menu closed") };
+        let Some(Dialog::ModeMenu { selected }) = &a.dialog else {
+            panic!("menu closed")
+        };
         seen.push(*selected);
         a.handle_key(KeyEvent::from(KeyCode::Down));
     }
-    assert_eq!(seen, vec![3, 0, 1, 2], "the highlight must cycle all four rows");
+    assert_eq!(
+        seen,
+        vec![3, 0, 1, 2],
+        "the highlight must cycle all four rows"
+    );
 }
 
 #[test]
@@ -555,9 +624,15 @@ fn doc_view_lists_parts_and_navigates() {
     let mut a = doc_app("view");
     a.apply(Command::SetMode(Mode::Doc));
     let rows = a.doc_rows();
-    assert!(rows.iter().any(|(l, _)| l.contains("word/document.xml")), "{rows:?}");
+    assert!(
+        rows.iter().any(|(l, _)| l.contains("word/document.xml")),
+        "{rows:?}"
+    );
     // Enter on a part jumps to its bytes.
-    let idx = rows.iter().position(|(l, _)| l.contains("word/document.xml")).unwrap();
+    let idx = rows
+        .iter()
+        .position(|(l, _)| l.contains("word/document.xml"))
+        .unwrap();
     a.doc_sel = idx;
     a.apply(Command::DocActivate);
     assert_eq!(a.mode, Mode::Hex);
@@ -573,11 +648,16 @@ fn triage_screen_opens_and_lists_panes() {
         panic!("expected the triage dialog, got {:?}", a.dialog.is_some());
     };
     assert_eq!(*pane, TriagePane::Overview);
-    assert!(a.triage_entries(TriagePane::Overview, "").iter().any(|(l, _)| l.contains("SHA-256")));
+    assert!(a
+        .triage_entries(TriagePane::Overview, "")
+        .iter()
+        .any(|(l, _)| l.contains("SHA-256")));
     // Right cycles panes; every pane renders something.
     for _ in 0..hiewlm_triage::Pane::ALL.len() {
         a.handle_key(KeyEvent::from(KeyCode::Right));
-        let Some(Dialog::Triage { pane, .. }) = &a.dialog else { panic!("dialog closed") };
+        let Some(Dialog::Triage { pane, .. }) = &a.dialog else {
+            panic!("dialog closed")
+        };
         assert!(!a.triage_entries(*pane, "").is_empty(), "{pane:?} empty");
     }
 }
@@ -591,7 +671,9 @@ fn triage_filter_narrows_and_esc_clears_it() {
     for c in "sha".chars() {
         a.handle_key(KeyEvent::from(KeyCode::Char(c)));
     }
-    let Some(Dialog::Triage { filter, .. }) = &a.dialog else { panic!("closed") };
+    let Some(Dialog::Triage { filter, .. }) = &a.dialog else {
+        panic!("closed")
+    };
     assert_eq!(filter, "sha");
     assert!(a.triage_entries(TriagePane::Overview, "sha").len() < all);
     // First Esc clears the filter, second closes.
@@ -732,8 +814,8 @@ fn letter_and_digit_aliases_work_without_fn_keys() {
 fn code_app() -> App {
     // push rbp; mov rbp,rsp; call +6; 6x nop; ret  (16 bytes, x64)
     let data = vec![
-        0x55, 0x48, 0x89, 0xe5, 0xe8, 0x06, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90,
-        0x90, 0xc3,
+        0x55, 0x48, 0x89, 0xe5, 0xe8, 0x06, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+        0xc3,
     ];
     let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
     a.read_only = false;
@@ -771,7 +853,11 @@ fn code_mode_xref_finds_caller() {
     a.apply(Command::SetMode(Mode::Code));
     // Recursive analysis from offset 0 sees `call +6` (offset 4) → target VA 15.
     let analysis = a.analyze();
-    assert!(analysis.xrefs.get(&15).map(|v| v.contains(&4)).unwrap_or(false));
+    assert!(analysis
+        .xrefs
+        .get(&15)
+        .map(|v| v.contains(&4))
+        .unwrap_or(false));
     // The call target (offset 15) is recorded as a function start.
     assert!(analysis.functions.contains(&15));
 }
@@ -940,9 +1026,21 @@ fn header_opens_and_cycles_panes() {
     use crossterm::event::{KeyCode, KeyEvent};
     let mut a = app();
     a.handle_key(KeyEvent::from(KeyCode::Char('8')));
-    assert!(matches!(a.dialog, Some(Dialog::Header { pane: HeaderPane::Info, .. })));
+    assert!(matches!(
+        a.dialog,
+        Some(Dialog::Header {
+            pane: HeaderPane::Info,
+            ..
+        })
+    ));
     a.handle_key(KeyEvent::from(KeyCode::Tab));
-    assert!(matches!(a.dialog, Some(Dialog::Header { pane: HeaderPane::Sections, .. })));
+    assert!(matches!(
+        a.dialog,
+        Some(Dialog::Header {
+            pane: HeaderPane::Sections,
+            ..
+        })
+    ));
     a.handle_key(KeyEvent::from(KeyCode::Esc));
     assert!(a.dialog.is_none());
 }
@@ -953,7 +1051,7 @@ fn header_info_enter_jumps_to_entry() {
     let mut a = app();
     a.entry = Some(0x0a); // flat address space -> offset 0x0a
     a.handle_key(KeyEvent::from(KeyCode::Char('8'))); // Header, Info pane
-    // Filter to just the "Entry point" line (robust to field-order changes).
+                                                      // Filter to just the "Entry point" line (robust to field-order changes).
     for c in "entry".chars() {
         a.handle_key(KeyEvent::from(KeyCode::Char(c)));
     }
@@ -970,7 +1068,7 @@ fn header_imports_jump_and_filter() {
     a.handle_key(KeyEvent::from(KeyCode::Char('8')));
     a.handle_key(KeyEvent::from(KeyCode::Right)); // Info -> Sections
     a.handle_key(KeyEvent::from(KeyCode::Right)); // -> Imports
-    // Filter by typing "bet" -> only "beta" remains, at sel 0.
+                                                  // Filter by typing "bet" -> only "beta" remains, at sel 0.
     for c in "bet".chars() {
         a.handle_key(KeyEvent::from(KeyCode::Char(c)));
     }
@@ -1024,7 +1122,10 @@ fn imphash_is_normalized() {
 fn long_field_wraps_without_clipping() {
     let long = "0x8160 [HIGH_ENTROPY_VA DYNAMIC_BASE(ASLR) NX_COMPAT(DEP) GUARD_CF TERMINAL_SERVER_AWARE FORCE_INTEGRITY NO_SEH]";
     let lines = wrap_field("DllCharacteristics", long);
-    assert!(lines.len() > 1, "long value should wrap onto multiple lines");
+    assert!(
+        lines.len() > 1,
+        "long value should wrap onto multiple lines"
+    );
     // No wrapped line exceeds the dialog width.
     assert!(lines.iter().all(|(l, _)| l.chars().count() <= 84));
 }
@@ -1033,7 +1134,10 @@ fn long_field_wraps_without_clipping() {
 fn entropy_bounds() {
     let mut a = app();
     a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(vec![7u8; 2000])));
-    assert!(a.range_entropy(0, 2000) < 0.01, "constant data should be ~0");
+    assert!(
+        a.range_entropy(0, 2000) < 0.01,
+        "constant data should be ~0"
+    );
     let uniform: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
     a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(uniform)));
     assert!(a.range_entropy(0, 4096) > 7.9, "uniform data should be ~8");
@@ -1125,7 +1229,10 @@ fn named_bookmark_appears_in_names() {
         a.handle_key(KeyEvent::from(KeyCode::Char(c)));
     }
     a.handle_key(KeyEvent::from(KeyCode::Enter));
-    assert!(a.names_list().iter().any(|(l, off)| l.contains("loop") && *off == 6));
+    assert!(a
+        .names_list()
+        .iter()
+        .any(|(l, off)| l.contains("loop") && *off == 6));
 }
 
 /// A plugin-parsed container (ZIP/PDF) lists members via F12 and must not
@@ -1164,7 +1271,7 @@ fn search_kind_tab_cycles_every_kind() {
 #[test]
 fn block_scope_confines_search_to_the_marked_range() {
     let mut a = app(); // "0123456789ABCDEF"
-    // "9" lives at offset 9; scope the search to 0..=4 so it must not match.
+                       // "9" lives at offset 9; scope the search to 0..=4 so it must not match.
     a.mark = Some(0);
     a.cursor = 4;
     a.confirm_search("9", SearchKind::Text);
@@ -1205,7 +1312,10 @@ fn numbered_slot_set_and_jump() {
     a.handle_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::ALT));
     assert_eq!(a.cursor, 7, "Alt+3 must jump to slot 3");
     // Slots show up in the F12 list.
-    assert!(a.names_list().iter().any(|(l, off)| l.contains("slot 3") && *off == 7));
+    assert!(a
+        .names_list()
+        .iter()
+        .any(|(l, off)| l.contains("slot 3") && *off == 7));
 }
 
 #[test]
@@ -1220,11 +1330,11 @@ fn empty_slot_reports_instead_of_jumping_to_zero() {
 
 #[test]
 fn block_copy_to_bookmark() {
-    let mut a = app();               // buffer: "0123456789ABCDEF"
+    let mut a = app(); // buffer: "0123456789ABCDEF"
     a.apply(Command::ToggleMark);
-    a.apply(Command::Step(2));       // select "012"
+    a.apply(Command::Step(2)); // select "012"
     a.cursor = 8;
-    a.apply(Command::BookmarkPush);  // destination = offset 8
+    a.apply(Command::BookmarkPush); // destination = offset 8
     a.cursor = 0;
     a.mark = Some(0);
     a.cursor = 2;
@@ -1238,14 +1348,17 @@ fn block_copy_to_bookmark() {
 fn block_move_rebases_destination_after_the_block() {
     let mut a = app();
     a.cursor = 8;
-    a.apply(Command::BookmarkPush);  // destination after the source block
+    a.apply(Command::BookmarkPush); // destination after the source block
     a.mark = Some(0);
-    a.cursor = 2;                    // source = 0..=2 ("012")
+    a.cursor = 2; // source = 0..=2 ("012")
     a.apply(Command::BlockMove);
     let v = a.buffer.to_vec();
     assert_eq!(v.len(), 16, "move must not change the file size");
     // "3456789ABCDEF" with "012" reinserted at the rebased destination.
-    assert_eq!(String::from_utf8_lossy(&v), "34567012 89ABCDEF".replace(' ', ""));
+    assert_eq!(
+        String::from_utf8_lossy(&v),
+        "34567012 89ABCDEF".replace(' ', "")
+    );
 }
 
 #[test]
@@ -1253,7 +1366,7 @@ fn block_move_into_itself_is_refused() {
     let mut a = app();
     let before = a.buffer.to_vec();
     a.cursor = 1;
-    a.apply(Command::BookmarkPush);  // destination inside the block
+    a.apply(Command::BookmarkPush); // destination inside the block
     a.mark = Some(0);
     a.cursor = 4;
     a.apply(Command::BlockMove);
@@ -1266,7 +1379,7 @@ fn block_insert_uses_clipboard_and_grows_file() {
     let mut a = app();
     a.mark = Some(0);
     a.cursor = 2;
-    a.apply(Command::BlockYank);     // clipboard = "012"
+    a.apply(Command::BlockYank); // clipboard = "012"
     a.mark = None;
     a.cursor = 16;
     a.apply(Command::BlockInsert);
@@ -1364,7 +1477,10 @@ fn assemble_refuses_when_encoding_exceeds_the_slot() {
     let mut after = vec![0u8; 8];
     a.buffer.read_at(FileOffset(0), &mut after);
     if a.status.contains("won't fit") {
-        assert_eq!(before, after, "buffer must be untouched when the patch is refused");
+        assert_eq!(
+            before, after,
+            "buffer must be untouched when the patch is refused"
+        );
     }
 }
 
@@ -1388,10 +1504,14 @@ fn plugin_container_lists_members_not_functions() {
             Member::new("a.txt", 0x00, 10, "stored"),
             Member::new("evil.exe", 0x49, 20, "deflate"),
         ],
-        findings: vec![hiewlm_core::container::Finding::suspicious("executable member")],
+        findings: vec![hiewlm_core::container::Finding::suspicious(
+            "executable member",
+        )],
     });
     let names = a.names_list();
-    assert!(names.iter().any(|(l, off)| l.contains("evil.exe") && *off == 0x49));
+    assert!(names
+        .iter()
+        .any(|(l, off)| l.contains("evil.exe") && *off == 0x49));
     a.open_names();
     match &a.dialog {
         Some(Dialog::JumpList { title, items, .. }) => {
@@ -1412,7 +1532,9 @@ fn container_names_list_members_not_functions() {
     a.format = Format::Archive;
     a.exports = vec![("a.txt".into(), 0x00), ("b.txt".into(), 0x49)];
     let names = a.names_list();
-    assert!(names.iter().any(|(l, off)| l.contains("member") && l.contains("b.txt") && *off == 0x49));
+    assert!(names
+        .iter()
+        .any(|(l, off)| l.contains("member") && l.contains("b.txt") && *off == 0x49));
     // Function recovery must be skipped for containers.
     a.open_names();
     match &a.dialog {
@@ -1438,7 +1560,6 @@ fn theme_and_encoding_cycle() {
     assert_eq!(Encoding::Cp437.decode(0x01), '☺');
 }
 
-
 #[test]
 fn strings_list_finds_text() {
     let mut a = app();
@@ -1448,7 +1569,9 @@ fn strings_list_finds_text() {
     a.apply(Command::OpenStrings);
     match &a.dialog {
         Some(Dialog::JumpList { items, .. }) => {
-            assert!(items.iter().any(|(l, off)| l.contains("Hello world") && *off == 2));
+            assert!(items
+                .iter()
+                .any(|(l, off)| l.contains("Hello world") && *off == 2));
         }
         _ => panic!("expected strings list"),
     }
@@ -1480,7 +1603,10 @@ fn nop_overwrites_x86_instruction() {
 #[test]
 fn utf16_detect_and_glyph() {
     use crate::encoding::Encoding;
-    let wide: Vec<u8> = "Hello".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let wide: Vec<u8> = "Hello"
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
     assert_eq!(Encoding::detect(&wide.repeat(4)), Encoding::Utf16Le);
     assert_eq!(Encoding::wide_glyph(b'H', 0), 'H');
 }
@@ -1499,7 +1625,9 @@ fn multi_search_finds_matching_file() {
     a.multi_search();
     match &a.dialog {
         Some(Dialog::FileHits { items, .. }) => {
-            assert!(items.iter().any(|(l, _, off)| l.contains("hit.bin") && *off == 2));
+            assert!(items
+                .iter()
+                .any(|(l, _, off)| l.contains("hit.bin") && *off == 2));
         }
         _ => panic!("expected file hits"),
     }
@@ -1519,9 +1647,14 @@ fn file_picker_selects_diff_file() {
     let mut app = App::open(a.clone()).unwrap();
     app.apply(Command::OpenDiff); // opens the picker in a's directory
     let idx = match &app.dialog {
-        Some(Dialog::FilePicker { entries, purpose: PickPurpose::Diff, .. }) => {
-            entries.iter().position(|e| e.name == "b.bin").expect("b.bin listed")
-        }
+        Some(Dialog::FilePicker {
+            entries,
+            purpose: PickPurpose::Diff,
+            ..
+        }) => entries
+            .iter()
+            .position(|e| e.name == "b.bin")
+            .expect("b.bin listed"),
         _ => panic!("expected file picker"),
     };
     for _ in 0..idx {

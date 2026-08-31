@@ -27,7 +27,11 @@ impl super::App {
                     .iter()
                     .map(|n| {
                         let indent = "  ".repeat(n.depth.min(8));
-                        let size = if n.size > 0 { format!("{:>9}", n.size) } else { "         ".into() };
+                        let size = if n.size > 0 {
+                            format!("{:>9}", n.size)
+                        } else {
+                            "         ".into()
+                        };
                         let detail = if n.detail.is_empty() {
                             String::new()
                         } else {
@@ -55,7 +59,12 @@ impl super::App {
                     .map(|f| {
                         let warn = f.severity == hiewlm_core::Severity::Suspicious;
                         (
-                            format!("{}[{}] {}", if warn { "!" } else { " " }, f.severity, f.message),
+                            format!(
+                                "{}[{}] {}",
+                                if warn { "!" } else { " " },
+                                f.severity,
+                                f.message
+                            ),
                             f.offset,
                         )
                     })
@@ -84,7 +93,12 @@ impl super::App {
                     (format!("{:<16} {}", "Container", d.kind.label()), None),
                     (format!("{:<16} {}", "Nodes", d.nodes.len()), None),
                     (
-                        format!("{:<16} {} ({} suspicious)", "Findings", d.findings.len(), d.suspicious_count()),
+                        format!(
+                            "{:<16} {} ({} suspicious)",
+                            "Findings",
+                            d.findings.len(),
+                            d.suspicious_count()
+                        ),
                         None,
                     ),
                     (format!("{:<16} {}", "VBA modules", d.macros.len()), None),
@@ -133,5 +147,4 @@ impl super::App {
             None => {}
         }
     }
-
 }

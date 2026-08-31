@@ -124,10 +124,26 @@ pub const PALETTE: &[(&str, &str, Command)] = &[
     ("header / sections / imports", "8", Command::OpenHeader),
     ("strings with indicators", "s", Command::OpenStrings),
     ("yara scan", "R", Command::RunYara),
-    ("xor search (find hidden plaintext)", "Alt+X", Command::XorSearch),
-    ("xor key from block (repeating key)", "Alt+K", Command::XorKey),
-    ("stack strings in this function", "Alt+S", Command::StackStrings),
-    ("view lens (decode without patching)", "L", Command::OpenLens),
+    (
+        "xor search (find hidden plaintext)",
+        "Alt+X",
+        Command::XorSearch,
+    ),
+    (
+        "xor key from block (repeating key)",
+        "Alt+K",
+        Command::XorKey,
+    ),
+    (
+        "stack strings in this function",
+        "Alt+S",
+        Command::StackStrings,
+    ),
+    (
+        "view lens (decode without patching)",
+        "L",
+        Command::OpenLens,
+    ),
     ("copy to system clipboard", "Y", Command::OpenCopyMenu),
     ("folder triage (rank samples)", "F", Command::FolderTriage),
     ("open another file", "O", Command::OpenFile),
@@ -158,7 +174,11 @@ pub const PALETTE: &[(&str, &str, Command)] = &[
     ("save", "w / 9", Command::Save),
     ("cycle theme", "\\", Command::ToggleTheme),
     ("cycle text encoding", "E", Command::CycleEncoding),
-    ("toggle offset / virtual address", "Alt+A", Command::ToggleAddrMode),
+    (
+        "toggle offset / virtual address",
+        "Alt+A",
+        Command::ToggleAddrMode,
+    ),
     ("help", "1 / ?", Command::Help),
     ("quit", "q / 0", Command::Quit),
 ];
@@ -176,4 +196,3 @@ pub fn palette_matches(query: &str) -> Vec<&'static (&'static str, &'static str,
         })
         .collect()
 }
-

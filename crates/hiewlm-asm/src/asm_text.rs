@@ -27,10 +27,16 @@ pub enum AsmError {
     /// iced rejected the instruction (invalid encoding for this bitness).
     Encode(String),
     /// Encoded fine, but does not fit the space the caller allowed.
-    TooLong { got: usize, max: usize },
+    TooLong {
+        got: usize,
+        max: usize,
+    },
     /// A branch target too far away to encode as a direct relative branch.
     /// Reported rather than silently expanded into an indirect trampoline.
-    BranchOutOfRange { target: u64, rip: u64 },
+    BranchOutOfRange {
+        target: u64,
+        rip: u64,
+    },
 }
 
 impl fmt::Display for AsmError {
@@ -68,11 +74,26 @@ enum Op {
 fn reg8(n: &str) -> Option<AsmRegister8> {
     use gpr8::*;
     Some(match n {
-        "al" => al, "bl" => bl, "cl" => cl, "dl" => dl,
-        "ah" => ah, "bh" => bh, "ch" => ch, "dh" => dh,
-        "sil" => sil, "dil" => dil, "bpl" => bpl, "spl" => spl,
-        "r8b" => r8b, "r9b" => r9b, "r10b" => r10b, "r11b" => r11b,
-        "r12b" => r12b, "r13b" => r13b, "r14b" => r14b, "r15b" => r15b,
+        "al" => al,
+        "bl" => bl,
+        "cl" => cl,
+        "dl" => dl,
+        "ah" => ah,
+        "bh" => bh,
+        "ch" => ch,
+        "dh" => dh,
+        "sil" => sil,
+        "dil" => dil,
+        "bpl" => bpl,
+        "spl" => spl,
+        "r8b" => r8b,
+        "r9b" => r9b,
+        "r10b" => r10b,
+        "r11b" => r11b,
+        "r12b" => r12b,
+        "r13b" => r13b,
+        "r14b" => r14b,
+        "r15b" => r15b,
         _ => return None,
     })
 }
@@ -80,10 +101,22 @@ fn reg8(n: &str) -> Option<AsmRegister8> {
 fn reg16(n: &str) -> Option<AsmRegister16> {
     use gpr16::*;
     Some(match n {
-        "ax" => ax, "bx" => bx, "cx" => cx, "dx" => dx,
-        "si" => si, "di" => di, "bp" => bp, "sp" => sp,
-        "r8w" => r8w, "r9w" => r9w, "r10w" => r10w, "r11w" => r11w,
-        "r12w" => r12w, "r13w" => r13w, "r14w" => r14w, "r15w" => r15w,
+        "ax" => ax,
+        "bx" => bx,
+        "cx" => cx,
+        "dx" => dx,
+        "si" => si,
+        "di" => di,
+        "bp" => bp,
+        "sp" => sp,
+        "r8w" => r8w,
+        "r9w" => r9w,
+        "r10w" => r10w,
+        "r11w" => r11w,
+        "r12w" => r12w,
+        "r13w" => r13w,
+        "r14w" => r14w,
+        "r15w" => r15w,
         _ => return None,
     })
 }
@@ -91,10 +124,22 @@ fn reg16(n: &str) -> Option<AsmRegister16> {
 fn reg32(n: &str) -> Option<AsmRegister32> {
     use gpr32::*;
     Some(match n {
-        "eax" => eax, "ebx" => ebx, "ecx" => ecx, "edx" => edx,
-        "esi" => esi, "edi" => edi, "ebp" => ebp, "esp" => esp,
-        "r8d" => r8d, "r9d" => r9d, "r10d" => r10d, "r11d" => r11d,
-        "r12d" => r12d, "r13d" => r13d, "r14d" => r14d, "r15d" => r15d,
+        "eax" => eax,
+        "ebx" => ebx,
+        "ecx" => ecx,
+        "edx" => edx,
+        "esi" => esi,
+        "edi" => edi,
+        "ebp" => ebp,
+        "esp" => esp,
+        "r8d" => r8d,
+        "r9d" => r9d,
+        "r10d" => r10d,
+        "r11d" => r11d,
+        "r12d" => r12d,
+        "r13d" => r13d,
+        "r14d" => r14d,
+        "r15d" => r15d,
         _ => return None,
     })
 }
@@ -102,10 +147,22 @@ fn reg32(n: &str) -> Option<AsmRegister32> {
 fn reg64(n: &str) -> Option<AsmRegister64> {
     use gpr64::*;
     Some(match n {
-        "rax" => rax, "rbx" => rbx, "rcx" => rcx, "rdx" => rdx,
-        "rsi" => rsi, "rdi" => rdi, "rbp" => rbp, "rsp" => rsp,
-        "r8" => r8, "r9" => r9, "r10" => r10, "r11" => r11,
-        "r12" => r12, "r13" => r13, "r14" => r14, "r15" => r15,
+        "rax" => rax,
+        "rbx" => rbx,
+        "rcx" => rcx,
+        "rdx" => rdx,
+        "rsi" => rsi,
+        "rdi" => rdi,
+        "rbp" => rbp,
+        "rsp" => rsp,
+        "r8" => r8,
+        "r9" => r9,
+        "r10" => r10,
+        "r11" => r11,
+        "r12" => r12,
+        "r13" => r13,
+        "r14" => r14,
+        "r15" => r15,
         _ => return None,
     })
 }
@@ -121,7 +178,9 @@ fn number(s: &str) -> Option<i64> {
     // hiewLM writes virtual addresses as `.401000`; branch targets are already
     // absolute, so the marker only signals "hex" here.
     if let Some(va) = s.strip_prefix('.') {
-        return i64::from_str_radix(va, 16).ok().map(|v| if neg { -v } else { v });
+        return i64::from_str_radix(va, 16)
+            .ok()
+            .map(|v| if neg { -v } else { v });
     }
     let v = if let Some(h) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         i64::from_str_radix(h, 16).ok()?
@@ -131,7 +190,9 @@ fn number(s: &str) -> Option<i64> {
         i64::from_str_radix(h, 16).ok()?
     } else {
         // Bare token: hex if it looks like hex, else decimal.
-        i64::from_str_radix(s, 16).ok().or_else(|| s.parse::<i64>().ok())?
+        i64::from_str_radix(s, 16)
+            .ok()
+            .or_else(|| s.parse::<i64>().ok())?
     };
     Some(if neg { -v } else { v })
 }
@@ -234,12 +295,19 @@ fn operand(tok: &str) -> Result<Op, AsmError> {
                 break;
             }
         }
-        (bits, s.strip_prefix("ptr").map(str::trim_start).unwrap_or(s))
+        (
+            bits,
+            s.strip_prefix("ptr").map(str::trim_start).unwrap_or(s),
+        )
     };
     if let Some(inner) = rest.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
-        return memory(inner, size_bits).map(Op::Mem).ok_or_else(|| AsmError::Parse(t.into()));
+        return memory(inner, size_bits)
+            .map(Op::Mem)
+            .ok_or_else(|| AsmError::Parse(t.into()));
     }
-    number(&low).map(Op::Imm).ok_or_else(|| AsmError::Parse(t.into()))
+    number(&low)
+        .map(Op::Imm)
+        .ok_or_else(|| AsmError::Parse(t.into()))
 }
 
 /// `mov` is the one arith-shaped mnemonic whose 64-bit immediate form is
@@ -512,7 +580,9 @@ pub fn assemble(text: &str, bits: u8, rip: u64) -> Result<Vec<u8>, AsmError> {
     };
     res.map_err(|e| AsmError::Encode(e.to_string()))?;
 
-    let bytes = a.assemble(rip).map_err(|e| AsmError::Encode(e.to_string()))?;
+    let bytes = a
+        .assemble(rip)
+        .map_err(|e| AsmError::Encode(e.to_string()))?;
 
     // Guard against any other silent multi-instruction expansion: every
     // mnemonic in the supported subset encodes to a single instruction, and
@@ -529,8 +599,29 @@ pub fn assemble(text: &str, bits: u8, rip: u64) -> Result<Vec<u8>, AsmError> {
 fn is_branch(m: &str) -> bool {
     matches!(
         m,
-        "jmp" | "call" | "je" | "jz" | "jne" | "jnz" | "ja" | "jae" | "jb" | "jbe" | "jg" | "jge"
-            | "jl" | "jle" | "js" | "jns" | "jo" | "jno" | "jc" | "jnc" | "jp" | "jnp" | "loop"
+        "jmp"
+            | "call"
+            | "je"
+            | "jz"
+            | "jne"
+            | "jnz"
+            | "ja"
+            | "jae"
+            | "jb"
+            | "jbe"
+            | "jg"
+            | "jge"
+            | "jl"
+            | "jle"
+            | "js"
+            | "jns"
+            | "jo"
+            | "jno"
+            | "jc"
+            | "jnc"
+            | "jp"
+            | "jnp"
+            | "loop"
     )
 }
 
@@ -564,7 +655,10 @@ fn branch(a: &mut CodeAssembler, m: &str, target: u64) -> Result<(), iced_x86::I
 pub fn assemble_into(text: &str, bits: u8, rip: u64, slot: usize) -> Result<Vec<u8>, AsmError> {
     let mut bytes = assemble(text, bits, rip)?;
     if bytes.len() > slot {
-        return Err(AsmError::TooLong { got: bytes.len(), max: slot });
+        return Err(AsmError::TooLong {
+            got: bytes.len(),
+            max: slot,
+        });
     }
     bytes.resize(slot, 0x90);
     Ok(bytes)
@@ -652,7 +746,10 @@ mod tests {
     #[test]
     fn memory_operands() {
         assert_eq!(asm("mov eax, [rbx]", 64), vec![0x8B, 0x03]);
-        assert_eq!(asm("mov eax, dword ptr [rbx+8]", 64), vec![0x8B, 0x43, 0x08]);
+        assert_eq!(
+            asm("mov eax, dword ptr [rbx+8]", 64),
+            vec![0x8B, 0x43, 0x08]
+        );
         // Scaled index.
         let s = asm("mov eax, [rbx+rcx*4]", 64);
         assert_eq!(s[0], 0x8B);
@@ -686,9 +783,18 @@ mod tests {
     fn errors_are_specific_not_silent() {
         assert_eq!(assemble("", 64, 0), Err(AsmError::Empty));
         assert_eq!(assemble("   ", 64, 0), Err(AsmError::Empty));
-        assert!(matches!(assemble("frobnicate eax", 64, 0), Err(AsmError::Unsupported(_))));
-        assert!(matches!(assemble("mov eax, zzz", 64, 0), Err(AsmError::Parse(_))));
-        assert!(matches!(assemble("mov eax", 64, 0), Err(AsmError::Unsupported(_))));
+        assert!(matches!(
+            assemble("frobnicate eax", 64, 0),
+            Err(AsmError::Unsupported(_))
+        ));
+        assert!(matches!(
+            assemble("mov eax, zzz", 64, 0),
+            Err(AsmError::Parse(_))
+        ));
+        assert!(matches!(
+            assemble("mov eax", 64, 0),
+            Err(AsmError::Unsupported(_))
+        ));
     }
 
     #[test]
@@ -701,7 +807,10 @@ mod tests {
     #[test]
     fn assemble_into_refuses_to_overflow_the_slot() {
         let e = assemble_into("mov eax, 12345678", 64, 0x1000, 2);
-        assert!(matches!(e, Err(AsmError::TooLong { got: 5, max: 2 })), "{e:?}");
+        assert!(
+            matches!(e, Err(AsmError::TooLong { got: 5, max: 2 })),
+            "{e:?}"
+        );
     }
 
     #[test]

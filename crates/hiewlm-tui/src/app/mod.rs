@@ -175,8 +175,12 @@ pub enum DocPane {
 }
 
 impl DocPane {
-    pub const ALL: [DocPane; 4] =
-        [DocPane::Structure, DocPane::Findings, DocPane::Macros, DocPane::Info];
+    pub const ALL: [DocPane; 4] = [
+        DocPane::Structure,
+        DocPane::Findings,
+        DocPane::Macros,
+        DocPane::Info,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -219,38 +223,84 @@ pub struct PickEntry {
 }
 
 pub enum Dialog {
-    Goto { input: String },
-    Search { input: String, kind: SearchKind },
-    Calc { input: String },
+    Goto {
+        input: String,
+    },
+    Search {
+        input: String,
+        kind: SearchKind,
+    },
+    Calc {
+        input: String,
+    },
     /// Assemble-at-cursor: type an instruction, see the encoding, Enter patches.
-    Assemble { input: String },
-    ModeMenu { selected: usize },
-    DisasmMenu { selected: usize },
-    ColorMenu { selected: usize },
-    BlockMenu { selected: usize },
+    Assemble {
+        input: String,
+    },
+    ModeMenu {
+        selected: usize,
+    },
+    DisasmMenu {
+        selected: usize,
+    },
+    ColorMenu {
+        selected: usize,
+    },
+    BlockMenu {
+        selected: usize,
+    },
     /// Copy something to the system clipboard (OSC 52).
-    CopyMenu { selected: usize },
-    BlockWrite { input: String },
-    BlockFill { input: String },
+    CopyMenu {
+        selected: usize,
+    },
+    BlockWrite {
+        input: String,
+    },
+    BlockFill {
+        input: String,
+    },
     /// Crypt engine: XOR/ADD/ROL/… recipe applied to the selected block.
-    Crypt { input: String },
+    Crypt {
+        input: String,
+    },
     /// The same recipe syntax, but applied to the *view* instead of the bytes.
-    Lens { input: String },
+    Lens {
+        input: String,
+    },
     /// Fuzzy command launcher (`:`) — every command by name, for the ones whose
     /// letter you do not remember.
-    Palette { input: String, sel: usize },
+    Palette {
+        input: String,
+        sel: usize,
+    },
     /// Plaintext recovered from under a single-byte transform: Enter jumps there
     /// and puts the recovering recipe on the lens in one step.
-    XorHits { items: Vec<(String, u64, String)>, sel: usize, filter: String },
+    XorHits {
+        items: Vec<(String, u64, String)>,
+        sel: usize,
+        filter: String,
+    },
     /// Waiting for a digit 1-8 naming the slot to store the cursor in.
     BookmarkSlot,
-    Header { pane: HeaderPane, sel: usize, filter: String },
+    Header {
+        pane: HeaderPane,
+        sel: usize,
+        filter: String,
+    },
     /// The triage screen: one keystroke, every signal that decides whether this
     /// sample is worth opening. Panes mirror [`hiewlm_triage::Pane`].
-    Triage { pane: TriagePane, sel: usize, filter: String },
+    Triage {
+        pane: TriagePane,
+        sel: usize,
+        filter: String,
+    },
     /// Scrollable read-only text (help, inspector, hashes).
-    Comment { input: String },
-    NameBookmark { input: String },
+    Comment {
+        input: String,
+    },
+    NameBookmark {
+        input: String,
+    },
     /// An interactive directory browser used to pick an existing file.
     FilePicker {
         dir: PathBuf,
@@ -262,10 +312,24 @@ pub enum Dialog {
     /// `filter` narrows it as you type — these lists routinely hold thousands of
     /// entries (strings, functions), and arrowing through them is not triage.
     /// `sel` indexes the *filtered* view.
-    JumpList { title: String, items: Vec<(String, u64)>, sel: usize, filter: String },
+    JumpList {
+        title: String,
+        items: Vec<(String, u64)>,
+        sel: usize,
+        filter: String,
+    },
     /// Multi-file search results; Enter opens the file at the match.
-    FileHits { title: String, items: Vec<(String, PathBuf, u64)>, sel: usize, filter: String },
-    Message { title: String, body: String, scroll: usize },
+    FileHits {
+        title: String,
+        items: Vec<(String, PathBuf, u64)>,
+        sel: usize,
+        filter: String,
+    },
+    Message {
+        title: String,
+        body: String,
+        scroll: usize,
+    },
 }
 
 pub struct App {
@@ -385,8 +449,8 @@ pub struct App {
 
 impl App {
     pub fn open(path: PathBuf) -> Result<Self> {
-        let source = FileSource::open(&path)
-            .with_context(|| format!("cannot open {}", path.display()))?;
+        let source =
+            FileSource::open(&path).with_context(|| format!("cannot open {}", path.display()))?;
         let buffer = EditBuffer::new(Arc::new(source));
 
         let file_mtime = std::fs::metadata(&path)
@@ -422,7 +486,10 @@ impl App {
         // Config file overrides; otherwise auto-detect the text encoding.
         let cfg = crate::config::Config::load();
         let theme_kind = cfg.theme_kind().unwrap_or(crate::theme::ThemeKind::Classic);
-        let bytes_per_row = cfg.bytes_per_row.filter(|&n| (4..=64).contains(&n)).unwrap_or(16);
+        let bytes_per_row = cfg
+            .bytes_per_row
+            .filter(|&n| (4..=64).contains(&n))
+            .unwrap_or(16);
         let encoding = cfg.encoding().unwrap_or_else(|| {
             let mut sample = vec![0u8; buffer.len().min(4096) as usize];
             buffer.read_at(FileOffset(0), &mut sample);
@@ -488,22 +555,22 @@ impl App {
         let ready = if !ready.is_empty() {
             ready
         } else {
-        match &container {
-            Some(c) => format!(
-                "{}  ·  {} member(s){}  ·  1/? help · F12 members · q quit",
-                c.kind,
-                c.members.len(),
-                match c.suspicious().count() {
-                    0 => String::new(),
-                    n => format!("  ·  {n} SUSPICIOUS"),
-                }
-            ),
-            None => format!(
-                "{} {}  ·  1/? help · e edit · g goto · / find · q quit",
-                format.label(),
-                arch.label()
-            ),
-        }
+            match &container {
+                Some(c) => format!(
+                    "{}  ·  {} member(s){}  ·  1/? help · F12 members · q quit",
+                    c.kind,
+                    c.members.len(),
+                    match c.suspicious().count() {
+                        0 => String::new(),
+                        n => format!("  ·  {n} SUSPICIOUS"),
+                    }
+                ),
+                None => format!(
+                    "{} {}  ·  1/? help · e edit · g goto · / find · q quit",
+                    format.label(),
+                    arch.label()
+                ),
+            }
         };
 
         // VA -> name, so a call through the IAT can be shown by name.
@@ -710,7 +777,14 @@ impl App {
         } else {
             self.buffer.overwrite(FileOffset(self.cursor), &bytes);
         }
-        self.set_status(format!("Pasted {n} bytes ({} mode).", if self.insert_mode { "insert" } else { "overwrite" }));
+        self.set_status(format!(
+            "Pasted {n} bytes ({} mode).",
+            if self.insert_mode {
+                "insert"
+            } else {
+                "overwrite"
+            }
+        ));
     }
 
     fn block_delete(&mut self) {
@@ -737,7 +811,9 @@ impl App {
             }
             Err(e) => {
                 self.set_status(format!("Crypt: {e}"));
-                self.dialog = Some(Dialog::Crypt { input: input.to_string() });
+                self.dialog = Some(Dialog::Crypt {
+                    input: input.to_string(),
+                });
             }
         }
     }
@@ -827,7 +903,11 @@ impl App {
             "Inserted {} byte(s) at {}{}",
             bytes.len(),
             self.display_addr(at),
-            if self.clipboard.is_empty() { " (zero; yank with y to insert data)" } else { "" }
+            if self.clipboard.is_empty() {
+                " (zero; yank with y to insert data)"
+            } else {
+                ""
+            }
         ));
     }
 
@@ -841,7 +921,7 @@ impl App {
             Ok(data) => {
                 let at = self.cursor;
                 self.buffer.insert(FileOffset(at), &data);
-                        self.set_status(format!(
+                self.set_status(format!(
                     "Inserted {} bytes from {} at {}",
                     data.len(),
                     path.display(),
@@ -929,9 +1009,16 @@ impl App {
             return;
         }
         self.file_entropy = Some(self.range_entropy(0, self.buffer.len()));
-        let secs: Vec<(u64, u64)> =
-            self.address_space.sections().iter().map(|s| (s.file_off, s.size)).collect();
-        self.section_entropy = secs.iter().map(|&(o, l)| self.range_entropy(o, l)).collect();
+        let secs: Vec<(u64, u64)> = self
+            .address_space
+            .sections()
+            .iter()
+            .map(|s| (s.file_off, s.size))
+            .collect();
+        self.section_entropy = secs
+            .iter()
+            .map(|&(o, l)| self.range_entropy(o, l))
+            .collect();
         if self.format == Format::Pe && !self.imports.is_empty() {
             self.imphash = Some(self.compute_imphash());
         }
@@ -1016,7 +1103,11 @@ impl App {
             remaining -= n as u64;
         }
 
-        let scope = if self.selection().is_some() { "selection" } else { "whole file" };
+        let scope = if self.selection().is_some() {
+            "selection"
+        } else {
+            "whole file"
+        };
         let body = format!(
             "range   {:#x}..{:#x}  ({len} bytes, {scope})\n\
              \n\
@@ -1031,7 +1122,11 @@ impl App {
             hex_bytes(&sha.finalize()),
             blake.finalize().to_hex(),
         );
-        self.dialog = Some(Dialog::Message { title: "Hashes".into(), body, scroll: 0 });
+        self.dialog = Some(Dialog::Message {
+            title: "Hashes".into(),
+            body,
+            scroll: 0,
+        });
     }
 
     // -- Multi-file search -------------------------------------------
@@ -1057,7 +1152,11 @@ impl App {
             self.set_status("Search first (/), then x to search all files in the folder.");
             return;
         };
-        let root = self.path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
+        let root = self
+            .path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
         let mut hits: Vec<(String, PathBuf, u64)> = Vec::new();
         let mut file_budget = 3000usize;
         let mut stack = vec![root.clone()];
@@ -1077,14 +1176,26 @@ impl App {
                         break;
                     }
                     file_budget -= 1;
-                    if entry.metadata().map(|m| m.len() > 64 * 1024 * 1024).unwrap_or(true) {
+                    if entry
+                        .metadata()
+                        .map(|m| m.len() > 64 * 1024 * 1024)
+                        .unwrap_or(true)
+                    {
                         continue;
                     }
                     if let Ok(src) = FileSource::open(&path) {
                         let buf = EditBuffer::new(Arc::new(src));
                         if let Some(hit) = find(&buf, &pattern, FileOffset(0), Direction::Forward) {
-                            let name = path.strip_prefix(&root).unwrap_or(&path).to_string_lossy().into_owned();
-                            hits.push((format!("{name}  @ {:08X}", hit.get()), path.clone(), hit.get()));
+                            let name = path
+                                .strip_prefix(&root)
+                                .unwrap_or(&path)
+                                .to_string_lossy()
+                                .into_owned();
+                            hits.push((
+                                format!("{name}  @ {:08X}", hit.get()),
+                                path.clone(),
+                                hit.get(),
+                            ));
                         }
                     }
                 }
@@ -1140,14 +1251,27 @@ impl App {
              float32 {} LE\n\
              float64 {} LE\n\
              time_t  {} (unix seconds, LE u32)",
-            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
-            b[0] as i8, b[0],
-            i16::from_le_bytes([b[0], b[1]]), i16::from_be_bytes([b[0], b[1]]),
-            u16le, u16be,
-            u32le as i32, u32be as i32,
-            u32le, u32be,
+            b[0],
+            b[1],
+            b[2],
+            b[3],
+            b[4],
+            b[5],
+            b[6],
+            b[7],
+            b[0] as i8,
+            b[0],
+            i16::from_le_bytes([b[0], b[1]]),
+            i16::from_be_bytes([b[0], b[1]]),
+            u16le,
+            u16be,
+            u32le as i32,
+            u32be as i32,
+            u32le,
+            u32be,
             u64le as i64,
-            u64le, u64be,
+            u64le,
+            u64be,
             f32::from_le_bytes([b[0], b[1], b[2], b[3]]),
             f64::from_le_bytes(b),
             u32le,
@@ -1162,7 +1286,10 @@ impl App {
     // -- File picker -------------------------------------------------
 
     fn list_dir(dir: &std::path::Path) -> Vec<PickEntry> {
-        let mut entries = vec![PickEntry { name: "..".into(), is_dir: true }];
+        let mut entries = vec![PickEntry {
+            name: "..".into(),
+            is_dir: true,
+        }];
         if let Ok(rd) = fs::read_dir(dir) {
             let mut items: Vec<PickEntry> = rd
                 .flatten()
@@ -1192,7 +1319,12 @@ impl App {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."));
         let entries = Self::list_dir(&dir);
-        self.dialog = Some(Dialog::FilePicker { dir, entries, sel: 0, purpose });
+        self.dialog = Some(Dialog::FilePicker {
+            dir,
+            entries,
+            sel: 0,
+            purpose,
+        });
     }
 
     fn picker_pick(&mut self, purpose: PickPurpose, path: &str) {
@@ -1324,13 +1456,22 @@ impl App {
             .iter()
             .map(|f| {
                 (
-                    format!("{:<18} {}  = {}", f.name, self.display_addr(f.offset), f.value),
+                    format!(
+                        "{:<18} {}  = {}",
+                        f.name,
+                        self.display_addr(f.offset),
+                        f.value
+                    ),
                     f.offset,
                 )
             })
             .collect::<Vec<_>>();
         self.dialog = Some(Dialog::JumpList {
-            title: format!("Struct @ {} ({} bytes)", self.display_addr(base), tpl.total_size()),
+            title: format!(
+                "Struct @ {} ({} bytes)",
+                self.display_addr(base),
+                tpl.total_size()
+            ),
             items,
             sel: 0,
             filter: String::new(),
@@ -1362,7 +1503,11 @@ impl App {
         let Some((start, end)) = self.selection() else {
             return;
         };
-        self.markers.push(Marker { start, end, color: idx % crate::theme::Theme::MARKER_COLORS });
+        self.markers.push(Marker {
+            start,
+            end,
+            color: idx % crate::theme::Theme::MARKER_COLORS,
+        });
         self.mark = None;
         self.save_notes();
         self.set_status(format!(
@@ -1390,9 +1535,18 @@ impl App {
         starts.sort_unstable();
         starts.dedup();
         let target = if forward {
-            starts.iter().find(|&&s| s > self.cursor).copied().or_else(|| starts.first().copied())
+            starts
+                .iter()
+                .find(|&&s| s > self.cursor)
+                .copied()
+                .or_else(|| starts.first().copied())
         } else {
-            starts.iter().rev().find(|&&s| s < self.cursor).copied().or_else(|| starts.last().copied())
+            starts
+                .iter()
+                .rev()
+                .find(|&&s| s < self.cursor)
+                .copied()
+                .or_else(|| starts.last().copied())
         };
         if let Some(off) = target {
             self.record_jump();
@@ -1441,7 +1595,10 @@ impl App {
             self.set_status("Comment removed.");
         } else {
             self.comments.insert(self.cursor, t.to_string());
-            self.set_status(format!("Comment set at {} (saved)", self.display_addr(self.cursor)));
+            self.set_status(format!(
+                "Comment set at {} (saved)",
+                self.display_addr(self.cursor)
+            ));
         }
         self.save_notes();
         self.dialog = None;
@@ -1464,7 +1621,12 @@ impl App {
         if let Some(c) = &self.container {
             for m in &c.members {
                 items.push((
-                    format!("member    {}  {}  {}", self.display_addr(m.offset), m.name, m.detail),
+                    format!(
+                        "member    {}  {}  {}",
+                        self.display_addr(m.offset),
+                        m.name,
+                        m.detail
+                    ),
                     m.offset,
                 ));
             }
@@ -1472,7 +1634,10 @@ impl App {
         // `ar` archives come from the executable parser, not a plugin.
         if self.format.is_container() {
             for (name, off) in &self.exports {
-                items.push((format!("member    {}  {name}", self.display_addr(*off)), *off));
+                items.push((
+                    format!("member    {}  {name}", self.display_addr(*off)),
+                    *off,
+                ));
             }
         }
         if let Some(va) = self.entry {
@@ -1481,15 +1646,24 @@ impl App {
             }
         }
         for s in self.address_space.sections() {
-            items.push((format!("section   {:<16} .{:08X}", s.name, s.va), s.file_off));
+            items.push((
+                format!("section   {:<16} .{:08X}", s.name, s.va),
+                s.file_off,
+            ));
         }
         for (i, slot) in self.slots.iter().enumerate() {
             if let Some(off) = slot {
-                items.push((format!("slot {}     {}", i + 1, self.display_addr(*off)), *off));
+                items.push((
+                    format!("slot {}     {}", i + 1, self.display_addr(*off)),
+                    *off,
+                ));
             }
         }
         for (name, off) in &self.named_bookmarks {
-            items.push((format!("bookmark  {}  {name}", self.display_addr(*off)), *off));
+            items.push((
+                format!("bookmark  {}  {name}", self.display_addr(*off)),
+                *off,
+            ));
         }
         for (off, c) in &self.comments {
             items.push((format!("comment   {}  {c}", self.display_addr(*off)), *off));
@@ -1530,7 +1704,11 @@ impl App {
                 let text: String = f.text.chars().take(160).collect();
                 let warn = if f.kinds.is_empty() { "" } else { "!" };
                 (
-                    format!("{warn}{} {} {tags}{text}", self.display_addr(f.offset), f.enc.label()),
+                    format!(
+                        "{warn}{} {} {tags}{text}",
+                        self.display_addr(f.offset),
+                        f.enc.label()
+                    ),
                     f.offset,
                 )
             })
@@ -1563,9 +1741,17 @@ impl App {
             Arch::Arm64 if ins.len == 4 => vec![0x1f, 0x20, 0x03, 0xd5], // nop
             _ => vec![0x90u8; ins.len], // x86/x64 nop, or byte-fill
         };
-        let filler = if filler.len() == ins.len { filler } else { vec![0x90u8; ins.len] };
+        let filler = if filler.len() == ins.len {
+            filler
+        } else {
+            vec![0x90u8; ins.len]
+        };
         self.buffer.overwrite(FileOffset(ins.offset), &filler);
-        self.set_status(format!("NOP'd {} byte(s) at {}", ins.len, self.display_addr(ins.offset)));
+        self.set_status(format!(
+            "NOP'd {} byte(s) at {}",
+            ins.len,
+            self.display_addr(ins.offset)
+        ));
     }
 
     /// Encode `text` for the instruction under the cursor. Returns the bytes
@@ -1602,7 +1788,9 @@ impl App {
             Ok(v) => v,
             Err(e) => {
                 self.set_status(format!("Assemble: {e}"));
-                self.dialog = Some(Dialog::Assemble { input: text.to_string() });
+                self.dialog = Some(Dialog::Assemble {
+                    input: text.to_string(),
+                });
                 return;
             }
         };
@@ -1611,7 +1799,9 @@ impl App {
                 "Assemble: {} bytes won't fit the {slot}-byte instruction (use a shorter form).",
                 bytes.len()
             ));
-            self.dialog = Some(Dialog::Assemble { input: text.to_string() });
+            self.dialog = Some(Dialog::Assemble {
+                input: text.to_string(),
+            });
             return;
         }
         let mut patch = bytes.clone();
@@ -1621,7 +1811,11 @@ impl App {
         self.set_status(format!(
             "Assembled {} byte(s){} at {}",
             bytes.len(),
-            if pad > 0 { format!(" + {pad} NOP") } else { String::new() },
+            if pad > 0 {
+                format!(" + {pad} NOP")
+            } else {
+                String::new()
+            },
             self.display_addr(start)
         ));
     }
@@ -1744,7 +1938,9 @@ impl App {
         while let Some(start) = work.pop() {
             let mut off = start;
             while budget > 0 && off < self.buffer.len() && !insns.contains_key(&off) {
-                let Some(ins) = self.disasm_from(off, 1).into_iter().next() else { break };
+                let Some(ins) = self.disasm_from(off, 1).into_iter().next() else {
+                    break;
+                };
                 budget -= 1;
                 let next = ins.offset + ins.len as u64;
                 let flow = ins.flow;
@@ -1785,7 +1981,10 @@ impl App {
                 continue;
             }
             bno += 1;
-            body.push_str(&format!("── block {bno}  {} ──\n", self.display_addr(start)));
+            body.push_str(&format!(
+                "── block {bno}  {} ──\n",
+                self.display_addr(start)
+            ));
             let mut last: Option<&Insn> = None;
             while i < addrs.len() {
                 let a = addrs[i];
@@ -1832,7 +2031,12 @@ impl App {
             return;
         }
         let target = self.va_of(self.cursor);
-        let refs = self.analyze().xrefs.get(&target).cloned().unwrap_or_default();
+        let refs = self
+            .analyze()
+            .xrefs
+            .get(&target)
+            .cloned()
+            .unwrap_or_default();
         if refs.is_empty() {
             self.set_status(format!("No xrefs to {}", self.display_addr(self.cursor)));
             return;
@@ -1840,12 +2044,26 @@ impl App {
         let items = refs
             .into_iter()
             .map(|off| {
-                let text = self.disasm_from(off, 1).into_iter().next().map(|i| i.text).unwrap_or_default();
+                let text = self
+                    .disasm_from(off, 1)
+                    .into_iter()
+                    .next()
+                    .map(|i| i.text)
+                    .unwrap_or_default();
                 (format!("{}  {text}", self.display_addr(off)), off)
             })
             .collect::<Vec<_>>();
-        let title = format!("Xrefs to {} ({})", self.display_addr(self.cursor), items.len());
-        self.dialog = Some(Dialog::JumpList { title, items, sel: 0, filter: String::new() });
+        let title = format!(
+            "Xrefs to {} ({})",
+            self.display_addr(self.cursor),
+            items.len()
+        );
+        self.dialog = Some(Dialog::JumpList {
+            title,
+            items,
+            sel: 0,
+            filter: String::new(),
+        });
     }
 
     /// Jump to `off`, remembering the current spot for Backspace.
@@ -1951,8 +2169,17 @@ impl App {
     }
 
     fn extract_resource(&mut self, r: &hiewlm_core::Resource) {
-        let dir = self.path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
-        let fname = format!("res_{}_{}_{}.bin", sanitize(&r.type_name), sanitize(&r.name), r.lang);
+        let dir = self
+            .path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let fname = format!(
+            "res_{}_{}_{}.bin",
+            sanitize(&r.type_name),
+            sanitize(&r.name),
+            r.lang
+        );
         let path = dir.join(&fname);
         let size = r.size.min(64 * 1024 * 1024) as usize;
         let mut data = vec![0u8; size];
@@ -2004,7 +2231,10 @@ impl App {
         };
         self.named_bookmarks.push((label, self.cursor));
         self.save_notes();
-        self.set_status(format!("Bookmark saved ({} total). F12 to jump.", self.named_bookmarks.len()));
+        self.set_status(format!(
+            "Bookmark saved ({} total). F12 to jump.",
+            self.named_bookmarks.len()
+        ));
         self.dialog = None;
     }
 
@@ -2015,7 +2245,10 @@ impl App {
                 if self.mode == Mode::Code && self.code_supported() {
                     self.enter_code();
                 }
-                self.set_status(format!("Returned to bookmark ({} left).", self.bookmarks.len()));
+                self.set_status(format!(
+                    "Returned to bookmark ({} left).",
+                    self.bookmarks.len()
+                ));
             }
             None => self.set_status("Bookmark stack is empty (+ to push)."),
         }
@@ -2093,7 +2326,9 @@ impl App {
     /// Convert a branch target VA back to a file offset (identity when unmapped).
     fn va_to_off(&self, va: u64) -> Option<u64> {
         if self.address_space.is_mapped() {
-            self.address_space.offset_of(hiewlm_core::Va(va)).map(|o| o.get())
+            self.address_space
+                .offset_of(hiewlm_core::Va(va))
+                .map(|o| o.get())
         } else {
             Some(va)
         }
@@ -2110,7 +2345,12 @@ impl App {
         // Through the lens, so an encrypted stub disassembles as what it will be
         // at runtime without patching the sample first.
         self.view_bytes(off, &mut data);
-        Disassembler::new(self.disasm_arch, self.disasm_bits).decode(&data, off, self.va_of(off), count)
+        Disassembler::new(self.disasm_arch, self.disasm_bits).decode(
+            &data,
+            off,
+            self.va_of(off),
+            count,
+        )
     }
 
     /// The start offset of the instruction containing the cursor.
@@ -2211,7 +2451,11 @@ impl App {
     /// Follow the branch/call under the cursor to its target.
     fn follow_branch(&mut self) {
         let start = self.cursor_insn_start();
-        let target = self.disasm_from(start, 1).into_iter().next().and_then(|i| i.target);
+        let target = self
+            .disasm_from(start, 1)
+            .into_iter()
+            .next()
+            .and_then(|i| i.target);
         let Some(va) = target else {
             self.set_status("Cursor is not on a branch/call instruction.");
             return;
@@ -2272,7 +2516,9 @@ impl App {
         self.nibble = 0;
         if self.mode == Mode::Code {
             self.edit_col = EditCol::Hex;
-            self.set_status("EDIT opcode bytes: type hex to patch (disasm updates live) · F9 save · Esc cancel");
+            self.set_status(
+                "EDIT opcode bytes: type hex to patch (disasm updates live) · F9 save · Esc cancel",
+            );
         } else {
             self.set_status("EDITMODE · Tab switches column · F9 save · Esc cancel");
         }
@@ -2390,8 +2636,7 @@ impl App {
             SearchKind::Hex => Pattern::from_hex(input).map_err(|_| "Invalid hex string.".into()),
             SearchKind::Utf16 => {
                 // UTF-16LE: each unit little-endian, so ASCII gains a 0x00 pad.
-                let bytes: Vec<u8> =
-                    input.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+                let bytes: Vec<u8> = input.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
                 if bytes.is_empty() {
                     return Err("Empty search string.".into());
                 }
@@ -2434,8 +2679,9 @@ impl App {
     fn run_search(&mut self, pattern: Pattern, dir: Direction, from: u64) {
         let hit = find(&self.buffer, &pattern, FileOffset(from), dir).filter(|h| {
             // Outside the marked block does not count when a scope is active.
-            self.search_scope
-                .map_or(true, |(s, e)| h.get() >= s && h.get() + pattern.len() as u64 <= e + 1)
+            self.search_scope.map_or(true, |(s, e)| {
+                h.get() >= s && h.get() + pattern.len() as u64 <= e + 1
+            })
         });
         match hit {
             Some(hit) => {
@@ -2444,7 +2690,10 @@ impl App {
                 if self.mode == Mode::Code && self.code_supported() {
                     self.enter_code();
                 }
-                self.set_status(format!("Found at {} · Esc clears highlight", self.display_addr(hit.get())));
+                self.set_status(format!(
+                    "Found at {} · Esc clears highlight",
+                    self.display_addr(hit.get())
+                ));
             }
             None => {
                 self.macro_search_failed = true;
@@ -2543,7 +2792,6 @@ impl App {
         }
     }
 
-
     // -- Command dispatch --------------------------------------------
 
     pub fn apply(&mut self, cmd: Command) {
@@ -2581,7 +2829,9 @@ impl App {
                 }
             }
             Command::OpenModeMenu => {
-                self.dialog = Some(Dialog::ModeMenu { selected: mode_index(self.mode) });
+                self.dialog = Some(Dialog::ModeMenu {
+                    selected: mode_index(self.mode),
+                });
                 self.set_status("Pick mode: 1 Hex · 2 Code · 3 Text · Enter/arrows · Esc");
             }
             Command::SetMode(m) => {
@@ -2700,7 +2950,9 @@ impl App {
             Command::CopyItem(i) => self.copy_item(i),
             Command::OpenBlockWrite => {
                 if self.selection().is_some() {
-                    self.dialog = Some(Dialog::BlockWrite { input: String::new() });
+                    self.dialog = Some(Dialog::BlockWrite {
+                        input: String::new(),
+                    });
                 } else {
                     self.set_status("Select a block first (press * then move).");
                 }
@@ -2728,11 +2980,17 @@ impl App {
                 if self.selection().is_none() {
                     self.set_status("Crypt needs a block: mark with * or v first.");
                 } else {
-                    self.dialog = Some(Dialog::Crypt { input: String::new() });
+                    self.dialog = Some(Dialog::Crypt {
+                        input: String::new(),
+                    });
                 }
             }
             Command::OpenLens => {
-                let current = self.lens.as_ref().map(|(_, l)| l.clone()).unwrap_or_default();
+                let current = self
+                    .lens
+                    .as_ref()
+                    .map(|(_, l)| l.clone())
+                    .unwrap_or_default();
                 self.dialog = Some(Dialog::Lens { input: current });
             }
             Command::XorSearch => self.xor_search(),
@@ -2741,14 +2999,20 @@ impl App {
             Command::DocMove(d) => self.doc_move(d),
             Command::DocPageMove(d) => self.doc_move(d * LIST_PAGE as i64),
             Command::DocPane(d) => {
-                self.doc_pane = if d > 0 { self.doc_pane.next() } else { self.doc_pane.prev() };
+                self.doc_pane = if d > 0 {
+                    self.doc_pane.next()
+                } else {
+                    self.doc_pane.prev()
+                };
                 self.doc_sel = 0;
             }
             Command::DocActivate => self.doc_activate(),
             Command::HScroll(d) => self.hscroll_by(d),
             Command::OpenBlockFill => {
                 if self.selection().is_some() {
-                    self.dialog = Some(Dialog::BlockFill { input: String::new() });
+                    self.dialog = Some(Dialog::BlockFill {
+                        input: String::new(),
+                    });
                 } else {
                     self.set_status("Select a block first (press * then move).");
                 }
@@ -2771,7 +3035,10 @@ impl App {
             Command::OpenFile => self.open_file_picker(PickPurpose::Open),
             Command::FolderTriage => self.folder_triage(),
             Command::OpenPalette => {
-                self.dialog = Some(Dialog::Palette { input: String::new(), sel: 0 });
+                self.dialog = Some(Dialog::Palette {
+                    input: String::new(),
+                    sel: 0,
+                });
                 self.set_status("Type a command name · Enter runs it · Esc cancels");
             }
             Command::SearchAll => self.search_all(),
@@ -2790,18 +3057,28 @@ impl App {
             Command::PrevDiff => self.next_diff(false),
             Command::OpenStruct => self.open_file_picker(PickPurpose::StructTemplate),
             Command::OpenInspector => self.open_inspector(),
-            Command::OpenCalc => self.dialog = Some(Dialog::Calc { input: String::new() }),
+            Command::OpenCalc => {
+                self.dialog = Some(Dialog::Calc {
+                    input: String::new(),
+                })
+            }
             Command::OpenAssemble => {
                 if self.mode != Mode::Code {
                     self.set_status("Assemble works in Code mode (Enter cycles mode).");
                 } else if !matches!(self.disasm_arch, Arch::X86 | Arch::X86_64) {
                     self.set_status("Assemble supports x86/x86-64 only.");
                 } else {
-                    self.dialog = Some(Dialog::Assemble { input: String::new() });
+                    self.dialog = Some(Dialog::Assemble {
+                        input: String::new(),
+                    });
                 }
             }
             Command::OpenHashes => self.open_hashes(),
-            Command::OpenNameBookmark => self.dialog = Some(Dialog::NameBookmark { input: String::new() }),
+            Command::OpenNameBookmark => {
+                self.dialog = Some(Dialog::NameBookmark {
+                    input: String::new(),
+                })
+            }
             Command::MultiSearch => self.multi_search(),
             Command::ToggleTheme => {
                 self.theme_kind = self.theme_kind.next();
@@ -2813,7 +3090,11 @@ impl App {
             }
             Command::ToggleInsert => {
                 self.insert_mode = !self.insert_mode;
-                let s = if self.insert_mode { "insert" } else { "overwrite" };
+                let s = if self.insert_mode {
+                    "insert"
+                } else {
+                    "overwrite"
+                };
                 self.set_status(format!("Input mode: {s}"));
             }
             Command::ToggleWritable => self.toggle_writable(),
@@ -2854,11 +3135,22 @@ impl App {
                     self.set_status("Nothing to redo.");
                 }
             }
-            Command::OpenGoto => self.dialog = Some(Dialog::Goto { input: String::new() }),
+            Command::OpenGoto => {
+                self.dialog = Some(Dialog::Goto {
+                    input: String::new(),
+                })
+            }
             Command::OpenSearch => {
-                let kind = if self.mode == Mode::Text { SearchKind::Text } else { SearchKind::Hex };
+                let kind = if self.mode == Mode::Text {
+                    SearchKind::Text
+                } else {
+                    SearchKind::Hex
+                };
                 self.search_hist_pos = 0;
-                self.dialog = Some(Dialog::Search { input: String::new(), kind });
+                self.dialog = Some(Dialog::Search {
+                    input: String::new(),
+                    kind,
+                });
                 self.set_status("Tab: hex/text/text-i/utf-16/asm · ↑↓ history · Ctrl+A lists all");
             }
             Command::FindNext => self.find_next(),
@@ -3120,7 +3412,11 @@ fn sanitize(s: &str) -> String {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
-    if cleaned.is_empty() { "x".into() } else { cleaned }
+    if cleaned.is_empty() {
+        "x".into()
+    } else {
+        cleaned
+    }
 }
 
 /// Lowercase hex encoding of a byte slice.
@@ -3180,7 +3476,9 @@ fn decode_run(bytes: &[u8], min: usize) -> Option<String> {
     let even = bytes.len() & !1;
     let wide = &bytes[..even];
     if !wide.is_empty()
-        && wide.chunks_exact(2).all(|c| c[1] == 0 && (printable(c[0]) || c[0] == 0))
+        && wide
+            .chunks_exact(2)
+            .all(|c| c[1] == 0 && (printable(c[0]) || c[0] == 0))
     {
         let text: String = wide
             .chunks_exact(2)
@@ -3193,8 +3491,12 @@ fn decode_run(bytes: &[u8], min: usize) -> Option<String> {
         }
     }
 
-    let text: String =
-        bytes.iter().copied().take_while(|&b| b != 0).map(|b| b as char).collect();
+    let text: String = bytes
+        .iter()
+        .copied()
+        .take_while(|&b| b != 0)
+        .map(|b| b as char)
+        .collect();
     (text.chars().count() >= min && text.bytes().all(printable)).then_some(text)
 }
 
@@ -3243,5 +3545,7 @@ fn apply_header_filter(
         return raw;
     }
     let needle = filter.to_lowercase();
-    raw.into_iter().filter(|(l, _)| l.to_lowercase().contains(&needle)).collect()
+    raw.into_iter()
+        .filter(|(l, _)| l.to_lowercase().contains(&needle))
+        .collect()
 }

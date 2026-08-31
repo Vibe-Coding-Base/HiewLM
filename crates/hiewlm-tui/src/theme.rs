@@ -202,7 +202,10 @@ impl Theme {
 
     /// Style for a row reporting something suspicious.
     pub fn warn(&self) -> Style {
-        Style::default().bg(self.dialog_bg).fg(self.warn_fg).add_modifier(Modifier::BOLD)
+        Style::default()
+            .bg(self.dialog_bg)
+            .fg(self.warn_fg)
+            .add_modifier(Modifier::BOLD)
     }
 
     /// Number of distinct marker colors.
@@ -211,21 +214,25 @@ impl Theme {
     /// Background style for colored block marker `idx` (0..8), white text.
     pub fn marker(&self, idx: u8) -> Style {
         const PALETTE: [(u8, u8, u8); 8] = [
-            (150, 40, 40),   // red
-            (40, 110, 50),   // green
-            (40, 70, 150),   // blue
-            (140, 110, 30),  // yellow/olive
-            (120, 50, 130),  // magenta
-            (30, 110, 120),  // cyan/teal
-            (160, 90, 30),   // orange
-            (90, 90, 95),    // gray
+            (150, 40, 40),  // red
+            (40, 110, 50),  // green
+            (40, 70, 150),  // blue
+            (140, 110, 30), // yellow/olive
+            (120, 50, 130), // magenta
+            (30, 110, 120), // cyan/teal
+            (160, 90, 30),  // orange
+            (90, 90, 95),   // gray
         ];
         let (r, g, b) = PALETTE[(idx as usize) % 8];
-        Style::default().bg(Color::Rgb(r, g, b)).fg(Color::Rgb(240, 240, 240))
+        Style::default()
+            .bg(Color::Rgb(r, g, b))
+            .fg(Color::Rgb(240, 240, 240))
     }
 
     pub fn marker_name(idx: u8) -> &'static str {
-        ["red", "green", "blue", "yellow", "magenta", "cyan", "orange", "gray"][(idx as usize) % 8]
+        [
+            "red", "green", "blue", "yellow", "magenta", "cyan", "orange", "gray",
+        ][(idx as usize) % 8]
     }
 
     pub fn dialog(&self) -> Style {

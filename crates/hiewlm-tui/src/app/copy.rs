@@ -22,9 +22,27 @@ impl super::App {
         }
         let sel = self.read_selection();
         let what: (String, String) = match idx {
-            0 => ("SHA-256".into(), self.triage.as_ref().map(|t| t.hashes.sha256.clone()).unwrap_or_default()),
-            1 => ("MD5".into(), self.triage.as_ref().map(|t| t.hashes.md5.clone()).unwrap_or_default()),
-            2 => ("ssdeep".into(), self.triage.as_ref().map(|t| t.hashes.ssdeep.clone()).unwrap_or_default()),
+            0 => (
+                "SHA-256".into(),
+                self.triage
+                    .as_ref()
+                    .map(|t| t.hashes.sha256.clone())
+                    .unwrap_or_default(),
+            ),
+            1 => (
+                "MD5".into(),
+                self.triage
+                    .as_ref()
+                    .map(|t| t.hashes.md5.clone())
+                    .unwrap_or_default(),
+            ),
+            2 => (
+                "ssdeep".into(),
+                self.triage
+                    .as_ref()
+                    .map(|t| t.hashes.ssdeep.clone())
+                    .unwrap_or_default(),
+            ),
             3 => (
                 "imphash".into(),
                 self.triage
@@ -32,13 +50,35 @@ impl super::App {
                     .and_then(|t| t.hashes.imphash.clone())
                     .unwrap_or_else(|| "(no import hash: not a PE, or no imports)".into()),
             ),
-            4 => ("block as hex".into(), sel.map(|b| crate::clipboard::as_hex(&b)).unwrap_or_default()),
-            5 => ("block as C array".into(), sel.map(|b| crate::clipboard::as_c_array(&b)).unwrap_or_default()),
-            6 => ("block as Python".into(), sel.map(|b| crate::clipboard::as_python(&b)).unwrap_or_default()),
+            4 => (
+                "block as hex".into(),
+                sel.map(|b| crate::clipboard::as_hex(&b))
+                    .unwrap_or_default(),
+            ),
+            5 => (
+                "block as C array".into(),
+                sel.map(|b| crate::clipboard::as_c_array(&b))
+                    .unwrap_or_default(),
+            ),
+            6 => (
+                "block as Python".into(),
+                sel.map(|b| crate::clipboard::as_python(&b))
+                    .unwrap_or_default(),
+            ),
             7 => (
                 "block as text".into(),
-                sel.map(|b| b.iter().map(|&c| if (0x20..0x7f).contains(&c) { c as char } else { '.' }).collect())
-                    .unwrap_or_default(),
+                sel.map(|b| {
+                    b.iter()
+                        .map(|&c| {
+                            if (0x20..0x7f).contains(&c) {
+                                c as char
+                            } else {
+                                '.'
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             ),
             8 => ("address".into(), self.display_addr(self.cursor)),
             9 => (
@@ -56,20 +96,30 @@ impl super::App {
             ),
             10 => (
                 "triage report".into(),
-                self.triage.as_ref().map(hiewlm_triage::render::text).unwrap_or_default(),
+                self.triage
+                    .as_ref()
+                    .map(hiewlm_triage::render::text)
+                    .unwrap_or_default(),
             ),
             _ => (
                 "Markdown report".into(),
-                self.triage.as_ref().map(hiewlm_triage::render::markdown).unwrap_or_default(),
+                self.triage
+                    .as_ref()
+                    .map(hiewlm_triage::render::markdown)
+                    .unwrap_or_default(),
             ),
         };
         let (label, text) = what;
         if text.is_empty() {
-            self.set_status(format!("Nothing to copy for {label} (mark a block with * first?)"));
+            self.set_status(format!(
+                "Nothing to copy for {label} (mark a block with * first?)"
+            ));
             return;
         }
         match crate::clipboard::copy(&text) {
-            Ok(n) => self.set_status(format!("Copied {label} ({n} bytes) to the system clipboard.")),
+            Ok(n) => self.set_status(format!(
+                "Copied {label} ({n} bytes) to the system clipboard."
+            )),
             Err(e) => self.set_status(format!("Copy failed: {e}")),
         }
     }
@@ -92,5 +142,4 @@ impl super::App {
             Err(e) => self.set_status(format!("Cannot write the report: {e}")),
         }
     }
-
 }

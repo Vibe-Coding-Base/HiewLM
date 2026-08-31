@@ -77,12 +77,21 @@ impl super::App {
                         v.push((format!("{k:<18} {val}"), None));
                     }
                     for f in &c.findings {
-                        v.push((format!("{:<18} [{}] {}", "", f.severity, f.message), f.offset));
+                        v.push((
+                            format!("{:<18} [{}] {}", "", f.severity, f.message),
+                            f.offset,
+                        ));
                     }
                     return apply_header_filter(v, filter);
                 }
                 v.push((
-                    format!("{:<18} {} / {} / {}-bit", "Format", self.format.label(), self.arch.label(), self.bits),
+                    format!(
+                        "{:<18} {} / {} / {}-bit",
+                        "Format",
+                        self.format.label(),
+                        self.arch.label(),
+                        self.bits
+                    ),
                     None,
                 ));
                 if let Some(t) = &self.file_mtime {
@@ -117,7 +126,10 @@ impl super::App {
                 .map(|(i, s)| {
                     let ent = self.section_entropy.get(i).copied().unwrap_or(0.0);
                     (
-                        format!("{:<12} off:{:08X} va:.{:08X} size:{:>8X} ent:{:.2}", s.name, s.file_off, s.va, s.size, ent),
+                        format!(
+                            "{:<12} off:{:08X} va:.{:08X} size:{:>8X} ent:{:.2}",
+                            s.name, s.file_off, s.va, s.size, ent
+                        ),
                         Some(s.file_off),
                     )
                 })
@@ -176,5 +188,4 @@ impl super::App {
             None => {}
         }
     }
-
 }

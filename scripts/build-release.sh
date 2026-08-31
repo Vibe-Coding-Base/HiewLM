@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build hiewLM release binaries for one or more targets.
 #
-#   ./scripts/build-release.sh                 # host only
+#   ./scripts/build-release.sh                 # host only, lean
+#   FEATURES=full ./scripts/build-release.sh   # with YARA, scripting, WASM
 #   ./scripts/build-release.sh windows         # + x86_64 Windows
 #   ./scripts/build-release.sh windows macos   # several
 #   ./scripts/build-release.sh all
@@ -29,6 +30,33 @@ if command -v rustup >/dev/null 2>&1; then
 fi
 CARGO="${CARGO:-cargo}"
 
+# Optional cargo features, e.g.  FEATURES=full ./scripts/build-release.sh
+# (yara | script | wasm | full). Nothing heavy is on by default.
+FEATURES="${FEATURES:-}"
+FEATURE_ARGS=()
+[ -n "$FEATURES" ] && FEATURE_ARGS=(--features "$FEATURES")
+
+# `os-arch` for the machine we are building on, matching the cross-compiled
+# labels below (macos-arm64, linux-x64, windows-x64...).
+host_label() {
+    local triple os arch
+    triple="$("$CARGO" --version --verbose 2>/dev/null | awk '/^host:/ {print $2}')"
+    [ -n "$triple" ] || triple="$(rustc -vV | awk '/^host:/ {print $2}')"
+    case "$triple" in
+        *apple-darwin)   os=macos ;;
+        *linux*)         os=linux ;;
+        *windows*)       os=windows ;;
+        *)               os="${triple##*-}" ;;
+    esac
+    case "$triple" in
+        x86_64-*)        arch=x64 ;;
+        aarch64-*|arm64-*) arch=arm64 ;;
+        i686-*)          arch=x86 ;;
+        *)               arch="${triple%%-*}" ;;
+    esac
+    echo "$os-$arch"
+}
+
 build() {
     local target="$1" label="$2" ext="${3:-}"
     echo "==> $label ($target)"
@@ -36,7 +64,7 @@ build() {
         echo "    installing std for $target"
         rustup target add "$target"
     fi
-    "$CARGO" build --release --target "$target"
+    "$CARGO" build --release --target "$target" "${FEATURE_ARGS[@]}"
     for bin in hiewlm hiewlmc; do
         cp "target/$target/release/$bin$ext" "$OUT/$bin-$label$ext"
     done
@@ -48,8 +76,14 @@ targets=("${@:-host}")
 
 for t in "${targets[@]}"; do
     case "$t" in
-        host)    echo "==> host"; "$CARGO" build --release
-                 for b in hiewlm hiewlmc; do cp "target/release/$b" "$OUT/$b-host"; done ;;
+        host)    # Name host artifacts after what they actually are, not "host":
+                 # a directory full of files called *-host tells you nothing once
+                 # they have been copied off the machine that built them.
+                 label="$(host_label)"
+                 echo "==> host ($label)"
+                 "$CARGO" build --release "${FEATURE_ARGS[@]}"
+                 for b in hiewlm hiewlmc; do cp "target/release/$b" "$OUT/$b-$label"; done
+                 echo "    -> $OUT/hiewlm-$label, $OUT/hiewlmc-$label" ;;
         windows) build x86_64-pc-windows-gnu   windows-x64 .exe ;;
         macos)   build x86_64-apple-darwin     macos-x64 ;;
         macos-arm) build aarch64-apple-darwin  macos-arm64 ;;

@@ -135,3 +135,30 @@ Cùng quy tắc theo dõi như M4: đánh `[x]` ngay trong commit hoàn tất m�
 | 5.4 | Dựng lại stack string (chuỗi ghép bằng `mov`) trong Code mode | [x] | `Alt+S`; `hiewlm-asm` thêm trường `stack_store`; dựng lại cả ASCII lẫn UTF-16 |
 | 5.5 | Xuất báo cáo Markdown (CLI `--format markdown`, TUI copy/ghi file) | [x] | `Y` → `m` chép, `w` ghi `<file>.triage.md` cạnh mẫu (ghi được cả khi mẫu đang khoá) |
 | 5.6 | Cập nhật help/README/design doc + test + clippy | [x] | 18 test binary xanh, clippy sạch |
+
+
+---
+
+# M6 — Đóng gói chuẩn, luật phong phú, và định dạng Office
+
+Cùng quy tắc: đánh `[x]` ngay trong commit hoàn tất mục đó.
+
+| # | Mục | Trạng thái | Ghi chú |
+|---|---|---|---|
+| 6.1 | Tên artifact build theo `os-arch` (`macos-arm64`), bỏ `host` | [x] | suy triple từ `cargo -vV`, khớp nhãn của bản cross-compile |
+| 6.2 | Feature-gate dependency nặng (wasmtime, rhai) như đã làm với yara | [x] | `hiewlmc` 15 MB → **8.8 MB**; `--features full` = 29.8 MB. Lệnh vẫn hiện trong `--help`, chạy thì báo cách bật |
+| 6.3 | Tách signature/rule ra file dữ liệu riêng + làm giàu (API, packer, LOLBin, IOC) | [ ] | nhúng bằng `include_str!`, cho phép override từ thư mục config |
+| 6.4 | Module parse Office (OLE/CFB + OOXML) + mode mới trên TUI | [ ] | tiêu chuẩn tham chiếu: Cerbero Suite |
+| 6.5 | Tách `app.rs` (6065 dòng) thành module | [ ] | vấn đề bảo trì thật sự, lớn hơn chuyện dung lượng |
+| 6.6 | Cập nhật docs + test + clippy | [ ] | |
+
+## Ghi chú về câu hỏi "tách thành .dll"
+
+Số liệu thực đo (2026-08-31): `hiewlm` 24.0 MB *có* YARA, **9.9 MB không có**; `hiewlmc`
+29.8 MB / 16 MB. Không có con số "hàng trăm MB" nào cả. Workspace **đã** là 9 crate thư
+viện rời — đó chính là cách tổ chức chuẩn của Rust.
+
+Xuất `.dll`/`.dylib` rồi nạp lúc chạy sẽ **vi phạm trụ cột an ninh §22.1** (cấm
+`dlopen`/`LoadLibrary`, có test `no_exec` canh) và **không giảm** một byte nào — cùng
+lượng mã, chỉ chuyển từ file này sang file khác, lại thêm rủi ro DLL hijacking khi phân
+tích mã độc. Thứ giảm dung lượng thật là feature-gate (mục 6.2).

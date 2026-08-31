@@ -65,6 +65,11 @@ All notable changes to hiewLM. The format follows
 - `q` inside a filterable popup types into the filter, which is correct but left
   no way to quit from the folder queue. `Ctrl+C` and `F10` now quit from
   anywhere — not `Ctrl+Q`, whose 0x11 is XON and never reaches the program.
+- The terminal was only put into raw mode *after* the file was opened, so a
+  Ctrl+C during a folder scan killed the process with SIGINT and left the
+  alternate screen behind. The terminal is now owned from the first moment by a
+  guard that restores it on every path out, including a panic, and a folder scan
+  says what it is doing instead of showing a blank screen.
 - PDF name markers matched inside longer names: `/AA` matched 278 times inside
   `/AAAAAA+ArialMT` in one real document, reporting auto-run actions that were
   not there. A name must now end at a delimiter.

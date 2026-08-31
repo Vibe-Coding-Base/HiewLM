@@ -144,6 +144,8 @@ pub struct TriageReport {
     pub hashes: Hashes,
     pub entropy: f32,
     pub packer: Option<String>,
+    /// packer / protector / obfuscator / installer / runtime, when identified.
+    pub packer_kind: Option<String>,
     pub packer_likelihood: u8,
     pub signed: bool,
     pub signature_note: Option<String>,
@@ -337,7 +339,8 @@ pub fn analyze(
         if m.format == Format::Pe && !names.is_empty() {
             r.hashes.imphash = Some(imphash(&names));
         }
-        r.packer_likelihood = packer(m, buf, &r.sections, &mut r.packer);
+        r.packer_likelihood =
+            packer(m, buf, &bytes, &r.sections, &mut r.packer, &mut r.packer_kind);
     } else {
         r.format = "raw".into();
         r.arch = Arch::Unknown.label().into();
@@ -484,8 +487,10 @@ fn capabilities(ir: &ImportReport) -> Vec<Capability> {
 fn packer(
     m: &hiewlm_core::ExecutableModel,
     buf: &EditBuffer,
+    bytes: &[u8],
     sections: &[SectionRow],
     out: &mut Option<String>,
+    kind: &mut Option<String>,
 ) -> u8 {
     let entry_off = m
         .entry
@@ -499,10 +504,12 @@ fn packer(
         .iter()
         .map(|s| hiewlm_core::packer::SectionInfo { name: s.name.clone(), entropy: s.entropy })
         .collect();
-    let rep = hiewlm_core::packer::detect(&entry, &secs, m.imports.len());
-    if rep.name.is_some() || !rep.indicators.is_empty() {
+    // The whole image, because build markers can be anywhere in it.
+    let rep = hiewlm_core::packer::detect(&entry, &secs, m.imports.len(), bytes);
+    if rep.identified() || !rep.indicators.is_empty() {
         *out = Some(rep.summary());
     }
+    *kind = rep.kind.map(|k| k.label().to_string());
     rep.likelihood
 }
 
@@ -599,6 +606,10 @@ fn score(r: &mut TriageReport) {
     s += (r.packer_likelihood as u32 * 25) / 100;
     if r.packer_likelihood >= 50 {
         r.badges.push("PACKED".into());
+    } else if let Some(k) = &r.packer_kind {
+        // A PyInstaller bundle or an NSIS installer is not packed, but knowing
+        // what built it is what tells you where to look next.
+        r.badges.push(k.to_uppercase());
     }
 
     let suspicious = r.anomalies.iter().filter(|a| a.severity == "suspicious").count();

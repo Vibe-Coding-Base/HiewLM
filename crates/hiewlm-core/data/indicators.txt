@@ -1,0 +1,308 @@
+# hiewLM — string indicator vocabulary.
+#
+#   kind | value
+#
+# kind:
+#   tld       a top-level domain worth recognising in a bare hostname. The list
+#             is closed on purpose: without it, every "i32.store" in a binary's
+#             string table is reported as infrastructure.
+#   scheme    a URL scheme prefix
+#   fileext   an extension that makes a dotted token a filename, not a hostname
+#   lolbin    a living-off-the-land binary or the command shape built with it
+#   command   a command line that is suspicious in itself
+#   regroot   a registry root or path that marks a registry string
+
+# ── URL schemes ───────────────────────────────────────────────────────────────
+scheme | http://
+scheme | https://
+scheme | ftp://
+scheme | ftps://
+scheme | sftp://
+scheme | ws://
+scheme | wss://
+scheme | file://
+scheme | ldap://
+scheme | ldaps://
+scheme | smb://
+scheme | tftp://
+
+# ── Extensions that are not TLDs ──────────────────────────────────────────────
+fileext | dll
+fileext | exe
+fileext | sys
+fileext | ocx
+fileext | cpl
+fileext | scr
+fileext | drv
+fileext | bin
+fileext | dat
+fileext | tmp
+fileext | log
+fileext | txt
+fileext | ini
+fileext | cfg
+fileext | xml
+fileext | json
+fileext | png
+fileext | jpg
+fileext | gif
+fileext | ico
+fileext | cur
+fileext | bmp
+fileext | pdb
+fileext | lib
+fileext | obj
+fileext | res
+fileext | manifest
+fileext | md
+fileext | rs
+fileext | py
+fileext | js
+fileext | ps1
+fileext | vbs
+fileext | bat
+fileext | cmd
+
+# ── Top-level domains ─────────────────────────────────────────────────────────
+tld | com
+tld | net
+tld | org
+tld | info
+tld | biz
+tld | xyz
+tld | top
+tld | site
+tld | online
+tld | club
+tld | shop
+tld | store
+tld | icu
+tld | vip
+tld | cc
+tld | tv
+tld | io
+tld | co
+tld | me
+tld | app
+tld | dev
+tld | cloud
+tld | space
+tld | website
+tld | fun
+tld | live
+tld | life
+tld | world
+tld | today
+tld | digital
+tld | network
+tld | systems
+tld | tech
+tld | tools
+tld | link
+tld | click
+tld | download
+tld | stream
+tld | host
+tld | press
+tld | pro
+tld | monster
+tld | quest
+tld | cyou
+tld | sbs
+tld | rest
+tld | cfd
+tld | bar
+tld | buzz
+tld | one
+tld | ws
+tld | su
+tld | ru
+tld | ua
+tld | by
+tld | kz
+tld | cn
+tld | hk
+tld | tw
+tld | jp
+tld | kr
+tld | in
+tld | id
+tld | vn
+tld | th
+tld | my
+tld | sg
+tld | ph
+tld | au
+tld | nz
+tld | uk
+tld | de
+tld | fr
+tld | nl
+tld | it
+tld | es
+tld | pt
+tld | pl
+tld | cz
+tld | sk
+tld | ro
+tld | bg
+tld | gr
+tld | tr
+tld | se
+tld | no
+tld | fi
+tld | dk
+tld | ch
+tld | at
+tld | be
+tld | ie
+tld | br
+tld | mx
+tld | ar
+tld | za
+tld | ng
+tld | ir
+tld | pk
+tld | bd
+tld | eu
+tld | ai
+tld | gg
+tld | to
+tld | ly
+tld | sh
+tld | is
+tld | lat
+tld | pw
+tld | wang
+tld | fit
+tld | uno
+tld | best
+tld | autos
+tld | boats
+tld | makeup
+tld | beauty
+tld | hair
+tld | skin
+tld | mom
+tld | bond
+tld | cam
+tld | rip
+
+# ── Living-off-the-land binaries ──────────────────────────────────────────────
+lolbin | powershell
+lolbin | pwsh.exe
+lolbin | cmd.exe /c
+lolbin | cmd /c
+lolbin | cmd.exe /k
+lolbin | rundll32
+lolbin | regsvr32
+lolbin | mshta
+lolbin | certutil
+lolbin | bitsadmin
+lolbin | wmic
+lolbin | schtasks
+lolbin | vssadmin
+lolbin | wbadmin
+lolbin | bcdedit
+lolbin | wscript
+lolbin | cscript
+lolbin | msiexec
+lolbin | installutil
+lolbin | msbuild
+lolbin | regasm
+lolbin | regsvcs
+lolbin | odbcconf
+lolbin | cmstp
+lolbin | forfiles
+lolbin | pcalua
+lolbin | verclsid
+lolbin | xwizard
+lolbin | presentationhost
+lolbin | ieexec
+lolbin | msdt
+lolbin | wuauclt
+lolbin | syncappvpublishingserver
+lolbin | dnscmd
+lolbin | netsh
+lolbin | sc create
+lolbin | sc config
+lolbin | net user
+lolbin | net localgroup
+lolbin | net share
+lolbin | net use
+lolbin | reg add
+lolbin | reg delete
+lolbin | reg save
+lolbin | reg export
+lolbin | takeown
+lolbin | icacls
+lolbin | attrib
+lolbin | fsutil
+lolbin | cipher
+lolbin | curl
+lolbin | wget
+lolbin | rclone
+lolbin | psexec
+lolbin | at.exe
+lolbin | control.exe
+lolbin | explorer.exe
+
+# ── Command lines that are suspicious in themselves ───────────────────────────
+command | -encodedcommand
+command | -enc
+command | -nop
+command | -noni
+command | -windowstyle hidden
+command | -w hidden
+command | -executionpolicy bypass
+command | -ep bypass
+command | invoke-expression
+command | iex(
+command | downloadstring
+command | downloadfile
+command | frombase64string
+command | invoke-webrequest
+command | start-bitstransfer
+command | new-object net.webclient
+command | add-mppreference
+command | set-mppreference
+command | -exclusionpath
+command | delete shadows
+command | shadowcopy delete
+command | delete catalog
+command | /set {default} recoveryenabled no
+command | /set {default} bootstatuspolicy ignoreallfailures
+command | usn deletejournal
+command | wevtutil cl
+command | taskkill /f /im
+command | net stop
+command | vssadmin delete
+command | schtasks /create
+command | /tr "
+command | rundll32 javascript:
+command | mshta vbscript:
+command | mshta javascript:
+command | regsvr32 /s /u /i:
+command | certutil -decode
+command | certutil -urlcache
+command | bitsadmin /transfer
+command | advfirewall firewall add rule
+command | netsh firewall set opmode disable
+
+# ── Registry markers ──────────────────────────────────────────────────────────
+regroot | hkey_local_machine
+regroot | hkey_current_user
+regroot | hkey_classes_root
+regroot | hkey_users
+regroot | hkey_current_config
+regroot | hklm\
+regroot | hkcu\
+regroot | hkcr\
+regroot | software\microsoft\windows\currentversion\run
+regroot | software\microsoft\windows\currentversion\runonce
+regroot | software\microsoft\windows nt\currentversion\winlogon
+regroot | system\currentcontrolset\services
+regroot | software\microsoft\windows\currentversion\policies
+regroot | software\microsoft\windows defender
+regroot | software\classes\ms-settings
+regroot | software\microsoft\command processor

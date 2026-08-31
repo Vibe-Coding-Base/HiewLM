@@ -1097,6 +1097,8 @@ fn cmd_packer(file: &Path) -> Result<String> {
     Ok(s)
 }
 
+// Helpers for the Rhai buffer API; they go with it.
+#[cfg(feature = "script")]
 fn read_le(data: &[u8], off: usize, n: usize) -> u64 {
     let mut v = 0u64;
     for i in 0..n {
@@ -1105,6 +1107,8 @@ fn read_le(data: &[u8], off: usize, n: usize) -> u64 {
     v
 }
 
+// Helpers for the Rhai buffer API; they go with it.
+#[cfg(feature = "script")]
 fn find_in(data: &[u8], needle: &[u8]) -> i64 {
     if needle.is_empty() || data.len() < needle.len() {
         return -1;
@@ -1118,6 +1122,7 @@ fn find_in(data: &[u8], needle: &[u8]) -> i64 {
 /// Run a Rhai script with a small file-patching API:
 /// `len()`, `byte(i)`, `u16/u32/u64(i)`, `poke(i,v)`, `find_text(s)`,
 /// `find_hex(s)`, `save()`, `log(msg)`.
+#[cfg(feature = "script")]
 fn cmd_script(file: &Path, script: &Path) -> Result<String> {
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -1182,6 +1187,15 @@ fn cmd_script(file: &Path, script: &Path) -> Result<String> {
     Ok(out)
 }
 
+/// Without the feature, the command still exists so `--help` stays honest — it
+/// just says how to turn it on, the way the YARA path does.
+#[cfg(not(feature = "script"))]
+fn cmd_script(_file: &Path, _script: &Path) -> Result<String> {
+    bail!("this build has no Rhai scripting — rebuild with `--features script`")
+}
+
+
+#[cfg(feature = "wasm")]
 fn cmd_plugin(file: &Path, wasm: &Path) -> Result<String> {
     let module = std::fs::read(wasm).with_context(|| format!("cannot read {}", wasm.display()))?;
     let data = std::fs::read(file)?;
@@ -1199,6 +1213,12 @@ fn cmd_plugin(file: &Path, wasm: &Path) -> Result<String> {
     }
     Ok(s)
 }
+
+#[cfg(not(feature = "wasm"))]
+fn cmd_plugin(_file: &Path, _wasm: &Path) -> Result<String> {
+    bail!("this build has no WASM plugin host — rebuild with `--features wasm`")
+}
+
 
 fn replace_all(data: &[u8], needle: &[u8], repl: &[u8]) -> (Vec<u8>, usize) {
     let mut out = Vec::with_capacity(data.len());

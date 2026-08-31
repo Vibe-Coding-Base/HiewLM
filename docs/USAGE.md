@@ -215,10 +215,11 @@ or `%APPDATA%\hiewlm\notes\`).
 | `1` `?` | help |
 | `V` | about: version, author, build features, rule counts |
 | `q` `0` | quit |
-| `Ctrl+Q` `F10` | quit from anywhere, including inside a dialog |
+| `Ctrl+C` `F10` | quit from anywhere, including inside a dialog |
 
 `q` inside a filterable popup types into the filter, which is what you want when
-you are searching for `qemu`. `Ctrl+Q` and `F10` always quit.
+you are searching for `qemu`. `Ctrl+C` and `F10` always quit. (Not `Ctrl+Q`:
+0x11 is XON, and terminal flow control eats it before the program sees it.)
 
 In any popup: type to filter, `↑↓` and PgUp/PgDn to scroll, `←→` to scroll
 sideways (Shift+`←→` in the header and triage views, whose arrows switch panes),

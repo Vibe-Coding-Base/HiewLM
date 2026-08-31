@@ -685,6 +685,15 @@ impl App {
         Ok(app)
     }
 
+    /// Version, author and how this build was configured.
+    fn open_about(&mut self) {
+        self.dialog = Some(Dialog::Message {
+            title: "About".into(),
+            body: help::about_text(&self.path),
+            scroll: 0,
+        });
+    }
+
     pub fn max_offset(&self) -> u64 {
         self.buffer.len().saturating_sub(1)
     }
@@ -2777,6 +2786,13 @@ impl App {
             self.macro_play_loop();
             return;
         }
+        // Quit from anywhere, including a dialog. Five dialogs treat a bare
+        // letter as filter input — which is right — so `q` typed at the folder
+        // queue lands in the filter and looks like the program has hung.
+        if (ctrl && key.code == KeyCode::Char('q')) || key.code == KeyCode::F(10) {
+            self.should_quit = true;
+            return;
+        }
         if !self.replaying {
             if let Some(rec) = self.macro_rec.as_mut() {
                 rec.push(key);
@@ -3034,6 +3050,7 @@ impl App {
             Command::OpenCfg => self.open_cfg(),
             Command::OpenFile => self.open_file_picker(PickPurpose::Open),
             Command::FolderTriage => self.folder_triage(),
+            Command::About => self.open_about(),
             Command::OpenPalette => {
                 self.dialog = Some(Dialog::Palette {
                     input: String::new(),
@@ -3257,6 +3274,8 @@ pub enum Command {
     FolderTriage,
     /// `:`: the command palette.
     OpenPalette,
+    /// `V`: version, author and how this build was configured.
+    About,
     /// List every match of the last search instead of stepping through them.
     SearchAll,
     /// `R`: scan with YARA rules (from the config path, else pick a file).

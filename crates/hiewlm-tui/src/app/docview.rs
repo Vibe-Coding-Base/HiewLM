@@ -58,9 +58,17 @@ impl super::App {
                     .iter()
                     .map(|f| {
                         let warn = f.severity == hiewlm_core::Severity::Suspicious;
+                        // A finding backed by several hits says so, because
+                        // Enter opens the list instead of jumping.
+                        let more = match self.finding_group(f) {
+                            Some(g) if g.hits.len() > 1 => {
+                                format!("   [Enter: {} matches]", g.hits.len())
+                            }
+                            _ => String::new(),
+                        };
                         (
                             format!(
-                                "{}[{}] {}",
+                                "{}[{}] {}{more}",
                                 if warn { "!" } else { " " },
                                 f.severity,
                                 f.message
@@ -133,7 +141,61 @@ impl super::App {
         self.doc_sel = (self.doc_sel as i64 + delta).clamp(0, last) as usize;
     }
 
+    /// The match group behind a finding, when it has one.
+    ///
+    /// Findings are keyed by the label their message starts with (`/URI: …`),
+    /// which is how the parser writes them.
+    pub(super) fn finding_group(
+        &self,
+        f: &hiewlm_core::Finding,
+    ) -> Option<&hiewlm_office::MatchGroup> {
+        let d = self.document.as_ref()?;
+        let label = f.message.split(':').next()?.trim();
+        d.match_groups.iter().find(|g| g.label == label)
+    }
+
+    /// In the Findings pane, open a finding's matches rather than jumping to the
+    /// first one: "300 occurrences" is only useful if the three hundred can be
+    /// read.
+    fn doc_open_matches(&mut self) -> bool {
+        if self.doc_pane != DocPane::Findings {
+            return false;
+        }
+        let Some(d) = &self.document else {
+            return false;
+        };
+        let Some(f) = d.findings.get(self.doc_sel) else {
+            return false;
+        };
+        let Some(group) = self.finding_group(f) else {
+            return false;
+        };
+        if group.hits.len() < 2 {
+            return false;
+        }
+        let title = format!("{} — {} matches", group.label, group.hits.len());
+        let items: Vec<(String, u64)> = group
+            .hits
+            .iter()
+            .map(|(off, text)| {
+                let text: String = text.chars().take(160).collect();
+                (format!("{}  {text}", self.display_addr(*off)), *off)
+            })
+            .collect();
+        self.dialog = Some(Dialog::JumpList {
+            title,
+            items,
+            sel: 0,
+            filter: String::new(),
+        });
+        self.set_status("Type to filter · ←→ scrolls a long line · Enter jumps");
+        true
+    }
+
     pub(super) fn doc_activate(&mut self) {
+        if self.doc_open_matches() {
+            return;
+        }
         let rows = self.doc_rows();
         match rows.get(self.doc_sel) {
             Some((label, Some(off))) => {

@@ -182,6 +182,7 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char('F'), _, _, _) => Some(Command::FolderTriage),
         // The command palette: everything by name, for the keys you forget.
         (Char(':'), _, _, _) => Some(Command::OpenPalette),
+        (Char('V'), _, _, _) => Some(Command::About),
         (Char('x'), _, true, _) => Some(Command::XorSearch),
         (Char('X'), _, true, _) => Some(Command::XorSearch),
         // Alt+K derives a repeating key from the marked block.

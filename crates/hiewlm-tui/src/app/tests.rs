@@ -1814,3 +1814,73 @@ fn edit_and_save_roundtrip() {
 
     std::fs::remove_file(&path).ok();
 }
+
+#[test]
+fn ctrl_q_quits_even_when_a_dialog_is_filtering() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut a = app();
+    // The folder queue and every filterable list treat a bare letter as filter
+    // input, so `q` there types rather than quits — which looked like a hang.
+    a.apply(Command::OpenStrings);
+    a.handle_key(KeyEvent::from(KeyCode::Char('q')));
+    assert!(!a.should_quit, "a bare q still filters, as it must");
+
+    a.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
+    assert!(a.should_quit, "Ctrl+Q must quit from inside a dialog");
+
+    let mut b = app();
+    b.apply(Command::OpenStrings);
+    b.handle_key(KeyEvent::from(KeyCode::F(10)));
+    assert!(b.should_quit, "F10 must quit from inside a dialog");
+}
+
+#[test]
+fn about_reports_the_version_author_and_build() {
+    let mut a = app();
+    a.apply(Command::About);
+    let Some(Dialog::Message { title, body, .. }) = &a.dialog else {
+        panic!("expected the about screen");
+    };
+    assert_eq!(title, "About");
+    assert!(body.contains(env!("CARGO_PKG_VERSION")));
+    assert!(body.contains("Tony Nguyen"), "{body}");
+    // The build's features matter: a binary without YARA reports no matches,
+    // and the user needs to be able to tell that apart from a clean file.
+    assert!(body.contains("features"));
+    assert!(
+        body.contains("apis"),
+        "the loaded rule counts belong here too"
+    );
+}
+
+#[test]
+fn a_folder_pass_does_not_hash_gigabytes() {
+    // The folder pass used to read and hash every file in full: six large files
+    // in a Downloads directory cost forty seconds, during which the UI had not
+    // started and keystrokes queued up.
+    let dir = std::env::temp_dir().join("hiewlm_folder_limit_test");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("small.bin"), b"http://c2.example.top/x").unwrap();
+    fs::write(dir.join("huge.bin"), vec![0u8; 3 * 1024 * 1024]).unwrap();
+
+    let mut a = App::open(dir.join("small.bin")).unwrap();
+    a.apply(Command::FolderTriage);
+    let Some(Dialog::FileHits { items, .. }) = &a.dialog else {
+        panic!("expected the queue")
+    };
+    assert_eq!(items.len(), 2);
+
+    // With a limit below its size, the large file is listed as not scanned
+    // rather than silently scored low.
+    let opts = hiewlm_triage::Options {
+        max_file_bytes: 1024,
+        ..Default::default()
+    };
+    let src = FileSource::open(dir.join("huge.bin")).unwrap();
+    let buf = EditBuffer::new(Arc::new(src));
+    let r = hiewlm_triage::analyze("huge.bin", &buf, None, &opts);
+    assert_eq!(r.verdict(), "not scanned");
+
+    let _ = fs::remove_dir_all(&dir);
+}

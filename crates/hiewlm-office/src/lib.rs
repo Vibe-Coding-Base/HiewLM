@@ -15,6 +15,7 @@ pub mod ooxml;
 pub mod pdf;
 pub mod rtf;
 pub mod rules;
+pub mod scan;
 pub mod vba;
 pub mod zip;
 
@@ -71,6 +72,17 @@ pub struct Document {
     pub macros: Vec<vba::Module>,
     /// External references, already rendered for display.
     pub external: Vec<String>,
+    /// Every hit behind a finding that matched more than once, with an excerpt
+    /// of each. A finding that says "300 occurrences" is only useful if the
+    /// three hundred can be opened.
+    pub match_groups: Vec<MatchGroup>,
+}
+
+/// Every hit of one rule, keyed by the label its finding message starts with.
+#[derive(Clone, Debug)]
+pub struct MatchGroup {
+    pub label: String,
+    pub hits: Vec<(u64, String)>,
 }
 
 impl Document {
@@ -130,6 +142,7 @@ fn parse_ole(bytes: &[u8]) -> Option<Document> {
         metadata: Vec::new(),
         macros: Vec::new(),
         external: Vec::new(),
+        match_groups: Vec::new(),
     };
 
     for e in &c.entries {
@@ -196,6 +209,7 @@ fn parse_ooxml(bytes: &[u8]) -> Option<Document> {
         metadata: pkg.metadata.clone(),
         macros: Vec::new(),
         external: Vec::new(),
+        match_groups: Vec::new(),
     };
 
     let has = |needle: &str| pkg.parts.iter().any(|p| p.name.contains(needle));
@@ -298,6 +312,7 @@ fn parse_rtf(bytes: &[u8]) -> Option<Document> {
         metadata: Vec::new(),
         macros: Vec::new(),
         external: Vec::new(),
+        match_groups: Vec::new(),
     };
     for h in &r.hits {
         doc.nodes.push(Node {
@@ -338,7 +353,16 @@ fn parse_pdf(bytes: &[u8]) -> Option<Document> {
         metadata: p.metadata.clone(),
         macros: Vec::new(),
         external: Vec::new(),
+        match_groups: Vec::new(),
     };
+    doc.match_groups = p
+        .match_groups
+        .iter()
+        .map(|g| MatchGroup {
+            label: g.label.clone(),
+            hits: g.hits.clone(),
+        })
+        .collect();
     for o in &p.objects {
         let label = if o.kind.is_empty() {
             format!("{} {} obj", o.number, o.generation)
@@ -382,6 +406,7 @@ fn parse_zip(bytes: &[u8]) -> Option<Document> {
         ],
         macros: Vec::new(),
         external: Vec::new(),
+        match_groups: Vec::new(),
     };
     for m in &z.members {
         let depth = m.name.matches('/').count();

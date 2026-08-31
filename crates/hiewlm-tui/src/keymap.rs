@@ -169,7 +169,6 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char(c @ '1'..='8'), _, true, _) => Some(Command::JumpSlot(c as u8 - b'0')),
         (Char('G'), _, _, _) => Some(Command::OpenCfg),
         (Char('x'), _, _, _) if plain => Some(Command::MultiSearch),
-        (Char('X'), _, _, _) => Some(Command::OpenReplace),
         (Char('\\'), _, _, _) => Some(Command::ToggleTheme),
         (Char('E'), _, _, _) => Some(Command::CycleEncoding),
         (Left, false, false, true) => Some(Command::SelectStep(-1)),
@@ -213,6 +212,9 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         (Char('3'), _, _, _) if plain => Some(Command::EnterEdit),
         (Char('e'), _, _, _) if plain => Some(Command::EnterEdit),
         (Char('4'), _, _, _) if plain => Some(Command::OpenModeMenu),
+        // The help has always documented `m` as the mode-menu alias, and every
+        // other Fn key has a letter alias; only this one was never mapped.
+        (Char('m'), _, _, _) if plain => Some(Command::OpenModeMenu),
         (Char('5'), _, _, _) if plain => Some(Command::OpenGoto),
         (Char('g'), _, _, _) if plain => Some(Command::OpenGoto),
         (Char('6'), _, _, _) if plain => Some(Command::Xref),

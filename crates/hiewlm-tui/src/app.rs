@@ -164,7 +164,6 @@ pub struct PickEntry {
 pub enum Dialog {
     Goto { input: String },
     Search { input: String, kind: SearchKind },
-    Replace { input: String, kind: SearchKind },
     Calc { input: String },
     /// Assemble-at-cursor: type an instruction, see the encoding, Enter patches.
     Assemble { input: String },
@@ -1679,105 +1678,6 @@ impl App {
                 self.move_to(cursor);
             }
             Err(e) => self.set_status(format!("Cannot open: {e}")),
-        }
-    }
-
-    fn open_replace(&mut self) {
-        let Some((pat, _)) = &self.last_pattern else {
-            self.set_status("Search first (/) to set the pattern, then X to replace.");
-            return;
-        };
-        if pat.literal_bytes().is_none() {
-            self.set_status("Replace needs a non-wildcard pattern.");
-            return;
-        }
-        self.dialog = Some(Dialog::Replace { input: String::new(), kind: SearchKind::Hex });
-    }
-
-    fn confirm_replace(&mut self, input: &str, kind: SearchKind) {
-        self.dialog = None;
-        let Some((pat, _)) = &self.last_pattern else {
-            return;
-        };
-        let Some(needle) = pat.literal_bytes().map(|b| b.to_vec()) else {
-            self.set_status("Replace needs a non-wildcard pattern.");
-            return;
-        };
-        let repl = match kind {
-            SearchKind::Text | SearchKind::TextI => input.as_bytes().to_vec(),
-            SearchKind::Utf16 => input.encode_utf16().flat_map(|u| u.to_le_bytes()).collect(),
-            SearchKind::Asm => {
-                self.set_status("Replace does not support instruction search.");
-                return;
-            }
-            SearchKind::Hex => match parse_hex_bytes(input) {
-                Some(b) => b,
-                None => {
-                    self.set_status("Invalid hex replacement.");
-                    return;
-                }
-            },
-        };
-        self.multi_file_replace(&needle, &repl);
-    }
-
-    /// Replace every occurrence of `needle` with `repl` in every file under the
-    /// current directory (recursive, budgeted). Each modified file gets a `.bak`.
-    fn multi_file_replace(&mut self, needle: &[u8], repl: &[u8]) {
-        if needle.is_empty() {
-            return;
-        }
-        if !self.ensure_writable() {
-            return;
-        }
-        let root = self.path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
-        let mut files = 0usize;
-        let mut total = 0usize;
-        let mut budget = 3000usize;
-        let mut stack = vec![root];
-
-        while let Some(dir) = stack.pop() {
-            if budget == 0 {
-                break;
-            }
-            let Ok(rd) = fs::read_dir(&dir) else { continue };
-            for entry in rd.flatten() {
-                let path = entry.path();
-                let Ok(ft) = entry.file_type() else { continue };
-                if ft.is_dir() {
-                    stack.push(path);
-                } else if ft.is_file() {
-                    if budget == 0 {
-                        break;
-                    }
-                    budget -= 1;
-                    if entry.metadata().map(|m| m.len() > 64 * 1024 * 1024).unwrap_or(true) {
-                        continue;
-                    }
-                    let Ok(data) = fs::read(&path) else { continue };
-                    let (new, count) = replace_all(&data, needle, repl);
-                    if count > 0 {
-                        let bak = path.with_extension(format!(
-                            "{}.bak",
-                            path.extension().and_then(|e| e.to_str()).unwrap_or("")
-                        ));
-                        let _ = fs::copy(&path, &bak);
-                        if fs::write(&path, &new).is_ok() {
-                            files += 1;
-                            total += count;
-                        }
-                    }
-                }
-            }
-        }
-        if files == 0 {
-            self.set_status("No occurrences found to replace.");
-        } else {
-            self.set_status(format!("Replaced {total} occurrence(s) in {files} file(s); .bak saved."));
-            // The current file may have changed on disk; reload it.
-            let path = self.path.clone();
-            let cur = self.cursor;
-            self.reload(path, cur);
         }
     }
 
@@ -3373,26 +3273,6 @@ impl App {
                 }
                 _ => self.dialog = Some(Dialog::Calc { input }),
             },
-            Dialog::Replace { mut input, kind } => match key.code {
-                Enter => self.confirm_replace(&input.clone(), kind),
-                Esc => {}
-                Tab => {
-                    let kind = match kind {
-                        SearchKind::Hex => SearchKind::Text,
-                        _ => SearchKind::Hex,
-                    };
-                    self.dialog = Some(Dialog::Replace { input, kind });
-                }
-                Backspace => {
-                    input.pop();
-                    self.dialog = Some(Dialog::Replace { input, kind });
-                }
-                Char(c) => {
-                    input.push(c);
-                    self.dialog = Some(Dialog::Replace { input, kind });
-                }
-                _ => self.dialog = Some(Dialog::Replace { input, kind }),
-            },
             Dialog::ColorMenu { selected } => {
                 // 0..8 = colors, 8 = random, 9 = clear all.
                 let n = 10;
@@ -4061,7 +3941,6 @@ impl App {
             Command::OpenHashes => self.open_hashes(),
             Command::OpenNameBookmark => self.dialog = Some(Dialog::NameBookmark { input: String::new() }),
             Command::MultiSearch => self.multi_search(),
-            Command::OpenReplace => self.open_replace(),
             Command::ToggleTheme => {
                 self.theme_kind = self.theme_kind.next();
                 self.set_status(format!("Theme: {}", self.theme_kind.label()));
@@ -4223,7 +4102,6 @@ pub enum Command {
     NextDiff,
     PrevDiff,
     OpenStruct,
-    OpenReplace,
     OpenInspector,
     OpenCalc,
     OpenAssemble,
@@ -4401,28 +4279,6 @@ fn load_markers(path: &std::path::Path) -> Vec<Marker> {
         .unwrap_or_default()
 }
 
-/// Replace every occurrence of `needle` in `data` with `repl`; returns the new
-/// bytes and the number of replacements.
-fn replace_all(data: &[u8], needle: &[u8], repl: &[u8]) -> (Vec<u8>, usize) {
-    if needle.is_empty() || data.len() < needle.len() {
-        return (data.to_vec(), 0);
-    }
-    let mut out = Vec::with_capacity(data.len());
-    let mut i = 0;
-    let mut count = 0;
-    while i < data.len() {
-        if i + needle.len() <= data.len() && &data[i..i + needle.len()] == needle {
-            out.extend_from_slice(repl);
-            i += needle.len();
-            count += 1;
-        } else {
-            out.push(data[i]);
-            i += 1;
-        }
-    }
-    (out, count)
-}
-
 /// Parse a run of hex byte pairs like "90" or "00 ff 90"; `None` if malformed.
 fn parse_hex_bytes(input: &str) -> Option<Vec<u8>> {
     let mut out = Vec::new();
@@ -4482,7 +4338,8 @@ SEARCH
                                 Ctrl+A lists every match at once
   n  /  N                       find next / previous
   x                             search across the whole folder
-  X                             replace across the folder (.bak)
+                                (rewriting a folder lives in the CLI:
+                                 hiewlmc replace <dir> ... --recursive)
 
 EDIT  (the sample is LOCKED until you unlock it)
   Ctrl+W                        unlock / re-lock writing (or start with --rw)
@@ -4722,6 +4579,25 @@ mod tests {
         a.sym_by_va.insert(0x20, "kernel32.dll!VirtualAlloc".to_string());
         let call = Insn { target: Some(0x20), ..ins.clone() };
         assert_eq!(a.annotate(&call).as_deref(), Some("kernel32.dll!VirtualAlloc"));
+    }
+
+    #[test]
+    fn documented_letter_aliases_all_exist() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        // Every Fn-bar action has a letter alias in the help; `m` was missing.
+        for (key, want) in [('m', "Mode"), ('g', "Goto"), ('s', "Strings"), ('h', "Hashes")] {
+            let mut a = app();
+            a.handle_key(KeyEvent::from(KeyCode::Char(key)));
+            assert!(a.dialog.is_some(), "`{key}` ({want}) opened nothing");
+        }
+        // `e` enters edit mode rather than opening a dialog.
+        let mut a = app();
+        a.handle_key(KeyEvent::from(KeyCode::Char('e')));
+        assert!(a.editing, "`e` (Edit) did nothing");
+        // ...and `m` specifically reaches the mode menu the help promises.
+        let mut a = app();
+        a.handle_key(KeyEvent::from(KeyCode::Char('m')));
+        assert!(matches!(a.dialog, Some(Dialog::ModeMenu { .. })));
     }
 
     #[test]
@@ -5943,12 +5819,6 @@ fallback=http://backup.example.top/p.php;sleep=300;jitter=15;campaign=summer;";
         assert_eq!(Encoding::Cp437.decode(0x01), '☺');
     }
 
-    #[test]
-    fn replace_all_helper() {
-        let (out, n) = replace_all(b"aXbXc", b"X", b"YY");
-        assert_eq!(n, 2);
-        assert_eq!(out, b"aYYbYYc");
-    }
 
     #[test]
     fn strings_list_finds_text() {

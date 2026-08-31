@@ -133,9 +133,15 @@ enum Cmd {
     },
     /// Replace every occurrence of `find` with `with` (writes the file).
     Replace {
+        /// File to edit, or a directory with --recursive.
         file: PathBuf,
         find: String,
         with: String,
+        /// Replace in every file under the directory, not just one.
+        /// Required to pass a directory at all: rewriting a folder of samples
+        /// is deliberate work, never something you should be able to fall into.
+        #[arg(long)]
+        recursive: bool,
         #[arg(long)]
         hex: bool,
         #[arg(long)]
@@ -271,7 +277,9 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
             print!("{text}");
             return Ok(if found { ExitCode::SUCCESS } else { ExitCode::from(1) });
         }
-        Cmd::Replace { file, find, with, hex, no_backup } => cmd_replace(&file, &find, &with, hex, !no_backup)?,
+        Cmd::Replace { file, find, with, recursive, hex, no_backup } => {
+            cmd_replace(&file, &find, &with, recursive, hex, !no_backup)?
+        }
         Cmd::Patch { file, at, bytes, no_backup } => cmd_patch(&file, &at, &bytes, !no_backup)?,
         Cmd::Asm { file, at, text, bits, dry_run, no_backup } => {
             cmd_asm(&file, &at, &text, bits, dry_run, !no_backup)?
@@ -587,11 +595,30 @@ fn cmd_search(file: &Path, pattern: &str, hex: bool) -> Result<(String, bool)> {
     Ok((s, !hits.is_empty()))
 }
 
-fn cmd_replace(file: &Path, find: &str, with: &str, hex: bool, do_backup: bool) -> Result<String> {
+fn cmd_replace(
+    file: &Path,
+    find: &str,
+    with: &str,
+    recursive: bool,
+    hex: bool,
+    do_backup: bool,
+) -> Result<String> {
     let needle = if hex { parse_hex_bytes(find)? } else { find.as_bytes().to_vec() };
     let repl = if hex { parse_hex_bytes(with)? } else { with.as_bytes().to_vec() };
     if needle.is_empty() {
         bail!("empty search pattern");
+    }
+    if file.is_dir() {
+        if !recursive {
+            bail!(
+                "{} is a directory; pass --recursive to rewrite every file under it",
+                file.display()
+            );
+        }
+        return replace_in_tree(file, &needle, &repl, do_backup);
+    }
+    if recursive {
+        bail!("--recursive expects a directory, not a file");
     }
     let data = std::fs::read(file)?;
     let (out, count) = replace_all(&data, &needle, &repl);
@@ -603,6 +630,70 @@ fn cmd_replace(file: &Path, find: &str, with: &str, hex: bool, do_backup: bool) 
     }
     std::fs::write(file, &out)?;
     Ok(format!("# replaced {count} occurrence(s){}\n", if do_backup { ", .bak saved" } else { "" }))
+}
+
+/// Replace in every file under `dir`, recursively and budgeted.
+///
+/// This lives on the command line and not in the interactive viewer on purpose:
+/// rewriting a folder of samples should be something you typed out, not
+/// something one keystroke away from the keys you press all day.
+fn replace_in_tree(
+    dir: &Path,
+    needle: &[u8],
+    repl: &[u8],
+    do_backup: bool,
+) -> Result<String> {
+    const MAX_FILES: usize = 5000;
+    const MAX_SIZE: u64 = 64 * 1024 * 1024;
+
+    let mut files = 0usize;
+    let mut total = 0usize;
+    let mut budget = MAX_FILES;
+    let mut out = String::new();
+    let mut stack = vec![dir.to_path_buf()];
+
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for entry in rd.flatten() {
+            if budget == 0 {
+                bail!("stopped after {MAX_FILES} files; narrow the directory");
+            }
+            let path = entry.path();
+            let Ok(ft) = entry.file_type() else { continue };
+            if ft.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if !ft.is_file() {
+                continue;
+            }
+            budget -= 1;
+            if entry.metadata().map(|m| m.len() > MAX_SIZE).unwrap_or(true) {
+                continue;
+            }
+            let Ok(data) = std::fs::read(&path) else { continue };
+            let (new, count) = replace_all(&data, needle, repl);
+            if count == 0 {
+                continue;
+            }
+            if do_backup {
+                backup(&path)?;
+            }
+            std::fs::write(&path, &new)
+                .with_context(|| format!("cannot write {}", path.display()))?;
+            out.push_str(&format!("{count:>6}  {}\n", path.display()));
+            files += 1;
+            total += count;
+        }
+    }
+    if files == 0 {
+        return Ok("# 0 replacements (nothing matched)\n".into());
+    }
+    out.push_str(&format!(
+        "# replaced {total} occurrence(s) in {files} file(s){}\n",
+        if do_backup { ", .bak saved" } else { "" }
+    ));
+    Ok(out)
 }
 
 fn cmd_patch(file: &Path, at: &str, bytes: &str, do_backup: bool) -> Result<String> {
@@ -1128,6 +1219,27 @@ fn replace_all(data: &[u8], needle: &[u8], repl: &[u8]) -> (Vec<u8>, usize) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn recursive_replace_needs_the_flag_and_walks_subdirectories() {
+        let dir = std::env::temp_dir().join("hiewlmc_recursive_replace_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("a.bin"), b"AAA-MARK-AAA").unwrap();
+        std::fs::write(dir.join("sub/c.bin"), b"xxMARKxx").unwrap();
+
+        // A directory without the flag is refused rather than rewritten.
+        assert!(cmd_replace(&dir, "MARK", "ZZZZ", false, false, false).is_err());
+
+        let out = cmd_replace(&dir, "MARK", "ZZZZ", true, false, false).unwrap();
+        assert!(out.contains("2 occurrence(s) in 2 file(s)"), "{out}");
+        assert_eq!(std::fs::read(dir.join("a.bin")).unwrap(), b"AAA-ZZZZ-AAA");
+        assert_eq!(std::fs::read(dir.join("sub/c.bin")).unwrap(), b"xxZZZZxx");
+
+        // ...and --recursive on a single file is a mistake worth reporting.
+        assert!(cmd_replace(&dir.join("a.bin"), "Z", "Y", true, false, false).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     use super::*;
 
     #[test]

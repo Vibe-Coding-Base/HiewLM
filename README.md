@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/hiewLM/hiewLM/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/hiewLM/hiewLM/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/hiewLM/hiewLM/actions/workflows/release.yml"><img alt="Build" src="https://github.com/hiewLM/hiewLM/actions/workflows/release.yml/badge.svg"></a>
   <img alt="Rust 1.75+" src="https://img.shields.io/badge/rust-1.75%2B-orange">
   <img alt="License" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey">
@@ -58,8 +59,10 @@ hiewLM does both in one place: every finding carries the offset it came from, an
 
 ## Install
 
-Prebuilt binaries are attached to each release. To build from source you need a
-recent stable Rust:
+Prebuilt binaries for Linux, macOS (Intel and Apple silicon) and Windows are
+attached to every release, with SHA-256 sums; builds of the latest `main` are
+available as workflow artifacts. To build from source you need a recent stable
+Rust:
 
 ```sh
 git clone https://github.com/hiewLM/hiewLM

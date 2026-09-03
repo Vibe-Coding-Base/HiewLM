@@ -1,0 +1,132 @@
+name: Build
+
+# Produces downloadable binaries. CI (ci.yml) decides whether the code is good;
+# this decides what people can run.
+#
+#   push to main       -> binaries as workflow artifacts, kept for 14 days
+#   tag  v*            -> the same binaries attached to a GitHub Release
+#   manual dispatch    -> on demand, for testing the workflow itself
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed only to create a release on a tag
+
+env:
+  CARGO_TERM_COLOR: always
+  # Release builds ship everything: YARA scanning, Rhai scripting and the WASM
+  # plugin host. A lean build is `cargo build --release` with no features.
+  FEATURES: hiewlm-cli/full,hiewlm-tui/yara
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - label: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - label: macos-x64
+            os: macos-13
+            target: x86_64-apple-darwin
+          - label: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: .exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --features "$FEATURES"
+        shell: bash
+
+      # The binaries are named the way the local build script names them, so a
+      # download and a local build are interchangeable.
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          for bin in hiewlm hiewlmc; do
+            cp "target/${{ matrix.target }}/release/$bin${{ matrix.ext }}" \
+               "dist/$bin-${{ matrix.label }}${{ matrix.ext }}"
+          done
+          cd dist
+          # A tool for handling malware should let people verify what they ran.
+          # Name the inputs rather than globbing: a glob would race the output
+          # file into its own checksum list.
+          if command -v sha256sum >/dev/null; then
+            sha256sum hiewlm-* hiewlmc-* > "SHA256SUMS-${{ matrix.label }}.txt"
+          else
+            shasum -a 256 hiewlm-* hiewlmc-* > "SHA256SUMS-${{ matrix.label }}.txt"
+          fi
+          ls -l
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          # A binary that cannot answer --version is not worth publishing, and a
+          # build without YARA must not be shipped as one that has it.
+          "dist/hiewlmc-${{ matrix.label }}${{ matrix.ext }}" --version
+          "dist/hiewlm-${{ matrix.label }}${{ matrix.ext }}" --version
+          "dist/hiewlmc-${{ matrix.label }}${{ matrix.ext }}" rules
+          cat > ci.yar <<'RULE'
+          rule ci_smoke : smoke
+          {
+              strings: $a = "INFECTED" ascii
+              condition: $a
+          }
+          RULE
+          printf 'harmless....INFECTED....' > ci.bin
+          "dist/hiewlmc-${{ matrix.label }}${{ matrix.ext }}" yara ci.bin ci.yar
+          "dist/hiewlmc-${{ matrix.label }}${{ matrix.ext }}" triage ci.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hiewlm-${{ matrix.label }}
+          path: dist/*
+          retention-days: 14
+
+  release:
+    name: release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p upload
+          find artifacts -type f -exec cp {} upload/ \;
+          cat upload/SHA256SUMS-*.txt > upload/SHA256SUMS.txt
+          rm -f upload/SHA256SUMS-*.txt
+          ls -l upload
+          # `gh` ships on the runner, so this needs no third-party action — one
+          # fewer dependency in the chain that produces a security tool's binaries.
+          gh release create "${GITHUB_REF_NAME}" upload/* \
+            --title "hiewLM ${GITHUB_REF_NAME}" \
+            --generate-notes

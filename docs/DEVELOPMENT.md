@@ -208,3 +208,15 @@ if it is missing and picks up a rustup toolchain when one is available, because 
 distro Rust ships std for the host only.
 
 Update [CHANGELOG.md](../CHANGELOG.md) with anything a user would notice.
+
+GitHub does the same work on its own: `.github/workflows/release.yml` builds all
+four targets with the full feature set on every push to `main` (artifacts, kept
+14 days) and, on a `v*` tag, attaches them to a release together with SHA-256
+sums. It smoke-tests each binary before publishing — a build that cannot answer
+`--version`, or that reports no YARA support when it was meant to have it, is
+not worth shipping. Releasing is therefore:
+
+```sh
+git tag -a v0.1.0 -m "hiewLM 0.1.0"
+git push origin v0.1.0
+```

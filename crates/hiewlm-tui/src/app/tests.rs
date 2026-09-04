@@ -7,6 +7,21 @@ use super::help::PALETTE;
 
 use super::*;
 
+/// A real, empty file standing in for the sample. This used to be `/dev/null`,
+/// which does not exist on Windows: `App::open` failed there and took every
+/// test in this module down with it. `FileSource` maps nothing for a
+/// zero-length file, so an empty file behaves exactly as the device did.
+fn placeholder_path() -> PathBuf {
+    use std::sync::OnceLock;
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(|| {
+        let p = std::env::temp_dir().join(format!("hiewlm_placeholder_{}.bin", std::process::id()));
+        std::fs::write(&p, b"").expect("write the placeholder file");
+        p
+    })
+    .clone()
+}
+
 /// An app unlocked for writing — most tests exercise editing commands, and
 /// the real UI is locked until Ctrl+W (see `locked_by_default_*` below).
 fn app() -> App {
@@ -17,13 +32,14 @@ fn app() -> App {
 
 /// An app in its real startup state: the sample is locked.
 ///
-/// Every helper app opens `/dev/null`, so they would all share one content
-/// key and leak notes into each other. Each gets a unique key instead; the
-/// tests that exercise persistence use real files.
+/// Every helper app opens the same placeholder file, so they would all share
+/// one content key and leak notes into each other. Each gets a unique key
+/// instead; the
+/// tests that exercise persistence use files of their own.
 fn locked_app() -> App {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
+    let mut a = App::open(placeholder_path()).unwrap();
     a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(
         b"0123456789ABCDEF".to_vec(),
     )));
@@ -817,7 +833,7 @@ fn code_app() -> App {
         0x55, 0x48, 0x89, 0xe5, 0xe8, 0x06, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
         0xc3,
     ];
-    let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
+    let mut a = App::open(placeholder_path()).unwrap();
     a.read_only = false;
     a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
     a.arch = Arch::X86_64;
@@ -897,7 +913,7 @@ fn macro_record_and_play() {
 fn cfg_builds_multiple_blocks() {
     // xor eax,eax; test eax,eax; jz +2; inc eax; ret
     let data = vec![0x31, 0xc0, 0x85, 0xc0, 0x74, 0x02, 0xff, 0xc0, 0xc3];
-    let mut a = App::open(PathBuf::from("/dev/null")).unwrap();
+    let mut a = App::open(placeholder_path()).unwrap();
     a.read_only = false;
     a.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
     a.arch = Arch::X86_64;

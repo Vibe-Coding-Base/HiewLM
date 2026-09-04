@@ -6,6 +6,8 @@ All notable changes to hiewLM. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-04
+
 ### Added
 
 - **Triage screen** (`2`) and `hiewlmc triage`: one verdict from hashes

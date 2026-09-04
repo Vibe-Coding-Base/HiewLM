@@ -1,6 +1,6 @@
 [package]
 name = "hiewlm-core"
-description = "hiewLM core: buffer, addressing, search, registry — no UI dependency."
+description = "hiewLM core: buffer, addressing, search, string/IOC extraction, import scoring, fuzzy hashing, key recovery, detection-rule data — no UI dependency."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,5 +1,4 @@
 # hiewLM — workspace root
-# Cross-platform HIEW clone. See docs/develop/00-thiet-ke-tong-the.md
 [workspace]
 resolver = "2"
 members = [

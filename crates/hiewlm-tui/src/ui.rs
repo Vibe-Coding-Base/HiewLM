@@ -1278,7 +1278,7 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
 }
 
 /// Truncate/pad by characters (not bytes) so we never split a multi-byte UTF-8
-/// char. M0 treats each char as width 1; wide (CJK) chars are handled in §7.3.
+/// char. Each char is treated as one column; wide (CJK) glyphs are design §7.3.
 fn pad_line(s: &str, width: u16) -> String {
     let w = width as usize;
     let mut out = String::with_capacity(w);

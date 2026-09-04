@@ -1,6 +1,6 @@
 [package]
 name = "hiewlm-office"
-description = "hiewLM document analysis: OLE/CFB, OOXML and RTF structure plus the indicators that decide whether a document is a lure."
+description = "hiewLM document analysis: OLE/CFB, OOXML, RTF, PDF and ZIP structure, VBA macro recovery, and the indicators that decide whether a file is a lure."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

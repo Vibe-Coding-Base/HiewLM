@@ -1,6 +1,6 @@
 [package]
 name = "hiewlm-fmt"
-description = "hiewLM executable-format detection (PE/ELF/Mach-O) via goblin."
+description = "hiewLM executable formats: PE/ELF/Mach-O/COFF/NE/LE/LX/TE/NLM detection plus the structural checks that matter for triage."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

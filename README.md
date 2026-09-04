@@ -7,16 +7,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Vibe-Coding-Base/HiewLM/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Vibe-Coding-Base/HiewLM/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/Vibe-Coding-Base/HiewLM/actions/workflows/release.yml"><img alt="Build" src="https://github.com/Vibe-Coding-Base/HiewLM/actions/workflows/release.yml/badge.svg"></a>
   <img alt="Rust 1.75+" src="https://img.shields.io/badge/rust-1.75%2B-orange">
   <img alt="License" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey">
 </p>
-
-<!-- Once this is on GitHub, replace OWNER/REPO and paste these back above:
-  <a href="https://github.com/OWNER/REPO/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/OWNER/REPO/actions/workflows/release.yml"><img alt="Build" src="https://github.com/OWNER/REPO/actions/workflows/release.yml/badge.svg"></a>
-A workflow badge only renders for a repository that exists and has run that
-workflow at least once; pointing one at a guessed URL shows a broken image. -->
 
 ---
 
@@ -61,8 +57,8 @@ available as workflow artifacts. To build from source you need a recent stable
 Rust:
 
 ```sh
-git clone https://github.com/hiewLM/hiewLM
-cd hiewLM
+git clone https://github.com/Vibe-Coding-Base/HiewLM.git
+cd HiewLM
 cargo build --release                      # hiewlm (viewer) + hiewlmc (CLI)
 ```
 

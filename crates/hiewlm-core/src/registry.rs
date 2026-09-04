@@ -1,6 +1,5 @@
 //! Extension points: add a file format or a CPU architecture by implementing a
-//! trait and registering it, without touching the core (design §24). M0 defines
-//! the contract; real parsers and disassemblers arrive in M1.
+//! trait and registering it, without touching the core (design §24).
 
 use crate::addr::AddressSpace;
 use crate::buffer::EditBuffer;

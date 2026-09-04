@@ -28,7 +28,8 @@ use std::time::Duration;
 #[command(
     name = "hiewlm",
     version,
-    about = "HIEW-like hex viewer/editor, cross-platform"
+    about = "HIEW's essentials on Linux, macOS and Windows: a keyboard-driven \
+binary viewer and malware triage tool"
 )]
 struct Cli {
     /// File to open (treated as passive data — its contents are never executed).

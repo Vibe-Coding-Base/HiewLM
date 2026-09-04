@@ -1,7 +1,9 @@
 # hiewLM — Overall Design
 
-> **hiewLM** = a modern, cross-platform (Windows / macOS / Linux) clone of
-> **HIEW (Hacker's View)** by Eugene Suslikov.
+> **hiewLM** brings the essentials of **HIEW (Hacker's View)** by Eugene
+> Suslikov to Linux and macOS — hence the name — and to Windows alongside them.
+> It is an independent reimplementation inspired by HIEW, not a copy of it and
+> not a competitor to it.
 > This document is the detailed design: from research on the original HIEW → design
 > philosophy → tech stack → architecture → feature list → keymap → roadmap.
 
@@ -615,9 +617,12 @@ the buffer, filesystem or network — it only receives `&[u8]` and returns a des
 giving up nothing the security pillar requires. WASM plugins (`hiewlm-plugin`) remain the
 mechanism for *untrusted, user-supplied* extensions.
 
-- [x] `hiewlm-plugin-zip` — EOCD/ZIP64 central directory walk; per-member method, sizes, CRC,
-      DOS timestamp, encryption flag; local-header offset so F12 jumps into the member.
-      Flags path traversal, dropper extensions, zip-bomb ratios, SFX/appended-ZIP stubs,
+- [x] ZIP moved out of the plugin registry into `hiewlm-office` (M6), where it gets the
+      document view: EOCD/ZIP64 central directory walk; per-member method, sizes, CRC,
+      DOS timestamp, encryption scheme; local-header offset so Enter jumps into the member;
+      each member's real content type read from its magic rather than its extension.
+      Flags path traversal, disguised names, directory/local-header mismatches,
+      dropper extensions, zip-bomb ratios, SFX/appended-ZIP stubs,
       members whose local header is missing or past EOF.
 - [x] PDF moved out of the plugin registry into `hiewlm-office` (M6), where it gets the
       document view instead of a member list: header (including data prepended before
@@ -1016,8 +1021,8 @@ by accident). The decisions that came out of that milestone are recorded in
 | **Dangerous physical-disk writes** | Read-only default, multi-layer confirmation on device commit, dry-run. |
 | **Keystone/Capstone are C libs** — cross-platform builds | Vendored build script; feature-gate "core-only"; or pure-Rust iced-x86 for x86. |
 | **Malicious malware parsing** causing panic/OOM | Defensive parsing, resource limits, continuous fuzzing, running in safe Rust. |
-| **Scope creep** (becoming IDA) | Stick to the M0→M3 roadmap; leave deep analysis to plugins. |
-| **HIEW copyright/trademark** | An independent clone, no HIEW code/assets; the distinct name `hiewLM`; state clearly "inspired by HIEW". |
+| **Scope creep** (becoming IDA) | Stick to the roadmap; leave deep analysis to plugins. |
+| **HIEW copyright/trademark** | An independent reimplementation: no HIEW code or assets, a distinct name, and the README credits HIEW as the inspiration rather than claiming equivalence. |
 
 ---
 

@@ -1,4 +1,5 @@
-//! Byte search over [`EditBuffer`]. M0: hex/ASCII, both directions, with a mask.
+//! Byte search over [`EditBuffer`]: hex, text (case-sensitive or not), UTF-16 and
+//! assembled instructions, in both directions, with single-byte wildcards.
 
 use crate::addr::FileOffset;
 use crate::buffer::EditBuffer;
@@ -137,8 +138,10 @@ impl std::fmt::Display for HexParseError {
 
 impl std::error::Error for HexParseError {}
 
-/// Find the first occurrence of `pat` from `from` in direction `dir`. Linear (M0);
-/// to be replaced with memmem/aho-corasick when optimized.
+/// Find the first occurrence of `pat` from `from` in direction `dir`.
+///
+/// A linear scan: fast enough for interactive use on the window sizes involved,
+/// and simple enough to be obviously correct against hostile input.
 pub fn find(
     buf: &EditBuffer,
     pat: &Pattern,

@@ -17,7 +17,7 @@ version = "0.0.1"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/hiewLM/hiewLM"
+repository = "https://github.com/Vibe-Coding-Base/HiewLM"
 authors = ["Tony Nguyen"]
 
 [workspace.dependencies]

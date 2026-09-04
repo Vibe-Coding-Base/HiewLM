@@ -35,9 +35,14 @@ jobs:
           - label: macos-arm64
             os: macos-latest
             target: aarch64-apple-darwin
+          # Cross-compiled from the arm64 runner: GitHub retired the Intel
+          # macos-13 image, and a job asking for it now sits queued forever
+          # while every other job in the matrix finishes. Rust needs only the
+          # target installed, and the smoke test runs the result under Rosetta.
           - label: macos-x64
-            os: macos-13
+            os: macos-latest
             target: x86_64-apple-darwin
+            cross: true
           - label: windows-x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -78,6 +83,16 @@ jobs:
             shasum -a 256 hiewlm-* hiewlmc-* > "SHA256SUMS-${{ matrix.label }}.txt"
           fi
           ls -l
+
+      # A cross-built binary is worth nothing if it is not the architecture it
+      # claims, and the name is the only thing a downloader goes by.
+      - name: Verify architecture
+        if: matrix.cross
+        shell: bash
+        run: |
+          for bin in hiewlm hiewlmc; do
+            file "dist/$bin-${{ matrix.label }}" | tee /dev/stderr | grep -q 'x86_64'
+          done
 
       - name: Smoke test
         shell: bash

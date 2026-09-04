@@ -850,10 +850,15 @@ fn replace_in_tree(dir: &Path, needle: &[u8], repl: &[u8], do_backup: bool) -> R
 }
 
 fn cmd_patch(file: &Path, at: &str, bytes: &str, do_backup: bool) -> Result<String> {
-    let (_buf, model) = open(file)?;
+    let (buf, model) = open(file)?;
     let off = parse_addr(at, &model)? as usize;
     let patch = parse_hex_bytes(bytes)?;
     let mut data = std::fs::read(file)?;
+    // Release the mapping before rewriting the file: Windows refuses to truncate
+    // a file that still has a mapped section open (os error 1224), and `open`
+    // maps it. Everything below works from `data`, which is already a copy.
+    drop(buf);
+    drop(model);
     if off + patch.len() > data.len() {
         bail!(
             "patch at {off:#x} + {} bytes exceeds file size {}",
@@ -908,6 +913,11 @@ fn cmd_asm(
         return Ok(s);
     }
     let mut data = read_all(&buf);
+    // Release the mapping before rewriting the file: Windows refuses to truncate
+    // a file that still has a mapped section open (os error 1224), and `open`
+    // maps it. Everything below works from `data`, which is already a copy.
+    drop(buf);
+    drop(model);
     if off as usize + bytes.len() > data.len() {
         bail!("patch would run past end of file");
     }
@@ -936,6 +946,11 @@ fn cmd_crypt(
     let (buf, model) = open(file)?;
     let start = parse_addr(at, &model)?;
     let mut data = read_all(&buf);
+    // Release the mapping before rewriting the file: Windows refuses to truncate
+    // a file that still has a mapped section open (os error 1224), and `open`
+    // maps it. Everything below works from `data`, which is already a copy.
+    drop(buf);
+    drop(model);
     if start >= data.len() as u64 {
         bail!("start {start:#x} is past end of file");
     }

@@ -12,7 +12,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Parser)]
-#[command(name = "hiewlmc", version, about = "hiewLM batch tool (headless)")]
+#[command(
+    name = "hiewlmc",
+    version,
+    about = "hiewLM headless: triage, inspect, disassemble, search and patch from scripts"
+)]
 struct Cli {
     /// Activate container-format plugins: `zip`, `pdf`, or `all`.
     /// Repeat or comma-separate. Plugins are off unless named.

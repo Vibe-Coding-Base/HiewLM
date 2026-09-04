@@ -1,5 +1,64 @@
+# Comments must be on their own line: git treats a `#` after a pattern as part
+# of the pattern, silently disabling it.
+
+# ── Build output ──────────────────────────────────────────────────────────────
 /target
-**/*.rs.bk
-.DS_Store
-*.bak
 /dist
+**/*.rs.bk
+# coverage instrumentation
+*.profraw
+# MSVC debug symbols beside a Windows build
+*.pdb
+
+# ── What hiewLM itself writes ─────────────────────────────────────────────────
+# The tool leaves files *next to the sample it is looking at*. Anyone who runs it
+# on a file inside a checkout would otherwise commit their analysis by accident —
+# and analysis of a sample can be sensitive.
+#
+# atomic save keeps one, as <name>.<ext>.bak
+*.bak
+# the temporary file an atomic save renames into place
+*.hiewlm.tmp
+# legacy colour-marker sidecar (still read, for migration)
+*.hiewlm.markers
+# `Y` then `w` writes <sample>.triage.md
+*.triage.md
+# resources extracted from a PE with Enter in the header view
+res_*.bin
+
+# Notes are keyed by content hash and live in the user's data directory, not
+# beside the sample, so there is nothing to ignore for those.
+
+# ── Samples ───────────────────────────────────────────────────────────────────
+# This repository holds no malware, and must not start holding any by accident.
+*.exe
+*.dll
+*.sys
+*.scr
+*.msi
+# …except the harmless test binaries in assets/samples, which are deliberate.
+!assets/samples/**
+
+# ── Editors and IDEs ──────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# ── Operating systems ─────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+Thumbs.db
+desktop.ini
+
+# ── Never ─────────────────────────────────────────────────────────────────────
+.env
+*.pem
+*.key
+secrets.toml
+
+# Deliberately NOT ignored:
+#   Cargo.lock       a workspace that ships binaries pins its dependencies
+#   assets/samples/  small, harmless programs for exercising the parsers by hand

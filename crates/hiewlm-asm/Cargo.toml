@@ -1,6 +1,6 @@
 [package]
 name = "hiewlm-asm"
-description = "hiewLM disassembly: x86/x86-64 (iced-x86) + ARM/ARM64/MIPS/RISC-V (Capstone)."
+description = "hiewLM disassembly: x86/x86-64 (iced-x86), ARM/ARM64/MIPS/RISC-V/PowerPC/SPARC (Capstone), WASM, and an x86 text assembler."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

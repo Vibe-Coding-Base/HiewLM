@@ -1,6 +1,5 @@
 //! Security pillar (design §22.7): scan the source to guarantee no code path loads
-//! or executes target-file content. The plugin sandbox layer (M3) will be excluded
-//! explicitly when it appears.
+//! or executes target-file content.
 
 use std::fs;
 use std::path::{Path, PathBuf};

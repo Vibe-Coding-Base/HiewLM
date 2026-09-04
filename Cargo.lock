@@ -1508,7 +1508,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hiewlm-asm"
-version = "0.0.1"
+version = "0.6.0"
 dependencies = [
  "capstone",
  "hiewlm-core",
@@ -1517,7 +1517,7 @@ dependencies = [
 
 [[package]]
 name = "hiewlm-cli"
-version = "0.0.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1537,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "hiewlm-core"
-version = "0.0.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "memmap2",
@@ -1546,7 +1546,7 @@ dependencies = [
 
 [[package]]
 name = "hiewlm-fmt"
-version = "0.0.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "goblin",
@@ -1555,7 +1555,7 @@ dependencies = [
 
 [[package]]
 name = "hiewlm-office"
-version = "0.0.1"
+version = "0.6.0"
 dependencies = [
  "flate2",
  "hiewlm-core",
@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "hiewlm-plugin"
-version = "0.0.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "wasmtime 27.0.0",
@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "hiewlm-triage"
-version = "0.0.1"
+version = "0.6.0"
 dependencies = [
  "crc32fast",
  "hiewlm-core",
@@ -1587,7 +1587,7 @@ dependencies = [
 
 [[package]]
 name = "hiewlm-tui"
-version = "0.0.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "blake3",

@@ -7,40 +7,36 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/hiewLM/hiewLM/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/hiewLM/hiewLM/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/hiewLM/hiewLM/actions/workflows/release.yml"><img alt="Build" src="https://github.com/hiewLM/hiewLM/actions/workflows/release.yml/badge.svg"></a>
   <img alt="Rust 1.75+" src="https://img.shields.io/badge/rust-1.75%2B-orange">
   <img alt="License" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey">
 </p>
 
+<!-- Once this is on GitHub, replace OWNER/REPO and paste these back above:
+  <a href="https://github.com/OWNER/REPO/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/OWNER/REPO/actions/workflows/release.yml"><img alt="Build" src="https://github.com/OWNER/REPO/actions/workflows/release.yml/badge.svg"></a>
+A workflow badge only renders for a repository that exists and has run that
+workflow at least once; pointing one at a guessed URL shows a broken image. -->
+
 ---
 
-hiewLM answers the question a malware analyst actually starts with — **is this
-file worth my next hour, and why?** — and then gives you a HIEW-style hex,
-disassembly and structure editor to go and find out.
+## What it is
 
-```console
-$ hiewlmc triage suspicious.docx
-== Overview ==
-Verdict          SUSPICIOUS (61/100)  MACRO EXTREF1
-File             suspicious.docx  84210 bytes (82K)
-Format           OOXML package
-Document         Word document (OOXML)
-Macro keywords   autoexec:AutoOpen, download:XMLHTTP, execution:Shell, lure:Enable Content
-SHA-256          9f2c...  ssdeep  1536:h7Xk...
+**HIEW's essentials, on Linux and macOS.** That is the whole reason this exists,
+and the whole reason for the name: HIEW is a DOS/Windows program, and an analyst
+who works on Linux or a Mac has to give up the tool or give up the platform.
+hiewLM is HIEW's way of working — the function-key bar, the key rhythm, hex and
+disassembly and structure in one keyboard-driven window — running natively on
+**L**inux and **m**acOS as well as Windows.
 
-== Risk ==
-[suspicious] document: remote template: http://…/t.dotm — fetched and its macros run on open
-[suspicious] document: macro runs on open AND executes a program — this is the payload path
-[suspicious] word/vbaProject.bin: VBA macro project (0x14a0)
-```
+On top of that it answers the question a malware analyst actually starts with —
+*is this file worth my next hour, and why?*
 
 ## Why
 
 Hex editors show you bytes. Triage tools give you a verdict you cannot verify.
-hiewLM does both in one place: every finding carries the offset it came from, and
-`Enter` takes you there.
+hiewLM does both in one window: every finding carries the offset it came from,
+and `Enter` takes you there.
 
 - **Triage in one keystroke.** Hashes a feed will recognise (including ssdeep and
   imphash), packer and builder identification, structural anomalies, capabilities
@@ -130,6 +126,19 @@ hiewLM is built to be pointed at hostile files.
   or URL is ever fetched.
 - Optional WASM plugins run in a fuel-bounded wasmtime sandbox with no filesystem
   or network access.
+
+## Acknowledgements
+
+**hiewLM exists because HIEW does.** Eugene Suslikov's
+[HIEW](https://hiew.ru) has been the reference for what a binary viewer should
+feel like for over thirty years: everything under the fingers, nothing in the
+way, and a program that never gets between you and the bytes. A generation of
+reverse engineers learned to read binaries in it, and this project is an attempt
+to carry that experience to the platforms HIEW does not run on — not to replace
+it, and not to compete with it. Thank you.
+
+Where hiewLM departs from HIEW it does so on purpose and says why
+([DESIGN.md](docs/DESIGN.md) §23.4). Where it can follow HIEW, it does.
 
 ## Contributing
 

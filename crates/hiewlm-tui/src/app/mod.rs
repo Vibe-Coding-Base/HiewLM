@@ -2589,11 +2589,25 @@ impl App {
         if self.path.exists() {
             fs::copy(&self.path, &backup).ok();
         }
+        let data = self.buffer.to_vec();
         let tmp = self.path.with_extension("hiewlm.tmp");
-        fs::write(&tmp, self.buffer.to_vec())
-            .with_context(|| format!("cannot write {}", tmp.display()))?;
+        fs::write(&tmp, &data).with_context(|| format!("cannot write {}", tmp.display()))?;
+
+        // Let go of the sample before replacing it. Windows refuses to rename
+        // over a file that this process still has mapped (os error 1224), and
+        // the buffer maps it from the moment the file was opened. The bytes
+        // handed over are the ones just written, so the view does not flicker.
+        self.buffer = EditBuffer::new(Arc::new(hiewlm_core::MemSource::new(data)));
         fs::rename(&tmp, &self.path)
             .with_context(|| format!("cannot replace {}", self.path.display()))?;
+
+        // Map the saved file again so later reads come from the file being
+        // edited rather than from a snapshot. Editing history is not carried
+        // across: the patches are in the file now, and replaying them over the
+        // saved bytes would apply them twice.
+        if let Ok(src) = FileSource::open(&self.path) {
+            self.buffer = EditBuffer::new(Arc::new(src));
+        }
         self.set_status(format!("Saved (backup: {}).", backup.display()));
         Ok(())
     }

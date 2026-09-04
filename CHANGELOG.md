@@ -6,6 +6,19 @@ All notable changes to hiewLM. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-04
+
+### Fixed
+
+- Saving in the editor (`w`, `F9`) failed on Windows with "cannot replace": the
+  buffer still had the sample memory-mapped while the temporary file was renamed
+  over it. The same defect as the one fixed in the command-line tools in 0.6.0,
+  in the last place that rewrites a file it holds open. Note that editing history
+  no longer survives a save — the changes are in the file at that point, and
+  replaying them over the saved bytes would apply them twice.
+- The buffer stayed dirty after a successful save, so the editor never took its
+  own "no changes to save" path.
+
 ## [0.6.0] - 2026-09-04
 
 ### Added
@@ -55,6 +68,9 @@ All notable changes to hiewLM. The format follows
 
 ### Fixed
 
+- `hiewlmc patch`, `asm` and `crypt` failed on Windows with os error 1224: each
+  kept the sample memory-mapped across the write that rewrote the same file,
+  and Windows will not truncate a file with a mapped section open.
 - A folder pass read and hashed every file in full: the six largest files in a
   Downloads directory cost forty seconds between them, during which the UI had
   not started and keystrokes queued up — so `q` appeared to hang. Files over

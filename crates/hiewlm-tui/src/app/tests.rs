@@ -1901,3 +1901,28 @@ fn a_folder_pass_does_not_hash_gigabytes() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// Saving must let go of the sample before replacing it. On Windows a rename
+/// over a file this process still has mapped fails with os error 1224, so this
+/// test is the guard that catches it — nothing else in the suite calls `save`.
+#[test]
+fn saving_writes_the_file_and_lets_go_of_the_mapping() {
+    let path = std::env::temp_dir().join(format!("hiewlm_save_{}.bin", std::process::id()));
+    fs::write(&path, b"AAAA").unwrap();
+
+    let mut a = App::open(path.clone()).unwrap();
+    a.read_only = false;
+    a.buffer.overwrite(FileOffset(1), b"B");
+    assert!(a.buffer.is_dirty());
+
+    a.save().expect("save must succeed on every platform");
+
+    assert_eq!(fs::read(&path).unwrap(), b"ABAA");
+    // The buffer now reflects the saved file, so there is nothing left to save.
+    assert!(!a.buffer.is_dirty());
+    assert_eq!(a.buffer.to_vec(), b"ABAA");
+
+    let _ = fs::remove_file(&path);
+    let _ = fs::remove_file(path.with_extension("bin.bak"));
+    let _ = fs::remove_file(path.with_extension("hiewlm.tmp"));
+}

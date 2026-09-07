@@ -6,6 +6,19 @@ All notable changes to hiewLM. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Packer identification matched product *names* anywhere in a file, so any file
+  that merely mentions a packer read as packed. hiewLM triaging its own binary
+  reported itself as ConfuserEx-obfuscated, then — after the first pass — as an
+  NSIS installer, because its embedded `packers.txt` contains every marker
+  string. Obfuscator markers now join packer and protector markers as
+  identity-only (never a headline or score on their own), and a file matching
+  four or more distinct product markers is treated as a name list — a signature
+  database, an AV engine or hiewLM itself — rather than a sample packed by a
+  dozen packers. Structural evidence (entry signatures, section names) is
+  unaffected, and a genuine single-marker installer or runtime is still named.
+
 ## [0.6.1] - 2026-09-04
 
 ### Fixed

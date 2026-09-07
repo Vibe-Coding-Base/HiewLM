@@ -236,16 +236,51 @@ pub fn detect(
         .matches
         .dedup_by(|a, b| a.name == b.name && a.how == b.how);
 
-    // "Packed" is a claim about structure and needs structural evidence. A build
-    // marker is a product *name* appearing in the file, which any document,
-    // installer log or analysis tool that merely mentions Themida also contains
-    // — hiewLM's own signature table did, and it identified itself as protected.
-    // Markers still establish what *built* a file, which is an identity claim
-    // they legitimately answer.
+    // A file that matches many *different* build markers at once is not packed by
+    // a dozen packers — it is a file that contains their names: a signature
+    // database, an AV engine, a YARA rule set, or hiewLM itself, whose embedded
+    // packers.txt holds every needle here. When that happens the markers cancel
+    // out and none of them is load-bearing; a genuine sample matches one, rarely
+    // two. Structural hits (entry signatures, section names) are never affected.
+    const CATALOG: usize = 4;
+    let distinct_markers = {
+        let mut names: Vec<&str> = report
+            .matches
+            .iter()
+            .filter(|m| m.how == How::Marker)
+            .map(|m| m.name.as_str())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names.len()
+    };
+    let looks_like_a_catalog = distinct_markers >= CATALOG;
+    if looks_like_a_catalog {
+        report.indicators.push(format!(
+            "{distinct_markers} product markers present — treated as a name list, not evidence"
+        ));
+    }
+
+    // "Packed", "protected" and "obfuscated" are claims about structure and need
+    // structural evidence. A build marker is a product *name* appearing in the
+    // file, which any document, installer log or analysis tool that merely
+    // mentions Themida or ConfuserEx also contains. Installer and runtime markers
+    // stay eligible on their own — those are positive identity ("this *is* an NSIS
+    // installer", "this *is* a Go binary") that a marker legitimately answers —
+    // unless the file looks like a catalog, in which case even those are just
+    // names in a list.
     let headline = report
         .matches
         .iter()
-        .find(|m| !(m.how == How::Marker && matches!(m.kind, Kind::Packer | Kind::Protector)))
+        .find(|m| {
+            if m.how != How::Marker {
+                return true;
+            }
+            if looks_like_a_catalog {
+                return false;
+            }
+            !matches!(m.kind, Kind::Packer | Kind::Protector | Kind::Obfuscator)
+        })
         .cloned();
     if let Some(best) = headline.as_ref() {
         report.name = Some(best.name.clone());
@@ -358,6 +393,50 @@ mod tests {
         assert!(r.likelihood < 50, "{}", r.likelihood);
         // The match is still visible, just not load-bearing.
         assert!(r.matches.iter().any(|m| m.name.contains("Themida")));
+    }
+
+    #[test]
+    fn an_obfuscator_name_in_the_file_does_not_make_it_obfuscated() {
+        // The bug that shipped in v0.6.1: the headline filter excluded packer and
+        // protector markers but not obfuscator markers, so hiewLM triaging its own
+        // binary matched "ConfuserEx v" inside its embedded packers.txt and
+        // reported itself as a ConfuserEx-obfuscated .NET assembly.
+        let file = b"marker | obfuscator | ConfuserEx | ConfuserEx v1.0 -- embedded rule table";
+        let r = detect(
+            &[0x55, 0x48, 0x89, 0xe5],
+            &sections(&[(".text", 6.0)]),
+            120,
+            file,
+        );
+        assert!(!r.identified(), "a mention is not evidence: {:?}", r.name);
+        assert!(r.likelihood < 50, "{}", r.likelihood);
+        // The match is still there, just not load-bearing or badged.
+        assert!(r.matches.iter().any(|m| m.name.contains("ConfuserEx")));
+    }
+
+    #[test]
+    fn a_file_full_of_product_names_is_a_catalog_not_a_sample() {
+        // hiewLM triaging itself: its embedded packers.txt contains every marker
+        // needle, so a dozen unrelated products all "match" at once. That is a
+        // signature database, not a file packed by twelve packers.
+        let file = b"Themida VMProtect Enigma Obsidium UPX ConfuserEx \
+                     Nullsoft Install System PyInstaller Go build ID";
+        let r = detect(
+            &[0x55, 0x48, 0x89, 0xe5],
+            &sections(&[(".text", 6.0)]),
+            120,
+            file,
+        );
+        assert!(
+            !r.identified(),
+            "a name list must not headline as any product: {:?}",
+            r.name
+        );
+        assert!(r.likelihood < 50, "{}", r.likelihood);
+        assert!(r
+            .indicators
+            .iter()
+            .any(|i| i.contains("treated as a name list")));
     }
 
     #[test]

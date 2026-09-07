@@ -28,6 +28,21 @@ disassembly and structure in one keyboard-driven window — running natively on
 On top of that it answers the question a malware analyst actually starts with —
 *is this file worth my next hour, and why?*
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><a href="assets/screenshots/triage.png"><img alt="Triage screen: verdict, hashes, packer, structural anomalies" src="assets/screenshots/triage.png"></a><br><sub><b>Triage</b> — one verdict from hashes, packer identification, structural anomalies and imports. Every line jumps to its offset.</sub></td>
+    <td width="50%"><a href="assets/screenshots/document-findings.png"><img alt="Document findings for a PDF: JavaScript, OpenAction, Launch, embedded files" src="assets/screenshots/document-findings.png"></a><br><sub><b>Document analysis</b> — a PDF's auto-run JavaScript, launch action and embedded files, each drilling into the matches behind it.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><a href="assets/screenshots/hex-view.png"><img alt="Hex view with the classic HIEW theme" src="assets/screenshots/hex-view.png"></a><br><sub><b>Hex</b> — the classic HIEW layout and theme, with the function-key bar and plain-letter aliases.</sub></td>
+    <td width="50%"><a href="assets/screenshots/disassembly.png"><img alt="Disassembly at the entry point with branch arrows" src="assets/screenshots/disassembly.png"></a><br><sub><b>Disassembly</b> — jumped to the entry point, with branch arrows and follow/xref navigation.</sub></td>
+  </tr>
+</table>
+
+<sub>Screenshots use a synthetic, harmless demo sample built for the purpose — no real malware.</sub>
+
 ## Why
 
 Hex editors show you bytes. Triage tools give you a verdict you cannot verify.

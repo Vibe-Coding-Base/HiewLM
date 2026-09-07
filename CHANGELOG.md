@@ -6,6 +6,15 @@ All notable changes to hiewLM. The format follows
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-09-07
+
+### Changed
+
+- The development-time design document (`docs/DESIGN.md`) is gone; the two guides
+  that face outward — `USAGE.md` and `DEVELOPMENT.md` — are the documentation.
+- The README now shows the running tool: triage, document findings, hex and
+  disassembly, captured from the published binary.
+
 ### Fixed
 
 - Packer identification matched product *names* anywhere in a file, so any file

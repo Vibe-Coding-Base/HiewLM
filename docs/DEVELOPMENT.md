@@ -1,8 +1,7 @@
 # Developer guide
 
 How hiewLM is put together, how to extend it, and why it is shaped the way it is.
-For the long-form design, see [DESIGN.md](DESIGN.md); for what the tool does, see
-[USAGE.md](USAGE.md).
+For what the tool does from a user's seat, see [USAGE.md](USAGE.md).
 
 - [Getting started](#getting-started)
 - [Architecture](#architecture)
@@ -147,11 +146,11 @@ exception carries a local allow and a SAFETY note.
 
 If you need a capability that would breach this — reading another process's
 memory on Windows, for instance — it goes behind a feature flag with an explicit,
-audited exception, and the decision belongs in DESIGN.md.
+audited exception, recorded here alongside the code it guards.
 
 **HIEW faithfulness.** The keymap, layout and default theme follow HIEW. Where
-hiewLM deviates, the deviation is deliberate and documented (see DESIGN.md §23.4).
-Removing a key HIEW has is a design decision, not a cleanup.
+hiewLM deviates, the deviation is deliberate and documented next to the code that
+makes it. Removing a key HIEW has is a design decision, not a cleanup.
 
 **Extensibility.** Formats, architectures and containers are traits with
 registries. Detection rules are data. The point is that the common extensions

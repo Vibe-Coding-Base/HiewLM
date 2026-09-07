@@ -119,8 +119,6 @@ Evidence should not change because of a stray keystroke.
   they add up to.
 - **[Developer guide](docs/DEVELOPMENT.md)** — architecture, how to add a format,
   a rule or a view, and the decisions behind the shape of the code.
-- **[Design document](docs/DESIGN.md)** — the long-form design, including the
-  security model.
 
 ## Security model
 
@@ -148,8 +146,8 @@ reverse engineers learned to read binaries in it, and this project is an attempt
 to carry that experience to the platforms HIEW does not run on — not to replace
 it, and not to compete with it. Thank you.
 
-Where hiewLM departs from HIEW it does so on purpose and says why
-([DESIGN.md](docs/DESIGN.md) §23.4). Where it can follow HIEW, it does.
+Where hiewLM departs from HIEW it does so on purpose, and the developer guide
+says why. Where it can follow HIEW, it does.
 
 ## Contributing
 

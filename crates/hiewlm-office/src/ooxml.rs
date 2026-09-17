@@ -214,6 +214,7 @@ fn parse_props(xml: &str) -> Vec<(String, String)> {
         "Application",
         "AppVersion",
         "Company",
+        "Manager",
         "Template",
         "TotalTime",
     ];

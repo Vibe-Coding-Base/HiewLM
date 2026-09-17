@@ -1061,8 +1061,9 @@ fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String
 fn cmd_office(file: &Path, show_macros: bool, show_matches: bool) -> Result<(String, bool)> {
     let (buf, _) = open(file)?;
     let data = read_all(&buf);
-    let doc = hiewlm_office::parse(&data)
-        .ok_or_else(|| anyhow!("not an Office document (no OLE2, OOXML or RTF structure)"))?;
+    let doc = hiewlm_office::parse(&data).ok_or_else(|| {
+        anyhow!("not a recognised document (OLE2, OOXML, RTF, PDF, ZIP or image)")
+    })?;
 
     let mut out = format!(
         "format     {}\ncontainer  {}\n",

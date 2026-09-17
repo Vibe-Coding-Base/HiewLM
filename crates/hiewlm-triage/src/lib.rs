@@ -794,6 +794,20 @@ fn score(r: &mut TriageReport) {
         s += 15;
         r.badges.push("CONTAINER".into());
     }
+    // Identity metadata (author, GPS, template path) is not a threat on its own,
+    // so it adds no score — but the badge is how someone notices the document or
+    // image view can surface it, and can strip it. Discoverability, not verdict.
+    let identity = r
+        .doc_findings
+        .iter()
+        .filter(|f| f.message.starts_with("identity:"))
+        .count();
+    if identity > 0 {
+        r.badges.push(format!("META{identity}"));
+        if r.doc_findings.iter().any(|f| f.message.contains("GPS")) {
+            r.badges.push("GPS".into());
+        }
+    }
     r.score = s.min(100) as u8;
 }
 

@@ -11,6 +11,8 @@
 //! remote template target is *reported*, never resolved.
 
 pub mod cfb;
+pub mod image;
+pub mod meta;
 pub mod ooxml;
 pub mod pdf;
 pub mod rtf;
@@ -32,6 +34,8 @@ pub enum DocKind {
     Pdf,
     /// A plain ZIP archive (an OOXML package is reported as `Ooxml` instead).
     Zip,
+    /// A raster image (JPEG, PNG, TIFF …), analysed for its metadata.
+    Image,
 }
 
 impl DocKind {
@@ -42,6 +46,7 @@ impl DocKind {
             DocKind::Rtf => "RTF document",
             DocKind::Pdf => "PDF document",
             DocKind::Zip => "ZIP archive",
+            DocKind::Image => "image",
         }
     }
 }
@@ -113,6 +118,19 @@ impl Document {
 
 /// Analyse `bytes` as a document, or `None` if it is not one.
 pub fn parse(bytes: &[u8]) -> Option<Document> {
+    let mut doc = dispatch(bytes)?;
+    // Identity metadata reads as a finding, uniformly across formats: whatever
+    // the parser put in `metadata`, the sensitive fields also surface where the
+    // analyst looks — and where the privacy scrub will later act.
+    for f in meta::findings_from_metadata(&doc.metadata) {
+        if !doc.findings.iter().any(|x| x.message == f.message) {
+            doc.findings.push(f);
+        }
+    }
+    Some(doc)
+}
+
+fn dispatch(bytes: &[u8]) -> Option<Document> {
     if cfb::is_cfb(bytes) {
         return parse_ole(bytes);
     }
@@ -127,7 +145,59 @@ pub fn parse(bytes: &[u8]) -> Option<Document> {
     if pdf::is_pdf(bytes) {
         return parse_pdf(bytes);
     }
+    if image::detect(bytes).is_some() {
+        return parse_image(bytes);
+    }
     None
+}
+
+// ── Image ────────────────────────────────────────────────────────────────────
+
+fn parse_image(bytes: &[u8]) -> Option<Document> {
+    let img = image::parse(bytes)?;
+    let format = match img.gps {
+        Some(_) => format!("{} with GPS location", img.kind.label()),
+        None => img.kind.label().to_string(),
+    };
+    let mut doc = Document {
+        kind: DocKind::Image,
+        format,
+        nodes: Vec::new(),
+        findings: Vec::new(),
+        metadata: Vec::new(),
+        macros: Vec::new(),
+        external: Vec::new(),
+        match_groups: Vec::new(),
+    };
+
+    for s in &img.segments {
+        doc.nodes.push(Node {
+            path: s.name.clone(),
+            kind: "segment",
+            size: s.size,
+            depth: 0,
+            file_off: Some(s.file_off),
+            detail: s.detail.clone(),
+        });
+    }
+
+    for f in &img.fields {
+        doc.metadata.push((f.key.clone(), f.value.clone()));
+        if f.identity {
+            doc.findings.push(meta::finding(&f.key, &f.value));
+        }
+    }
+
+    // An embedded thumbnail can hold the picture from before a crop or blur —
+    // a classic redaction leak, so it is worth flagging even when empty of EXIF.
+    if img.has_thumbnail {
+        doc.findings.push(meta::finding(
+            "Embedded thumbnail",
+            "present — may retain the image before a crop or redaction",
+        ));
+    }
+
+    Some(doc)
 }
 
 // ── OLE ──────────────────────────────────────────────────────────────────────
@@ -486,6 +556,40 @@ fn finish_macros(doc: &mut Document) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_image_becomes_a_document_with_identity_findings() {
+        // A minimal JPEG whose EXIF carries an author name (tag 0x013B).
+        let mut exif = b"Exif\x00\x00II\x2a\x00".to_vec();
+        exif.extend_from_slice(&8u32.to_le_bytes());
+        exif.extend_from_slice(&1u16.to_le_bytes());
+        let name = b"Jane Doe\x00";
+        let heap_off = 6 + 8 + 2 + 12 + 4;
+        exif.extend_from_slice(&0x013Bu16.to_le_bytes());
+        exif.extend_from_slice(&2u16.to_le_bytes());
+        exif.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        exif.extend_from_slice(&((heap_off - 6) as u32).to_le_bytes());
+        exif.extend_from_slice(&0u32.to_le_bytes());
+        exif.extend_from_slice(name);
+
+        let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xE1];
+        jpeg.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+        jpeg.extend_from_slice(&exif);
+        jpeg.extend_from_slice(&[0xFF, 0xD9]);
+
+        let d = parse(&jpeg).expect("image parses as a document");
+        assert_eq!(d.kind, DocKind::Image);
+        assert!(d.format.contains("JPEG"));
+        assert!(
+            d.findings
+                .iter()
+                .any(|f| f.message == "identity: Artist = Jane Doe"),
+            "{:?}",
+            d.findings
+        );
+        // The segments are navigable, like every other structure view.
+        assert!(d.nodes.iter().all(|n| n.file_off.is_some()));
+    }
 
     #[test]
     fn an_rtf_lure_is_recognised_and_explained() {

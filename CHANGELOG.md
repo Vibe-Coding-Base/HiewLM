@@ -6,6 +6,20 @@ All notable changes to hiewLM. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Image metadata.** JPEG, PNG and TIFF are now first-class in the document
+  view: opening one shows its EXIF, XMP and PNG-text as a navigable structure
+  and reads out who and what device made it, when, and — decoded to signed
+  decimal degrees — where. GPS coordinates, an author or camera-owner name, and
+  an embedded thumbnail that may still hold a pre-crop image are surfaced as
+  findings. Nothing is decoded beyond the metadata; the pixels are never touched.
+- **Identity metadata as findings.** Across documents and images, the fields
+  that leak identity — author, last-saved-by, company, manager, template path,
+  GPS — are raised in the Findings pane, and the triage screen carries a `META`
+  and `GPS` badge so the view is discoverable. These add no threat score: a name
+  is context, not a verdict.
+
 ## [0.6.2] - 2026-09-07
 
 ### Changed

@@ -19,6 +19,17 @@ All notable changes to hiewLM. The format follows
   GPS — are raised in the Findings pane, and the triage screen carries a `META`
   and `GPS` badge so the view is discoverable. These add no threat score: a name
   is context, not a verdict.
+- **Plugins menu** (`P`). A single place for the tools that run on the open
+  file — YARA scan and the encoded-data recovery tools today — filtered to what
+  the file supports, so it answers "what can I do with this file" rather than
+  listing tools that would do nothing. Stack-string reconstruction appears for
+  an executable and not for an image; more tools will land here.
+
+### Changed
+
+- Document panes now follow the file type: an image, PDF or archive no longer
+  shows a Macros tab it can never fill. Macros is kept for OLE and OOXML, the
+  formats that can carry VBA.
 
 ## [0.6.2] - 2026-09-07
 

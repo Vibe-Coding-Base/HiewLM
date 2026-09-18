@@ -5,7 +5,68 @@
 
 use super::*;
 
+/// One entry in the Plugins menu: a tool the user runs on the open file.
+pub struct PluginEntry {
+    /// Quick-select letter, shown before the label.
+    pub key: char,
+    pub label: &'static str,
+    /// Per-file context, shown dimmed after the label.
+    pub detail: String,
+    pub command: Command,
+}
+
 impl super::App {
+    /// The plugins that apply to the file in front of the user, in menu order.
+    /// Context-filtered: an entry appears only when it has something to act on,
+    /// which is what makes the menu a discovery surface rather than a wall of
+    /// tools that mostly do nothing to this file.
+    pub fn plugin_entries(&self) -> Vec<PluginEntry> {
+        let mut v = Vec::new();
+
+        if cfg!(feature = "yara") {
+            let detail = match &self.default_yara_rules {
+                Some(p) => format!(
+                    "rules: {}",
+                    p.file_name().and_then(|n| n.to_str()).unwrap_or("(set)")
+                ),
+                None => "choose a rule file".to_string(),
+            };
+            v.push(PluginEntry {
+                key: 'y',
+                label: "YARA scan",
+                detail,
+                command: Command::RunYara,
+            });
+        }
+
+        // Encoded-data recovery works on any file's bytes.
+        v.push(PluginEntry {
+            key: 'x',
+            label: "Find hidden plaintext",
+            detail: "hunt a single-byte XOR key".into(),
+            command: Command::XorSearch,
+        });
+        v.push(PluginEntry {
+            key: 'k',
+            label: "Recover repeating XOR key",
+            detail: "from the block or cursor".into(),
+            command: Command::XorKey,
+        });
+
+        // Stack-string reconstruction needs code to disassemble — not a document
+        // or an image, whose "arch" is only the disassembler's default.
+        if self.code_supported() && self.document.is_none() {
+            v.push(PluginEntry {
+                key: 's',
+                label: "Reconstruct stack strings",
+                detail: "strings a function builds on the stack".into(),
+                command: Command::StackStrings,
+            });
+        }
+
+        v
+    }
+
     // -- Folder triage & search-all -------------------------------------
 
     /// Rank every file next to this one by triage score — the FAR-style panel

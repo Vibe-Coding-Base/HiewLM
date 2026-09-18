@@ -178,6 +178,7 @@ fn map_view(key: KeyEvent) -> Option<Command> {
         // `C` rewrites the block; `L` only changes how it is displayed.
         (Char('L'), _, _, _) => Some(Command::OpenLens),
         (Char('R'), _, _, _) => Some(Command::RunYara),
+        (Char('P'), _, _, _) => Some(Command::OpenPluginMenu),
         (Char('O'), _, _, _) => Some(Command::OpenFile),
         (Char('F'), _, _, _) => Some(Command::FolderTriage),
         // The command palette: everything by name, for the keys you forget.

@@ -239,6 +239,13 @@ pub enum Dialog {
     BlockMenu {
         selected: usize,
     },
+    /// Tools that run on the open file — YARA, encoded-data recovery, and (for a
+    /// document or image) the metadata scrub. The list is filtered to what the
+    /// file actually supports, so the menu answers "what can I do with this
+    /// file" rather than showing tools that would do nothing.
+    PluginMenu {
+        selected: usize,
+    },
     /// Copy something to the system clipboard (OSC 52).
     CopyMenu {
         selected: usize,
@@ -2970,6 +2977,13 @@ impl App {
                     self.set_status("Select a block first (press * then move).");
                 }
             }
+            Command::OpenPluginMenu => {
+                if self.plugin_entries().is_empty() {
+                    self.set_status("No plugins apply to this file.");
+                } else {
+                    self.dialog = Some(Dialog::PluginMenu { selected: 0 });
+                }
+            }
             Command::OpenCopyMenu => {
                 self.dialog = Some(Dialog::CopyMenu { selected: 0 });
                 self.set_status("Copy to the system clipboard (works over SSH via OSC 52).");
@@ -3238,6 +3252,8 @@ pub enum Command {
     BlockPaste,
     BlockDelete,
     OpenBlockMenu,
+    /// `P`: the Plugins menu — the tools that apply to the current file.
+    OpenPluginMenu,
     /// `Y`: copy a hash / the selection / the IOC list to the system clipboard.
     OpenCopyMenu,
     CopyItem(usize),

@@ -827,6 +827,7 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         ("5", "Goto"),
         ("7", "Srch"),
         ("8", "Hdr"),
+        ("P", "Plug"),
     ];
     const CODE_EXTRA: &[(&str, &str)] = &[
         ("f", "Follow"),
@@ -835,13 +836,7 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         (";", "Cmnt"),
         ("A", "Asm"),
     ];
-    const HEX_EXTRA: &[(&str, &str)] = &[
-        ("*", "Mark"),
-        ("b", "Blk"),
-        ("s", "Str"),
-        ("R", "Yara"),
-        ("Y", "Copy"),
-    ];
+    const HEX_EXTRA: &[(&str, &str)] = &[("*", "Mark"), ("b", "Blk"), ("s", "Str"), ("Y", "Copy")];
     const TEXT_EXTRA: &[(&str, &str)] = &[("E", "Enc"), ("s", "Str"), ("*", "Mark")];
     const DOC_EXTRA: &[(&str, &str)] = &[
         ("←→", "Pane"),
@@ -1015,6 +1010,23 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                 })
                 .collect();
             ("Block".into(), lines, BLOCK_MENU_LABELS.len() as u16 + 2)
+        }
+        Dialog::PluginMenu { selected } => {
+            let entries = app.plugin_entries();
+            let lines: Vec<Line> = if entries.is_empty() {
+                vec![Line::from("  (no tools apply to this file)")]
+            } else {
+                entries
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
+                        let marker = if i == *selected { "►" } else { " " };
+                        Line::from(format!("{marker} {}  {:<26}  {}", e.key, e.label, e.detail))
+                    })
+                    .collect()
+            };
+            let h = entries.len().max(1) as u16 + 2;
+            ("Plugins".into(), lines, h)
         }
         Dialog::BlockWrite { input } => (
             "Write block to file".into(),

@@ -125,6 +125,11 @@ pub const PALETTE: &[(&str, &str, Command)] = &[
     ("triage screen", "2 / T", Command::OpenTriage),
     ("header / sections / imports", "8", Command::OpenHeader),
     ("strings with indicators", "s", Command::OpenStrings),
+    (
+        "plugins menu (tools for this file)",
+        "P",
+        Command::OpenPluginMenu,
+    ),
     ("yara scan", "R", Command::RunYara),
     (
         "xor search (find hidden plaintext)",

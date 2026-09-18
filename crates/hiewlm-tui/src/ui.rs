@@ -131,7 +131,7 @@ fn draw_file_picker(
         lines.push(Line::from(Span::styled(label, style)));
     }
     let shown = dir.to_string_lossy();
-    let title = format!(" Pick file — {shown}  (↑↓ · Enter open/select · Bksp up · Esc) ");
+    let title = format!(" Pick file — {shown}  (↑↓ - Enter open/select - Bksp up - Esc) ");
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -189,7 +189,7 @@ fn draw_jump_list(
     };
     let block = Block::default()
         .title(format!(
-            " {title}{filt}  (type=filter · ↑↓ PgUp/Dn · ←→ scroll · Enter jump · Esc) "
+            " {title}{filt}  (type=filter - ↑↓ PgUp/Dn - ←→ scroll - Enter jump - Esc) "
         ))
         .borders(Borders::ALL)
         .style(theme.dialog());
@@ -231,7 +231,7 @@ fn draw_palette(f: &mut Frame, area: Rect, input: &str, sel: usize, theme: &Them
         )));
     }
     let block = Block::default()
-        .title(" Commands  (type to filter · ↑↓ · Enter runs · Esc) ")
+        .title(" Commands  (type to filter - ↑↓ - Enter runs - Esc) ")
         .borders(Borders::ALL)
         .style(theme.dialog());
     f.render_widget(
@@ -295,7 +295,7 @@ fn draw_pane_list(
     };
     let block = Block::default()
         .title(format!(
-            "{title}{filt} (←→ pane · Shift+←→ scroll · type=filter · Enter jump · Esc) "
+            "{title}{filt} (←→ pane - Shift+←→ scroll - type=filter - Enter jump - Esc) "
         ))
         .borders(Borders::ALL)
         .style(theme.dialog());
@@ -363,7 +363,7 @@ fn draw_header(
         app.exports.len()
     );
     let title = format!(
-        " Header — {}{}  {}  (←→ pane · ↑↓ · type=filter · Enter jump · Esc) ",
+        " Header — {}{}  {}  (←→ pane - ↑↓ - type=filter - Enter jump - Esc) ",
         pane.label(),
         filt,
         counts
@@ -411,7 +411,7 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         None => String::new(),
     };
     let text = format!(
-        " {name}  {fmt}/{arch}{asm}  {mode:<4} {rw} {ins}  {addr}  size:{size}{sel}{diff}{lens}{dirty}{edit}{badges}  · {status}",
+        " {name}  {fmt}/{arch}{asm}  {mode:<4} {rw} {ins}  {addr}  size:{size}{sel}{diff}{lens}{dirty}{edit}{badges}  - {status}",
         fmt = app.format.label(),
         arch = app.arch.label(),
         mode = app.mode.label(),
@@ -904,6 +904,25 @@ pub const BLOCK_MENU_LABELS: [&str; 9] = [
     "n  NOP out instruction (Alt+F2)",
 ];
 
+/// Render menu rows HIEW-style: every row padded to the same width, the
+/// selected one carried on a highlight bar rather than an in-text marker, so the
+/// columns line up and nothing juts in or out.
+fn highlight_menu(rows: Vec<String>, selected: usize, theme: &Theme) -> Vec<Line<'static>> {
+    let w = rows.iter().map(|r| r.chars().count()).max().unwrap_or(0);
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let padded = format!("  {r:<w$}  ");
+            let style = if i == selected {
+                theme.selection()
+            } else {
+                theme.dialog()
+            };
+            Line::from(Span::styled(padded, style))
+        })
+        .collect()
+}
+
 fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Theme) {
     let (title, body, height): (String, Vec<Line>, u16) = match dialog {
         Dialog::Goto { input } => (
@@ -912,7 +931,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                 Line::from(format!("Address: {input}_")),
                 Line::from(""),
                 Line::from(Span::raw(
-                    "n hex · +n/-n relative · .va · nt decimal · Enter/Esc",
+                    "n hex - +n/-n relative - .va - nt decimal - Enter/Esc",
                 )),
             ],
             5,
@@ -925,7 +944,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                     Line::from(format!("Pattern: {input}_")),
                     Line::from(""),
                     Line::from(Span::raw(
-                        "Tab toggles hex/text · Enter search · Esc cancel",
+                        "Tab toggles hex/text - Enter search - Esc cancel",
                     )),
                 ],
                 5,
@@ -970,70 +989,59 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             ("Disassemble as (1-8)".into(), lines, 10)
         }
         Dialog::ColorMenu { selected } => {
-            let mut names: Vec<String> = (0..8)
+            let mut rows: Vec<String> = (0..8)
                 .map(|i| format!("{}  {}", i + 1, Theme::marker_name(i)))
                 .collect();
-            names.push("r  random".into());
-            names.push("c  clear all".into());
-            let lines = names
-                .iter()
-                .enumerate()
-                .map(|(i, n)| {
-                    let marker = if i == *selected { "► " } else { "  " };
-                    Line::from(format!("{marker}{n}"))
-                })
-                .collect();
-            ("Color block".into(), lines, 12)
+            rows.push("r  random".into());
+            rows.push("c  clear all".into());
+            (
+                "Color block".into(),
+                highlight_menu(rows, *selected, theme),
+                12,
+            )
         }
         Dialog::CopyMenu { selected } => {
-            let lines = COPY_MENU_LABELS
-                .iter()
-                .enumerate()
-                .map(|(i, n)| {
-                    let marker = if i == *selected { "► " } else { "  " };
-                    Line::from(format!("{marker}{n}"))
-                })
-                .collect();
+            let rows: Vec<String> = COPY_MENU_LABELS.iter().map(|n| n.to_string()).collect();
+            let h = rows.len() as u16 + 2;
             (
                 "Copy to system clipboard".into(),
-                lines,
-                COPY_MENU_LABELS.len() as u16 + 2,
+                highlight_menu(rows, *selected, theme),
+                h,
             )
         }
         Dialog::BlockMenu { selected } => {
-            let lines = BLOCK_MENU_LABELS
-                .iter()
-                .enumerate()
-                .map(|(i, n)| {
-                    let marker = if i == *selected { "► " } else { "  " };
-                    Line::from(format!("{marker}{n}"))
-                })
-                .collect();
-            ("Block".into(), lines, BLOCK_MENU_LABELS.len() as u16 + 2)
+            let rows: Vec<String> = BLOCK_MENU_LABELS.iter().map(|n| n.to_string()).collect();
+            let h = rows.len() as u16 + 2;
+            ("Block".into(), highlight_menu(rows, *selected, theme), h)
         }
         Dialog::PluginMenu { selected } => {
             let entries = app.plugin_entries();
-            let lines: Vec<Line> = if entries.is_empty() {
-                vec![Line::from("  (no tools apply to this file)")]
+            if entries.is_empty() {
+                (
+                    "Plugins".into(),
+                    vec![Line::from("  (no tools apply to this file)  ")],
+                    3,
+                )
             } else {
-                entries
+                let lw = entries
                     .iter()
-                    .enumerate()
-                    .map(|(i, e)| {
-                        let marker = if i == *selected { "►" } else { " " };
-                        Line::from(format!("{marker} {}  {:<26}  {}", e.key, e.label, e.detail))
-                    })
-                    .collect()
-            };
-            let h = entries.len().max(1) as u16 + 2;
-            ("Plugins".into(), lines, h)
+                    .map(|e| e.label.chars().count())
+                    .max()
+                    .unwrap_or(0);
+                let rows: Vec<String> = entries
+                    .iter()
+                    .map(|e| format!("{}   {:<lw$}   {}", e.key, e.label, e.detail))
+                    .collect();
+                let h = rows.len() as u16 + 2;
+                ("Plugins".into(), highlight_menu(rows, *selected, theme), h)
+            }
         }
         Dialog::BlockWrite { input } => (
             "Write block to file".into(),
             vec![
                 Line::from(format!("Path: {input}_")),
                 Line::from(""),
-                Line::from(Span::raw("Enter to write · Esc cancel")),
+                Line::from(Span::raw("Enter to write - Esc cancel")),
             ],
             5,
         ),
@@ -1050,7 +1058,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             lines.push(Line::from(format!("Write to: {out}_")));
             lines.push(Line::from(Span::raw("The original is not modified.")));
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::raw("Enter to write · Esc cancel")));
+            lines.push(Line::from(Span::raw("Enter to write - Esc cancel")));
             let h = removed.len() as u16 + 8;
             ("Scrub metadata".into(), lines, h)
         }
@@ -1059,7 +1067,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             vec![
                 Line::from(format!("Hex pattern: {input}_")),
                 Line::from(""),
-                Line::from(Span::raw("e.g. 90  or  00 ff · Enter fills · Esc cancel")),
+                Line::from(Span::raw("e.g. 90  or  00 ff - Enter fills - Esc cancel")),
             ],
             5,
         ),
@@ -1068,7 +1076,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             vec![
                 Line::from(Span::raw("Press 1-8 to store the cursor in that slot.")),
                 Line::from(""),
-                Line::from(Span::raw("Alt+1..8 jumps to a slot · Esc cancel")),
+                Line::from(Span::raw("Alt+1..8 jumps to a slot - Esc cancel")),
             ],
             5,
         ),
@@ -1076,9 +1084,9 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             let mut lines = vec![Line::from(format!("Recipe: {input}_")), Line::from("")];
             if input.trim().is_empty() {
                 lines.push(Line::from(Span::raw(
-                    "xor 5a · add 10 · sub 1 · rol 3 · ror 2",
+                    "xor 5a - add 10 - sub 1 - rol 3 - ror 2",
                 )));
-                lines.push(Line::from(Span::raw("not · neg · and 0f · or f0")));
+                lines.push(Line::from(Span::raw("not - neg - and 0f - or f0")));
                 lines.push(Line::from(Span::raw("chain with commas:  xor dead, rol 3")));
                 lines.push(Line::from(Span::raw(
                     "keys: hex (5a, deadbeef) or \"text\"",
@@ -1097,7 +1105,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                 }
             }
             lines.push(Line::from(Span::raw(
-                "Enter applies to the block · Esc cancel",
+                "Enter applies to the block - Esc cancel",
             )));
             let h = lines.len() as u16 + 2;
             ("Crypt engine".into(), lines, h)
@@ -1112,7 +1120,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             ];
             if input.trim().is_empty() {
                 lines.push(Line::from(Span::raw(
-                    "xor 5a · add 10 · rol 3 · not · xor deadbeef",
+                    "xor 5a - add 10 - rol 3 - not - xor deadbeef",
                 )));
                 lines.push(Line::from(Span::raw(
                     "Alt+X hunts for the key automatically.",
@@ -1126,7 +1134,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                     Err(e) => lines.push(Line::from(Span::raw(format!("{e}")))),
                 }
             }
-            lines.push(Line::from(Span::raw("Enter applies · Esc cancel")));
+            lines.push(Line::from(Span::raw("Enter applies - Esc cancel")));
             let h = lines.len() as u16 + 2;
             ("View lens".into(), lines, h)
         }
@@ -1135,7 +1143,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             vec![
                 Line::from(format!("; {input}_")),
                 Line::from(""),
-                Line::from(Span::raw("Enter to save · Esc cancel")),
+                Line::from(Span::raw("Enter to save - Esc cancel")),
             ],
             5,
         ),
@@ -1145,7 +1153,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
                 Line::from(format!("Name: {input}_")),
                 Line::from(""),
                 Line::from(Span::raw(
-                    "Enter to save (blank = auto) · jump via F12 · Esc",
+                    "Enter to save (blank = auto) - jump via F12 - Esc",
                 )),
             ],
             5,
@@ -1258,9 +1266,9 @@ fn draw_calc(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Theme) {
     if input.trim().is_empty() {
         lines.push(Line::from(Span::raw(" enter an expression:")));
         lines.push(Line::from(Span::raw("   + - * / % & | ^ ~ << >>  ( )")));
-        lines.push(Line::from(Span::raw("   0x.. hex · 0b.. bin · Nt decimal")));
+        lines.push(Line::from(Span::raw("   0x.. hex - 0b.. bin - Nt decimal")));
         lines.push(Line::from(Span::raw(
-            "   @o offset · @b @w @d @q at cursor",
+            "   @o offset - @b @w @d @q at cursor",
         )));
     } else {
         match hiewlm_core::calc::eval(input, &app.calc_ctx()) {
@@ -1286,7 +1294,7 @@ fn draw_calc(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Theme) {
     let rect = centered(area, width, height);
     f.render_widget(Clear, rect);
     let block = Block::default()
-        .title(" Calculator  (type · Esc) ")
+        .title(" Calculator  (type - Esc) ")
         .borders(Borders::ALL)
         .style(theme.dialog());
     f.render_widget(
@@ -1375,7 +1383,7 @@ fn draw_assemble(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Them
     let rect = centered(area, width, height);
     f.render_widget(Clear, rect);
     let block = Block::default()
-        .title(" Assemble  (Enter patches · Esc) ")
+        .title(" Assemble  (Enter patches - Esc) ")
         .borders(Borders::ALL)
         .style(theme.dialog());
     f.render_widget(
@@ -1568,7 +1576,7 @@ mod tests {
     fn pad_line_is_utf8_safe() {
         // Truncating into the middle of a multi-byte string must not panic.
         for w in 0..12u16 {
-            let out = pad_line("café·→", w);
+            let out = pad_line("café-→", w);
             assert_eq!(out.chars().count(), w as usize);
         }
     }

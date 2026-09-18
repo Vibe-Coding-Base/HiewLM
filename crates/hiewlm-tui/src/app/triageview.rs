@@ -23,7 +23,7 @@ impl super::App {
             &hiewlm_triage::Options::default(),
         );
         self.set_status(format!(
-            "Triage: {} ({}/100) {} · ←→ pane · type=filter · Enter jump · Esc",
+            "Triage: {} ({}/100) {} - ←→ pane - type=filter - Enter jump - Esc",
             report.verdict().to_uppercase(),
             report.score,
             report.badge_line()

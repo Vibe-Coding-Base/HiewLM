@@ -130,6 +130,11 @@ pub const PALETTE: &[(&str, &str, Command)] = &[
         "P",
         Command::OpenPluginMenu,
     ),
+    (
+        "scrub metadata to a clean copy",
+        "P → m",
+        Command::ScrubMetadata,
+    ),
     ("yara scan", "R", Command::RunYara),
     (
         "xor search (find hidden plaintext)",

@@ -1037,6 +1037,23 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
             ],
             5,
         ),
+        Dialog::ScrubConfirm { removed, out, .. } => {
+            let mut lines = vec![
+                Line::from("These identity fields will be removed:"),
+                Line::from(""),
+            ];
+            for (k, v) in removed {
+                let val: String = v.chars().take(48).collect();
+                lines.push(Line::from(format!("  {k:<16} {val}")));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(format!("Write to: {out}_")));
+            lines.push(Line::from(Span::raw("The original is not modified.")));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::raw("Enter to write · Esc cancel")));
+            let h = removed.len() as u16 + 8;
+            ("Scrub metadata".into(), lines, h)
+        }
         Dialog::BlockFill { input } => (
             "Fill block".into(),
             vec![

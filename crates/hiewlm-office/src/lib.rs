@@ -18,6 +18,7 @@ pub mod pdf;
 pub mod rtf;
 pub mod rules;
 pub mod scan;
+pub mod scrub;
 pub mod vba;
 pub mod zip;
 

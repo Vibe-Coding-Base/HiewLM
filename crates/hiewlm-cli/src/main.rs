@@ -127,6 +127,18 @@ enum Cmd {
         #[arg(long)]
         fail_on_suspicious: bool,
     },
+    /// Write a copy with identity metadata removed — author, last-saved-by,
+    /// company, template path, GPS, camera owner. The original is not modified.
+    /// Works on OOXML documents (.docx/.xlsx/.pptx) and images (JPEG/PNG/TIFF).
+    Scrub {
+        file: PathBuf,
+        /// Where to write the cleaned copy (default: <file>.clean.<ext>).
+        #[arg(long, short = 'o')]
+        out: Option<PathBuf>,
+        /// Show what would be removed without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Show the detection rule tables: how many rules are loaded, where they
     /// came from, and how to override them.
     Rules {
@@ -278,6 +290,7 @@ fn run(cmd: Cmd, plugins: &[String]) -> Result<std::process::ExitCode> {
                 ExitCode::SUCCESS
             });
         }
+        Cmd::Scrub { file, out, dry_run } => cmd_scrub(&file, out.as_deref(), dry_run)?,
         Cmd::Xorkey {
             file,
             at,
@@ -1055,6 +1068,44 @@ fn cmd_strings(file: &Path, min: usize, utf16: bool, ioc: bool) -> Result<String
     if scan.truncated {
         s.push_str("... (truncated: scan hit its limit)\n");
     }
+    Ok(s)
+}
+
+/// A cleaned copy next to the original: `report.docx` -> `report.clean.docx`.
+fn default_clean_path(file: &Path) -> PathBuf {
+    let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
+    let name = match file.extension().and_then(|e| e.to_str()) {
+        Some(ext) => format!("{stem}.clean.{ext}"),
+        None => format!("{stem}.clean"),
+    };
+    file.with_file_name(name)
+}
+
+fn cmd_scrub(file: &Path, out: Option<&Path>, dry_run: bool) -> Result<String> {
+    let data = std::fs::read(file)?;
+    let scrubbed = hiewlm_office::scrub::scrub_identity(&data).ok_or_else(|| {
+        anyhow!("nothing to scrub: not an OOXML document or a JPEG/PNG/TIFF image with identity metadata")
+    })?;
+
+    let mut s = String::from("removed:\n");
+    for (k, v) in &scrubbed.removed {
+        s.push_str(&format!("  {k}: {v}\n"));
+    }
+    if dry_run {
+        s.push_str("# dry run, nothing written; the original is untouched\n");
+        return Ok(s);
+    }
+    let out_path = out
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_clean_path(file));
+    std::fs::write(&out_path, &scrubbed.bytes)
+        .with_context(|| format!("writing {}", out_path.display()))?;
+    s.push_str(&format!(
+        "# wrote {} ({} bytes); {} is unchanged\n",
+        out_path.display(),
+        scrubbed.bytes.len(),
+        file.display()
+    ));
     Ok(s)
 }
 

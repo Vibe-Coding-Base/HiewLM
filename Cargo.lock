@@ -1557,6 +1557,7 @@ dependencies = [
 name = "hiewlm-office"
 version = "0.6.2"
 dependencies = [
+ "crc32fast",
  "flate2",
  "hiewlm-core",
 ]

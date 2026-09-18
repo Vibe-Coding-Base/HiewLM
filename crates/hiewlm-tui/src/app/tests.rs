@@ -587,6 +587,60 @@ fn doc_app(tag: &str) -> App {
     a
 }
 
+/// An app holding a JPEG with an EXIF author tag — enough to parse as an image
+/// document without any pixel data.
+fn image_app() -> App {
+    let mut exif = b"Exif\x00\x00II\x2a\x00".to_vec();
+    exif.extend_from_slice(&8u32.to_le_bytes());
+    exif.extend_from_slice(&1u16.to_le_bytes());
+    let name = b"Jane Doe\x00";
+    let heap_off = 6 + 8 + 2 + 12 + 4;
+    exif.extend_from_slice(&0x013Bu16.to_le_bytes());
+    exif.extend_from_slice(&2u16.to_le_bytes());
+    exif.extend_from_slice(&(name.len() as u32).to_le_bytes());
+    exif.extend_from_slice(&((heap_off - 6) as u32).to_le_bytes());
+    exif.extend_from_slice(&0u32.to_le_bytes());
+    exif.extend_from_slice(name);
+    let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xE1];
+    jpeg.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+    jpeg.extend_from_slice(&exif);
+    jpeg.extend_from_slice(&[0xFF, 0xD9]);
+    let path = std::env::temp_dir().join(format!("hiewlm_img_{}.jpg", std::process::id()));
+    fs::write(&path, jpeg).unwrap();
+    let a = App::open(path).unwrap();
+    assert!(a.doc_supported(), "the jpeg must parse as a document");
+    a
+}
+
+#[test]
+fn panes_follow_the_file_type() {
+    // A docx can carry VBA, so it keeps the Macros pane.
+    let docx = doc_app("panes");
+    assert!(
+        docx.doc_panes().contains(&DocPane::Macros),
+        "a docx keeps its Macros pane"
+    );
+
+    // An image cannot, so the pane is gone entirely — not shown empty.
+    let mut img = image_app();
+    let panes = img.doc_panes();
+    assert_eq!(
+        panes,
+        vec![DocPane::Structure, DocPane::Findings, DocPane::Info],
+        "an image has no Macros pane"
+    );
+
+    // Tab cycles only the panes that exist, never landing on Macros.
+    for _ in 0..8 {
+        img.apply(Command::DocPane(1));
+        assert!(panes.contains(&img.doc_pane), "{:?}", img.doc_pane);
+    }
+    for _ in 0..8 {
+        img.apply(Command::DocPane(-1));
+        assert!(panes.contains(&img.doc_pane), "{:?}", img.doc_pane);
+    }
+}
+
 #[test]
 fn mode_menu_offers_every_mode() {
     // Doc shipped unreachable from the menu: the list and its wrap-around were

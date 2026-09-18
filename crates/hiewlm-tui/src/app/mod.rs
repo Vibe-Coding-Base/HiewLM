@@ -190,16 +190,6 @@ impl DocPane {
             DocPane::Info => "Info",
         }
     }
-
-    pub fn next(self) -> Self {
-        let i = Self::ALL.iter().position(|&p| p == self).unwrap_or(0);
-        Self::ALL[(i + 1) % Self::ALL.len()]
-    }
-
-    pub fn prev(self) -> Self {
-        let i = Self::ALL.iter().position(|&p| p == self).unwrap_or(0);
-        Self::ALL[(i + Self::ALL.len() - 1) % Self::ALL.len()]
-    }
 }
 
 /// What to do with the file chosen in a [`Dialog::FilePicker`].
@@ -3036,11 +3026,13 @@ impl App {
             Command::DocMove(d) => self.doc_move(d),
             Command::DocPageMove(d) => self.doc_move(d * LIST_PAGE as i64),
             Command::DocPane(d) => {
-                self.doc_pane = if d > 0 {
-                    self.doc_pane.next()
-                } else {
-                    self.doc_pane.prev()
-                };
+                // Cycle only the panes this file type has, so Tab never lands on
+                // a pane that does not apply.
+                let panes = self.doc_panes();
+                let i = panes.iter().position(|&p| p == self.doc_pane).unwrap_or(0);
+                let n = panes.len();
+                let j = if d > 0 { (i + 1) % n } else { (i + n - 1) % n };
+                self.doc_pane = panes[j];
                 self.doc_sel = 0;
             }
             Command::DocActivate => self.doc_activate(),

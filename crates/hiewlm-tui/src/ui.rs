@@ -454,7 +454,7 @@ fn draw_doc(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
 
     // Pane bar, with the active pane highlighted.
     let mut tabs: Vec<Span> = vec![Span::styled(format!(" {} ", doc.format), theme.status())];
-    for p in crate::app::DocPane::ALL {
+    for p in app.doc_panes() {
         let style = if p == app.doc_pane {
             theme.selection()
         } else {

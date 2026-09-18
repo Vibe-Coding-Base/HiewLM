@@ -554,7 +554,7 @@ impl App {
         };
 
         let ready = match &restored {
-            Some(summary) => format!("Notes restored: {summary}  ·  1/? help · 2 triage · q quit"),
+            Some(summary) => format!("Notes restored: {summary}  -  1/? help - 2 triage - q quit"),
             None => String::new(),
         };
         let ready = if !ready.is_empty() {
@@ -562,16 +562,16 @@ impl App {
         } else {
             match &container {
                 Some(c) => format!(
-                    "{}  ·  {} member(s){}  ·  1/? help · F12 members · q quit",
+                    "{}  -  {} member(s){}  -  1/? help - F12 members - q quit",
                     c.kind,
                     c.members.len(),
                     match c.suspicious().count() {
                         0 => String::new(),
-                        n => format!("  ·  {n} SUSPICIOUS"),
+                        n => format!("  -  {n} SUSPICIOUS"),
                     }
                 ),
                 None => format!(
-                    "{} {}  ·  1/? help · e edit · g goto · / find · q quit",
+                    "{} {}  -  1/? help - e edit - g goto - / find - q quit",
                     format.label(),
                     arch.label()
                 ),
@@ -750,7 +750,7 @@ impl App {
     /// evidence.
     fn ensure_writable(&mut self) -> bool {
         if self.read_only {
-            self.set_status("READ-ONLY: sample is locked · Ctrl+W unlocks (or start with --rw).");
+            self.set_status("READ-ONLY: sample is locked - Ctrl+W unlocks (or start with --rw).");
             return false;
         }
         true
@@ -762,7 +762,7 @@ impl App {
             self.editing = false;
             self.set_status("LOCKED: read-only — the sample cannot be modified.");
         } else {
-            self.set_status("UNLOCKED: writes allowed. Ctrl+W re-locks · F9 saves (.bak kept).");
+            self.set_status("UNLOCKED: writes allowed. Ctrl+W re-locks - F9 saves (.bak kept).");
         }
     }
 
@@ -1398,7 +1398,7 @@ impl App {
                 self.diff_buf = Some(other);
                 let n = self.diff_count();
                 self.set_status(format!(
-                    "Diff vs {}: {n} differing bytes · > / < next/prev · Esc clears",
+                    "Diff vs {}: {n} differing bytes - > / < next/prev - Esc clears",
                     self.diff_name
                 ));
             }
@@ -1762,7 +1762,7 @@ impl App {
             sel: 0,
             filter: String::new(),
         });
-        self.set_status("Type to filter (try: url, ip, registry, lolbin, mutex) · Enter jumps");
+        self.set_status("Type to filter (try: url, ip, registry, lolbin, mutex) - Enter jumps");
     }
 
     /// Replace the instruction under the cursor with NOP padding (HIEW Alt+F2).
@@ -2010,7 +2010,7 @@ impl App {
         // the next terminator or the byte before the next leader.
         let addrs: Vec<u64> = insns.keys().copied().collect();
         let mut body = format!(
-            "Function {}  ·  {} basic blocks\n\n",
+            "Function {}  -  {} basic blocks\n\n",
             self.display_addr(func_start),
             leaders.iter().filter(|l| insns.contains_key(l)).count()
         );
@@ -2559,10 +2559,10 @@ impl App {
         if self.mode == Mode::Code {
             self.edit_col = EditCol::Hex;
             self.set_status(
-                "EDIT opcode bytes: type hex to patch (disasm updates live) · F9 save · Esc cancel",
+                "EDIT opcode bytes: type hex to patch (disasm updates live) - F9 save - Esc cancel",
             );
         } else {
-            self.set_status("EDITMODE · Tab switches column · F9 save · Esc cancel");
+            self.set_status("EDITMODE - Tab switches column - F9 save - Esc cancel");
         }
     }
 
@@ -2608,7 +2608,7 @@ impl App {
 
     fn save(&mut self) -> Result<()> {
         if self.read_only {
-            self.set_status("READ-ONLY: nothing written · Ctrl+W unlocks.");
+            self.set_status("READ-ONLY: nothing written - Ctrl+W unlocks.");
             return Ok(());
         }
         if !self.buffer.is_dirty() {
@@ -2747,7 +2747,7 @@ impl App {
                     self.enter_code();
                 }
                 self.set_status(format!(
-                    "Found at {} · Esc clears highlight",
+                    "Found at {} - Esc clears highlight",
                     self.display_addr(hit.get())
                 ));
             }
@@ -2885,7 +2885,7 @@ impl App {
                 } else if self.go_back() {
                     // Moved to the previous position in the jump history.
                 } else {
-                    self.set_status("Nothing to go back to · q or F10 quits.");
+                    self.set_status("Nothing to go back to - q or F10 quits.");
                 }
             }
             Command::CycleMode => {
@@ -2902,7 +2902,7 @@ impl App {
                 self.dialog = Some(Dialog::ModeMenu {
                     selected: mode_index(self.mode),
                 });
-                self.set_status("Pick mode: 1 Hex · 2 Code · 3 Text · Enter/arrows · Esc");
+                self.set_status("Pick mode: 1 Hex - 2 Code - 3 Text - Enter/arrows - Esc");
             }
             Command::SetMode(m) => {
                 if m == Mode::Doc && !self.doc_supported() {
@@ -3120,7 +3120,7 @@ impl App {
                     input: String::new(),
                     sel: 0,
                 });
-                self.set_status("Type a command name · Enter runs it · Esc cancels");
+                self.set_status("Type a command name - Enter runs it - Esc cancels");
             }
             Command::SearchAll => self.search_all(),
             Command::RunYara => match self.default_yara_rules.clone() {
@@ -3232,7 +3232,7 @@ impl App {
                     input: String::new(),
                     kind,
                 });
-                self.set_status("Tab: hex/text/text-i/utf-16/asm · ↑↓ history · Ctrl+A lists all");
+                self.set_status("Tab: hex/text/text-i/utf-16/asm - ↑↓ history - Ctrl+A lists all");
             }
             Command::FindNext => self.find_next(),
             Command::Help => {

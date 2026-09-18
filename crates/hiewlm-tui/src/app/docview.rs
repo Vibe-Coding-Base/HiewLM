@@ -202,7 +202,7 @@ impl super::App {
             sel: 0,
             filter: String::new(),
         });
-        self.set_status("Type to filter · ←→ scrolls a long line · Enter jumps");
+        self.set_status("Type to filter - ←→ scrolls a long line - Enter jumps");
         true
     }
 

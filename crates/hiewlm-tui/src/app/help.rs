@@ -87,8 +87,8 @@ DOCUMENT  (Office files: OLE2 .doc/.xls/.ppt, OOXML .docx/..., RTF)
   arrows                        left/right switch pane, up/down move
   Enter                         jump to that part's bytes
   < / >                         scroll a long row sideways
-  Panes: Structure (storages, parts, objects) · Findings · Macros
-  (decompressed VBA source and its keywords) · Info (metadata,
+  Panes: Structure (storages, parts, objects) - Findings - Macros
+  (decompressed VBA source and its keywords) - Info (metadata,
   external references such as a remote template).
 
 ANALYSIS
@@ -132,7 +132,7 @@ pub const PALETTE: &[(&str, &str, Command)] = &[
     ),
     (
         "scrub metadata to a clean copy",
-        "P → m",
+        "P then m",
         Command::ScrubMetadata,
     ),
     ("yara scan", "R", Command::RunYara),

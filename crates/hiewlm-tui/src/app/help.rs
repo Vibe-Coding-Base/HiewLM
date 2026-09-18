@@ -7,6 +7,7 @@ pub(super) const HELP_TEXT: &str = "\
 Every action has a plain-key shortcut; function keys are optional
 (many terminals, e.g. macOS, don't send F1-F12).  up/down to scroll.
 Press : for the command palette — every command by name.
+Keys after 'Shift:' on the bottom bar need Shift held (Shift+P for Plugins).
 
 TRIAGE  (start here)
   2  or  T                      triage screen: verdict, hashes, packer,

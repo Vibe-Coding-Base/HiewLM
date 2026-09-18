@@ -860,17 +860,32 @@ fn draw_fnbar(f: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         owned.extend_from_slice(TAIL);
         &owned
     };
+    let key_style = Style::default().bg(theme.bg).fg(theme.bar_key);
     let mut spans = Vec::new();
-    for (k, label) in items {
-        spans.push(Span::styled(
-            (*k).to_string(),
-            ratatui::style::Style::default()
-                .bg(theme.bg)
-                .fg(theme.bar_key),
-        ));
+    // The keys you press unmodified come first; the ones that need Shift are
+    // grouped after a "Shift:" label. A terminal cannot tell us when Shift is
+    // held on its own, so instead of HIEW's bar that swaps on Shift, hiewLM
+    // labels which keys the Shift belongs to — no guessing that a capital means
+    // hold Shift.
+    for (k, label) in items.iter().filter(|(k, _)| !needs_shift(k)) {
+        spans.push(Span::styled((*k).to_string(), key_style));
         spans.push(Span::styled(format!("{label} "), theme.bar()));
     }
+    let shifted: Vec<&(&str, &str)> = items.iter().filter(|(k, _)| needs_shift(k)).collect();
+    if !shifted.is_empty() {
+        spans.push(Span::styled("  Shift:".to_string(), theme.bar()));
+        for (k, label) in shifted {
+            spans.push(Span::styled(format!(" {k}"), key_style));
+            spans.push(Span::styled(format!("{label} "), theme.bar()));
+        }
+    }
     f.render_widget(Paragraph::new(Line::from(spans)).style(theme.bar()), area);
+}
+
+/// True when a Fn-bar key is a single capital letter — the ones that need Shift.
+fn needs_shift(k: &str) -> bool {
+    let mut c = k.chars();
+    matches!((c.next(), c.next()), (Some(ch), None) if ch.is_ascii_uppercase())
 }
 
 /// Copy-menu rows, in display order; `Enter` indexes them.

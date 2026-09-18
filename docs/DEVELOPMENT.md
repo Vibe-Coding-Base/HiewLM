@@ -53,7 +53,7 @@ hiewlm-tui ──┐                     hiewlm-cli ──┐
 |---|---|
 | `hiewlm-core` | Buffer (memmap + piece table + undo journal), addressing, search, string/IOC extraction, import scoring, ssdeep, XOR key recovery, crypt engine, struct templates, the rule-data loader, the container-plugin trait. No UI, no I/O beyond reading the target. |
 | `hiewlm-fmt` | Executable formats: PE/ELF/Mach-O (including fat), COFF, ar, NE/LE/LX/TE/NLM → arch, bits, entry point, offset↔VA map, imports, exports, header fields. Plus the structural detail each format needs for triage (`pe_extra`, `elf_extra`, `macho_extra`). |
-| `hiewlm-office` | Documents and archives: OLE2/CFB, OOXML, RTF, PDF, ZIP, and MS-OVBA macro decompression. One `Document` model for all of them. |
+| `hiewlm-office` | Documents, archives and images: OLE2/CFB, OOXML, RTF, PDF, ZIP, JPEG/PNG/TIFF metadata, and MS-OVBA macro decompression. One `Document` model for all of them, plus the identity-metadata scrub. |
 | `hiewlm-asm` | Disassembly (iced-x86 and Capstone, plus a WASM decoder) and an x86 text assembler. |
 | `hiewlm-triage` | Assembles the verdict from everything above and renders it as panes, text, JSON or Markdown — shared by both front-ends so they cannot disagree. |
 | `hiewlm-tui` | The `hiewlm` binary: ratatui/crossterm, state machine, keymap, themes, notes. |

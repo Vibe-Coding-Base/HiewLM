@@ -74,12 +74,14 @@ appear in `strings` output at all.
 
 **Text** — `E` switches between ASCII, CP437, Latin-1 and UTF-16.
 
-**Doc** — see below; only offered for files that have a structure.
+**Doc** — Office documents, PDF, ZIP archives and images; see below. Only offered
+for files that have a structure or metadata.
 
-### Documents and archives
+### Documents, archives and images
 
 `Doc` mode reads OLE2 (`.doc`, `.xls`, `.ppt`), OOXML (`.docx`, `.xlsx`,
-`.pptx`), RTF, PDF and ZIP. Four panes, `←→` to switch:
+`.pptx`), RTF, PDF, ZIP and images (JPEG, PNG, TIFF). The panes, `←→` to switch —
+a file shows only the panes it has, so an image or a PDF has no Macros tab:
 
 - **Structure** — storages and streams, package parts, PDF objects, archive
   members. `Enter` jumps to the bytes. For archives the listing shows what each
@@ -92,12 +94,30 @@ appear in `strings` output at all.
 - **Macros** — VBA source, *decompressed*, with its keywords grouped by what they
   do: auto-exec, execution, download, memory, persistence, obfuscation, evasion,
   lure.
-- **Info** — metadata and external references.
+- **Info** — metadata and external references. For an image this is the EXIF/XMP:
+  camera, software, timestamps, and GPS decoded to coordinates.
 
-`<` and `>` scroll a long row sideways.
+Identity metadata — author, last-saved-by, company, template path, GPS, camera,
+software — is also raised in **Findings**, and the triage screen carries a `META`
+and `GPS` badge so the view is discoverable. `<` and `>` scroll a long row
+sideways.
 
 Nothing in this path executes anything: a remote template is reported, never
 fetched; a macro is read, never run.
+
+### Plugins, and scrubbing metadata
+
+`P` opens the **Plugins** menu — the tools that apply to the file in front of
+you, filtered to what it supports: YARA scan, single-byte and repeating XOR key
+recovery, stack-string reconstruction for code, and, for a document or image, a
+metadata scrub.
+
+**Scrub metadata** (`P` then `m`, or `hiewlmc scrub`) writes a *copy* with the
+identity fingerprint removed — author, last-saved-by, company, manager, template
+path, GPS, owner, camera make and model, and the authoring software. Timestamps
+and technical parameters are kept. The TUI previews exactly what will be removed
+and lets you choose the output path (default `<name>.clean.<ext>`); the original
+is never modified. It works on OOXML documents and JPEG/PNG/TIFF images.
 
 ### Finding things
 
@@ -169,6 +189,10 @@ or `%APPDATA%\hiewlm\notes\`).
 | `Y` | copy menu (hash, block, indicators, report) |
 | `F` | folder triage |
 | `O` | open another file |
+| **Plugins** (`P`) | tools for the open file, filtered to what it supports |
+| `P` then `m` | scrub identity metadata to a clean copy (documents, images) |
+| `P` then `y` | YARA scan |
+| `P` then `x` / `k` | hunt a single-byte / repeating XOR key |
 | **Navigate** | |
 | arrows, PgUp/PgDn, Home/End | move |
 | `Ctrl+Home` / `Ctrl+End` | start / end of file |
@@ -217,6 +241,11 @@ or `%APPDATA%\hiewlm\notes\`).
 | `q` `0` | quit |
 | `Ctrl+C` `F10` | quit from anywhere, including inside a dialog |
 
+A capital letter in this table means Shift (Shift+`P` for Plugins). The bottom
+function bar groups those under a `Shift:` label, so you can see which keys need
+it without guessing — HIEW swaps its bar while Shift is held, but a terminal in
+raw mode cannot report Shift on its own on most platforms.
+
 `q` inside a filterable popup types into the filter, which is what you want when
 you are searching for `qemu`. `Ctrl+C` and `F10` always quit. (Not `Ctrl+Q`:
 0x11 is XON, and terminal flow control eats it before the program sees it.)
@@ -233,6 +262,7 @@ sideways (Shift+`←→` in the header and triage views, whose arrows switch pan
 hiewlmc triage  <file|dir> [--format text|json|markdown] [--yara RULES]
                            [--fail-on-suspicious] [--min-score N]
 hiewlmc office  <file> [--macros] [--matches] [--fail-on-suspicious]
+hiewlmc scrub   <file> [-o OUT] [--dry-run]     # identity metadata -> a clean copy
 hiewlmc info    <file>
 hiewlmc hex     <file> [--at ADDR] [--count N]
 hiewlmc disasm  <file> [--at ADDR] [--count N] [--arch x64]

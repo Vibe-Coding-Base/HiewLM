@@ -24,6 +24,13 @@ All notable changes to hiewLM. The format follows
   the file supports, so it answers "what can I do with this file" rather than
   listing tools that would do nothing. Stack-string reconstruction appears for
   an executable and not for an image; more tools will land here.
+- **Metadata scrub.** From the Plugins menu on a document or image, or
+  `hiewlmc scrub <file>`, write a copy with the identity fingerprint removed:
+  author, last-saved-by, company, manager, template path, GPS, owner, the camera
+  make and model and the authoring software. The original is never modified — the
+  clean copy is a new file, and the TUI previews exactly what will be removed
+  before it writes. Timestamps and technical parameters are kept. Works on OOXML
+  packages (repackaged) and JPEG/PNG/TIFF images (scrubbed in place in the copy).
 
 ### Changed
 

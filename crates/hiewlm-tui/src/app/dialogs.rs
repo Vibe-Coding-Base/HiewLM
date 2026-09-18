@@ -320,6 +320,37 @@ impl super::App {
                 }
                 _ => self.dialog = Some(Dialog::BlockWrite { input }),
             },
+            Dialog::ScrubConfirm {
+                removed,
+                mut out,
+                bytes,
+            } => match key.code {
+                Enter => self.write_scrub(&out.clone(), &bytes),
+                Esc => {}
+                Backspace => {
+                    out.pop();
+                    self.dialog = Some(Dialog::ScrubConfirm {
+                        removed,
+                        out,
+                        bytes,
+                    });
+                }
+                Char(c) => {
+                    out.push(c);
+                    self.dialog = Some(Dialog::ScrubConfirm {
+                        removed,
+                        out,
+                        bytes,
+                    });
+                }
+                _ => {
+                    self.dialog = Some(Dialog::ScrubConfirm {
+                        removed,
+                        out,
+                        bytes,
+                    })
+                }
+            },
             Dialog::BookmarkSlot => match key.code {
                 Char(c @ '1'..='8') => {
                     let n = c as u8 - b'0';

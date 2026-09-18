@@ -642,6 +642,48 @@ fn panes_follow_the_file_type() {
 }
 
 #[test]
+fn scrub_writes_a_clean_copy_and_leaves_the_original() {
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    // An image with an author is offered the scrub in the Plugins menu.
+    let mut a = image_app();
+    assert!(
+        a.plugin_entries().iter().any(|e| e.key == 'm'),
+        "scrub is offered for an image with identity metadata"
+    );
+    let original = fs::read(&a.path).unwrap();
+
+    a.apply(Command::ScrubMetadata);
+    let out = if let Some(Dialog::ScrubConfirm { removed, out, .. }) = &a.dialog {
+        assert!(
+            removed.iter().any(|(k, _)| k == "Artist"),
+            "the preview lists the author: {removed:?}"
+        );
+        out.clone()
+    } else {
+        panic!("ScrubMetadata should open the confirm dialog");
+    };
+
+    // Enter writes the clean copy; the dialog closes.
+    a.handle_key(KeyEvent::from(KeyCode::Enter));
+    assert!(a.dialog.is_none(), "confirming closes the dialog");
+
+    let cleaned = fs::read(&out).expect("the clean copy was written");
+    let img = hiewlm_office::image::parse(&cleaned).expect("still a valid image");
+    assert!(
+        !img.fields.iter().any(|f| f.key == "Artist"),
+        "the author is gone from the copy"
+    );
+    // The original the user was viewing is byte-for-byte unchanged.
+    assert_eq!(
+        fs::read(&a.path).unwrap(),
+        original,
+        "the original is untouched"
+    );
+    let _ = fs::remove_file(&out);
+}
+
+#[test]
 fn plugin_menu_lists_the_tools_that_apply() {
     use crossterm::event::{KeyCode, KeyEvent};
 

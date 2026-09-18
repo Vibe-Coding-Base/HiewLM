@@ -13,6 +13,7 @@ hiewlm-core = { path = "../hiewlm-core" }
 # Pure-Rust inflate (miniz_oxide): OOXML parts are deflated, and the parts that
 # matter most — the relationship files that carry remote-template links — are
 # unreadable without it. No C, no system zlib.
+crc32fast = "1"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [lints]

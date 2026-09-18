@@ -49,8 +49,9 @@ pub struct Segment {
 pub struct Field {
     pub key: String,
     pub value: String,
-    /// Identity fields (author, GPS, owner) are what a privacy scrub targets;
-    /// the rest is attribution context (device, software, timestamps).
+    /// Identity fields — author, GPS, owner, and the camera/software
+    /// fingerprint — are what a privacy scrub targets; the rest (timestamps,
+    /// technical parameters) does not identify.
     pub identity: bool,
 }
 
@@ -361,9 +362,10 @@ fn read_exif(d: &[u8], img: &mut Image) {
     let mut gps_ptr = None;
     walk_ifd(&t, ifd0 as usize, 0, img, &mut |tag, val| match tag {
         0x010E => Some(("Image description", val, false)),
-        0x010F => Some(("Camera make", val, false)),
-        0x0110 => Some(("Camera model", val, false)),
-        0x0131 => Some(("Software", val, false)),
+        // The device and the software are a fingerprint: identity, not context.
+        0x010F => Some(("Camera make", val, true)),
+        0x0110 => Some(("Camera model", val, true)),
+        0x0131 => Some(("Software", val, true)),
         0x0132 => Some(("Modify date", val, false)),
         0x013B => Some(("Artist", val, true)),
         0x013C => Some(("Host computer", val, true)),
@@ -384,8 +386,8 @@ fn read_exif(d: &[u8], img: &mut Image) {
             0x9003 => Some(("Date taken", val, false)),
             0x9004 => Some(("Create date", val, false)),
             0xA430 => Some(("Camera owner", val, true)),
-            0xA433 => Some(("Lens make", val, false)),
-            0xA434 => Some(("Lens model", val, false)),
+            0xA433 => Some(("Lens make", val, true)),
+            0xA434 => Some(("Lens model", val, true)),
             0xA420 => Some(("Image unique ID", val, true)),
             _ => None,
         });
@@ -630,6 +632,309 @@ fn u32be(b: &[u8], off: usize) -> u32 {
         .unwrap_or(0)
 }
 
+// ── Scrub (identity metadata removal) ────────────────────────────────────────
+
+/// The byte range of an entry's value, inline or at its offset.
+fn entry_value_span(t: &Tiff, e: &Entry) -> Option<(usize, usize)> {
+    let size = type_size(e.typ)?;
+    let total = size.checked_mul(e.count as usize)?;
+    if total == 0 {
+        return None;
+    }
+    let start = if total <= 4 {
+        e.value_off
+    } else {
+        t.u32(e.value_off)? as usize
+    };
+    if start.checked_add(total)? > t.d.len() {
+        return None;
+    }
+    Some((start, total))
+}
+
+fn zero(d: &mut [u8], start: usize, len: usize) {
+    let n = d.len();
+    let s = start.min(n);
+    let e = start.saturating_add(len).min(n);
+    for b in &mut d[s..e] {
+        *b = 0;
+    }
+}
+
+/// Zero the identity values in an EXIF/TIFF block in place, and unreference its
+/// GPS. Nothing moves — only value bytes are overwritten and the GPS pointer's
+/// tag id is cleared — so the block stays the same length and cannot be
+/// corrupted by a bad offset. Returns what was removed.
+///
+/// Identity here is author, host, copyright, camera owner, unique id and GPS.
+/// Camera, software and timestamps are attribution and are left intact.
+pub fn scrub_exif_identity(d: &mut [u8]) -> Vec<(String, String)> {
+    let mut removed = Vec::new();
+    if d.len() < 8 {
+        return removed;
+    }
+    let le = match &d[0..2] {
+        b"II" => true,
+        b"MM" => false,
+        _ => return removed,
+    };
+    // Parse from a snapshot; mutate the live buffer at the same coordinates.
+    let snap = d.to_vec();
+    let t = Tiff { d: &snap, le };
+    let Some(ifd0) = t.u32(4) else {
+        return removed;
+    };
+    let ifd0 = ifd0 as usize;
+
+    // Identity for a privacy scrub is the whole fingerprint, not just the name:
+    // the camera make and model and the software that last touched the file
+    // identify a person's device as surely as an author line does.
+    let ifd0_id: &[(u16, &str)] = &[
+        (0x010F, "Camera make"),
+        (0x0110, "Camera model"),
+        (0x0131, "Software"),
+        (0x013B, "Artist"),
+        (0x013C, "Host computer"),
+        (0x8298, "Copyright"),
+    ];
+    for e in ifd_entries(&t, ifd0) {
+        if let Some((_, name)) = ifd0_id.iter().find(|(tag, _)| *tag == e.tag) {
+            if let (Some(val), Some((s, l))) = (entry_string(&t, &e), entry_value_span(&t, &e)) {
+                if !val.trim().is_empty() {
+                    zero(d, s, l);
+                    removed.push(((*name).to_string(), val.trim().to_string()));
+                }
+            }
+        }
+    }
+
+    // ExifIFD identity tags (camera owner, image unique id).
+    if let Some(ep) = ifd_entries(&t, ifd0)
+        .iter()
+        .find(|e| e.tag == 0x8769)
+        .and_then(|e| t.u32(e.value_off))
+    {
+        let exif_id: &[(u16, &str)] = &[
+            (0xA430, "Camera owner"),
+            (0xA420, "Image unique ID"),
+            (0xA433, "Lens make"),
+            (0xA434, "Lens model"),
+        ];
+        for e in ifd_entries(&t, ep as usize) {
+            if let Some((_, name)) = exif_id.iter().find(|(tag, _)| *tag == e.tag) {
+                if let (Some(val), Some((s, l))) = (entry_string(&t, &e), entry_value_span(&t, &e))
+                {
+                    if !val.trim().is_empty() {
+                        zero(d, s, l);
+                        removed.push(((*name).to_string(), val.trim().to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    // GPS: record it, zero its coordinate bytes, and clear the pointer's tag id
+    // so no reader shows a residual 0,0 location.
+    for e in ifd_entries(&t, ifd0) {
+        if e.tag != 0x8825 {
+            continue;
+        }
+        if let Some(gp) = t.u32(e.value_off) {
+            if let Some((lat, lon)) = read_gps(&t, gp as usize) {
+                removed.push(("GPS position".to_string(), format!("{lat:.6}, {lon:.6}")));
+            }
+            for ge in ifd_entries(&t, gp as usize) {
+                if matches!(ge.tag, 0x0001..=0x0004) {
+                    if let Some((s, l)) = entry_value_span(&t, &ge) {
+                        zero(d, s, l);
+                    }
+                }
+            }
+        }
+        let tag_pos = e.value_off - 8; // the 0x8825 tag id
+        if tag_pos + 1 < d.len() {
+            d[tag_pos] = 0;
+            d[tag_pos + 1] = 0;
+        }
+    }
+
+    removed
+}
+
+/// Blank the identity fields in an XMP packet in place, overwriting their inner
+/// text with spaces so the packet keeps its exact length.
+pub fn scrub_xmp_identity(d: &mut [u8]) -> Vec<(String, String)> {
+    let mut removed = Vec::new();
+    let Ok(text) = std::str::from_utf8(d) else {
+        return removed; // XMP is UTF-8; if it is not, leave it alone.
+    };
+    let text = text.to_string();
+    const IDS: &[(&str, &str)] = &[
+        ("dc:creator", "Creator (XMP)"),
+        ("dc:rights", "Rights (XMP)"),
+        ("photoshop:AuthorsPosition", "Author position"),
+        ("photoshop:City", "City"),
+        ("photoshop:Country", "Country"),
+    ];
+    let mut spans = Vec::new();
+    for (tag, name) in IDS {
+        if let Some((start, end)) = xmp_inner_span(&text, tag) {
+            let inner = text[start..end].trim();
+            if !inner.is_empty() {
+                // Strip any nested rdf markup to report a clean value.
+                let val = xmp_value(&text, tag).unwrap_or_else(|| inner.to_string());
+                if !val.trim().is_empty() {
+                    removed.push(((*name).to_string(), val.trim().to_string()));
+                    spans.push((start, end));
+                }
+            }
+        }
+    }
+    for (start, end) in spans {
+        let e = end.min(d.len());
+        for b in &mut d[start..e] {
+            *b = b' ';
+        }
+    }
+    removed
+}
+
+/// Byte offsets of the inner text of `<tag>...</tag>` (element form only).
+fn xmp_inner_span(xml: &str, tag: &str) -> Option<(usize, usize)> {
+    let open = format!("<{tag}");
+    let i = xml.find(&open)?;
+    let gt = xml[i..].find('>')? + i + 1;
+    let close = format!("</{tag}>");
+    let j = xml[gt..].find(&close)? + gt;
+    Some((gt, j))
+}
+
+/// A cleaned image and the identity fields removed from it.
+pub type Scrubbed = (Vec<u8>, Vec<(String, String)>);
+
+/// A cleaned copy of an image with identity metadata removed, and the list of
+/// what was taken out. `None` if the bytes are not a supported image.
+pub fn scrub(bytes: &[u8]) -> Option<Scrubbed> {
+    match detect(bytes)? {
+        ImageKind::Jpeg => Some(scrub_jpeg(bytes)),
+        ImageKind::Tiff => {
+            let mut out = bytes.to_vec();
+            let removed = scrub_exif_identity(&mut out);
+            Some((out, removed))
+        }
+        ImageKind::Png => Some(scrub_png(bytes)),
+        // GIF/BMP/WebP carry no identity metadata we read, so nothing to scrub.
+        _ => None,
+    }
+}
+
+fn scrub_jpeg(bytes: &[u8]) -> (Vec<u8>, Vec<(String, String)>) {
+    let mut out = bytes.to_vec();
+    let mut removed = Vec::new();
+    let mut i = 2;
+    let mut guard = 0;
+    while i + 4 <= out.len() && guard < 512 {
+        guard += 1;
+        if out[i] != 0xFF {
+            break;
+        }
+        let marker = out[i + 1];
+        if marker == 0xD9 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            i += 2;
+            continue;
+        }
+        let len = u16be(&out, i + 2) as usize;
+        if len < 2 || i + 2 + len > out.len() {
+            break;
+        }
+        let payload_start = i + 4;
+        let payload_end = i + 2 + len;
+        if marker == 0xE1 {
+            let is_exif = out[payload_start..payload_end].starts_with(EXIF_PREFIX);
+            let is_xmp = out[payload_start..payload_end].starts_with(XMP_PREFIX);
+            if is_exif {
+                let s = payload_start + EXIF_PREFIX.len();
+                removed.extend(scrub_exif_identity(&mut out[s..payload_end]));
+            } else if is_xmp {
+                let s = payload_start + XMP_PREFIX.len();
+                removed.extend(scrub_xmp_identity(&mut out[s..payload_end]));
+            }
+        }
+        if marker == 0xDA {
+            break;
+        }
+        i += 2 + len;
+    }
+    (out, removed)
+}
+
+fn scrub_png(bytes: &[u8]) -> (Vec<u8>, Vec<(String, String)>) {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut removed = Vec::new();
+    out.extend_from_slice(&bytes[..8.min(bytes.len())]);
+    let mut i = 8;
+    let mut guard = 0;
+    while i + 8 <= bytes.len() && guard < 4096 {
+        guard += 1;
+        let len = u32be(bytes, i) as usize;
+        let typ = &bytes[i + 4..i + 8];
+        let data_start = i + 8;
+        if data_start + len + 4 > bytes.len() {
+            out.extend_from_slice(&bytes[i..]);
+            break;
+        }
+        let chunk = &bytes[i..data_start + len + 4];
+        // eXIf holds a full EXIF block (GPS included); an identity text chunk
+        // holds an author or copyright. Both are dropped whole — no CRC to
+        // recompute — while Software, Comment and the image data stay.
+        let drop = match typ {
+            b"eXIf" => {
+                removed.push(("EXIF block (PNG)".to_string(), "removed".to_string()));
+                true
+            }
+            b"tEXt" | b"zTXt" | b"iTXt" => {
+                png_identity_chunk(typ, &bytes[data_start..data_start + len], &mut removed)
+            }
+            _ => false,
+        };
+        if !drop {
+            out.extend_from_slice(chunk);
+        }
+        if typ == b"IEND" {
+            break;
+        }
+        i = data_start + len + 4;
+    }
+    (out, removed)
+}
+
+/// Whether a PNG text chunk carries identity; if so, record it for the report.
+fn png_identity_chunk(typ: &[u8], data: &[u8], removed: &mut Vec<(String, String)>) -> bool {
+    let nul = data.iter().position(|&c| c == 0).unwrap_or(data.len());
+    let key = String::from_utf8_lossy(&data[..nul]).to_string();
+    match png_keyword(&key) {
+        Some((name, true)) => {
+            let val = if typ == b"tEXt" {
+                String::from_utf8_lossy(data.get(nul + 1..).unwrap_or(&[]))
+                    .trim()
+                    .to_string()
+            } else {
+                String::new()
+            };
+            removed.push((
+                name.to_string(),
+                if val.is_empty() {
+                    "removed".into()
+                } else {
+                    val
+                },
+            ));
+            true
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -708,7 +1013,7 @@ mod tests {
             .iter()
             .find(|f| f.key == "Software")
             .expect("software");
-        assert!(!sw.identity, "software is attribution, not identity");
+        assert!(sw.identity, "the software fingerprint is identity too");
     }
 
     #[test]
@@ -794,6 +1099,44 @@ mod tests {
             .expect("author");
         assert_eq!(author.value, "Alice Doe");
         assert!(author.identity);
+    }
+
+    #[test]
+    fn scrub_removes_the_whole_fingerprint() {
+        let e = exif(&[
+            (0x013B, "Jane Photographer"),   // Artist — identity
+            (0x010F, "NIKON"),               // Camera make — device fingerprint
+            (0x0131, "Adobe Photoshop 25"),  // Software — fingerprint
+            (0x010E, "Sunset over the bay"), // Description — not identity, kept
+        ]);
+        let jpeg = jpeg_with_exif(&e);
+        let (out, removed) = scrub(&jpeg).expect("a jpeg scrubs");
+        assert_eq!(out.len(), jpeg.len(), "in-place scrub preserves length");
+        let took: Vec<&str> = removed.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(took.contains(&"Artist"), "{took:?}");
+        assert!(
+            took.contains(&"Camera make"),
+            "the device is a fingerprint: {took:?}"
+        );
+        assert!(
+            took.contains(&"Software"),
+            "the software is a fingerprint: {took:?}"
+        );
+
+        let img = parse(&out).expect("the scrubbed jpeg still parses");
+        for gone in ["Artist", "Camera make", "Software"] {
+            assert!(
+                !img.fields.iter().any(|f| f.key == gone),
+                "{gone} should be gone: {:?}",
+                img.fields
+            );
+        }
+        // A non-identifying field is left in place.
+        assert!(
+            img.fields.iter().any(|f| f.key == "Image description"),
+            "the description is not identity and stays: {:?}",
+            img.fields
+        );
     }
 
     #[test]

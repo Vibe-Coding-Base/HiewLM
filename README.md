@@ -52,9 +52,15 @@ and `Enter` takes you there.
 - **Triage in one keystroke.** Hashes a feed will recognise (including ssdeep and
   imphash), packer and builder identification, structural anomalies, capabilities
   read off the import table, indicators, and an entropy map — one screen, filterable.
-- **Documents get the same treatment as executables.** OLE2, OOXML, RTF, PDF and
-  ZIP have a structure view with navigable offsets, decompressed VBA macro source,
-  and the findings that decide whether a document is a lure.
+- **Documents and images get the same treatment as executables.** OLE2, OOXML,
+  RTF, PDF and ZIP have a structure view with navigable offsets, decompressed VBA
+  macro source, and the findings that decide whether a document is a lure. Images
+  (JPEG, PNG, TIFF) show their EXIF/XMP metadata — camera, software, and GPS
+  decoded to coordinates — with the identity-leaking fields flagged.
+- **A Plugins menu and a metadata scrub.** `P` gathers the tools that apply to the
+  open file — YARA, encoded-data recovery — and, for a document or image, a scrub
+  that writes a copy with the identity metadata removed (author, GPS, camera,
+  template path) and never touches the original.
 - **Safe by construction.** A `no_exec` test in CI fails the build if any code
   path gains the ability to load or run target-file content. `unsafe` is denied
   workspace-wide. Nothing is dlopened, no linked resource is fetched, no macro runs.

@@ -253,6 +253,14 @@ pub enum Dialog {
     BlockWrite {
         input: String,
     },
+    /// Confirm writing a metadata-scrubbed copy: what will be removed, and the
+    /// path it will be written to. The cleaned bytes ride along so the file that
+    /// is written is exactly the one previewed.
+    ScrubConfirm {
+        removed: Vec<(String, String)>,
+        out: String,
+        bytes: Vec<u8>,
+    },
     BlockFill {
         input: String,
     },
@@ -953,6 +961,34 @@ impl App {
         let filled: Vec<u8> = pattern.iter().copied().cycle().take(len).collect();
         self.buffer.overwrite(FileOffset(s), &filled);
         self.set_status(format!("Filled {len} bytes."));
+    }
+
+    /// Scrub identity metadata and open the confirm dialog. The write itself is
+    /// deliberate — a second keypress — and never touches the open file.
+    fn open_scrub(&mut self) {
+        let data = self.buffer.to_vec();
+        match hiewlm_office::scrub::scrub_identity(&data) {
+            Some(s) if !s.removed.is_empty() => {
+                let out = clean_path(&self.path);
+                self.dialog = Some(Dialog::ScrubConfirm {
+                    removed: s.removed,
+                    out,
+                    bytes: s.bytes,
+                });
+            }
+            _ => self.set_status("No identity metadata to remove."),
+        }
+    }
+
+    fn write_scrub(&mut self, out: &str, bytes: &[u8]) {
+        match std::fs::write(out, bytes) {
+            Ok(()) => self.set_status(format!(
+                "Wrote {out} ({} bytes); the original is unchanged.",
+                bytes.len()
+            )),
+            Err(e) => self.set_status(format!("Scrub write failed: {e}")),
+        }
+        self.dialog = None;
     }
 
     fn block_write_file(&mut self, path: &str) {
@@ -2984,6 +3020,7 @@ impl App {
                     self.dialog = Some(Dialog::PluginMenu { selected: 0 });
                 }
             }
+            Command::ScrubMetadata => self.open_scrub(),
             Command::OpenCopyMenu => {
                 self.dialog = Some(Dialog::CopyMenu { selected: 0 });
                 self.set_status("Copy to the system clipboard (works over SSH via OSC 52).");
@@ -3254,6 +3291,8 @@ pub enum Command {
     OpenBlockMenu,
     /// `P`: the Plugins menu — the tools that apply to the current file.
     OpenPluginMenu,
+    /// Write a copy of a document or image with identity metadata removed.
+    ScrubMetadata,
     /// `Y`: copy a hash / the selection / the IOC list to the system clipboard.
     OpenCopyMenu,
     CopyItem(usize),
@@ -3377,6 +3416,16 @@ pub(crate) const BLOCK_MENU_CMDS: [Command; 9] = [
     Command::BlockDelete,
     Command::NopInstruction,
 ];
+
+/// A cleaned copy next to the original: `report.docx` -> `report.clean.docx`.
+fn clean_path(path: &std::path::Path) -> String {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
+    let name = match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => format!("{stem}.clean.{ext}"),
+        None => format!("{stem}.clean"),
+    };
+    path.with_file_name(name).to_string_lossy().into_owned()
+}
 
 fn mode_index(m: Mode) -> usize {
     match m {

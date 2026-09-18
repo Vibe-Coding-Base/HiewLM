@@ -23,6 +23,27 @@ impl super::App {
     pub fn plugin_entries(&self) -> Vec<PluginEntry> {
         let mut v = Vec::new();
 
+        // Metadata scrub: only for a document or image that actually carries
+        // identity metadata, so the entry means there is something to remove.
+        if let Some(doc) = &self.document {
+            let scrubbable = matches!(
+                doc.kind,
+                hiewlm_office::DocKind::Ooxml | hiewlm_office::DocKind::Image
+            );
+            let has_identity = doc
+                .findings
+                .iter()
+                .any(|f| f.message.starts_with("identity:"));
+            if scrubbable && has_identity {
+                v.push(PluginEntry {
+                    key: 'm',
+                    label: "Scrub metadata → clean copy",
+                    detail: "remove identity, write a new file".into(),
+                    command: Command::ScrubMetadata,
+                });
+            }
+        }
+
         if cfg!(feature = "yara") {
             let detail = match &self.default_yara_rules {
                 Some(p) => format!(

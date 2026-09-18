@@ -3,120 +3,108 @@
 
 use super::Command;
 
-pub(super) const HELP_TEXT: &str = "\
-Every action has a plain-key shortcut; function keys are optional
-(many terminals, e.g. macOS, don't send F1-F12).  up/down to scroll.
-Press : for the command palette — every command by name.
-Keys after 'Shift:' on the bottom bar need Shift held (Shift+P for Plugins).
+pub(super) const HELP_TEXT: &str = r#"Every action has a plain-key shortcut; function keys are optional (many
+terminals, macOS included, do not send F1-F12).  Up/down scrolls this help.
+Press : for the command palette - every command by name.
+On the bottom bar, keys after 'Shift:' need Shift held (Shift+P for Plugins).
 
 TRIAGE  (start here)
-  2  or  T                      triage screen: verdict, hashes, packer,
-                                anomalies, capabilities, IOCs, entropy map
-  s                             strings (ASCII + UTF-16), tagged with
-                                url/ip/registry/lolbin/... — type to filter
-  R                             YARA scan (rule file or folder)
-  Alt+X                         find plaintext hidden behind a 1-byte key
-  Alt+K                         recover a repeating XOR key from the block
-  Rules for the API, packer and indicator tables live in data files:
-  see `hiewlmc rules` for what is loaded and how to override it.
-  Alt+S                         rebuild strings this function builds on the
-                                stack (mov [rbp-x], 'h' ... — invisible to
-                                `strings`)
-  L                             view lens: decode the VIEW, not the file
-  Y                             copy hash / block / IOC list / Markdown report
-                                to the clipboard, or write the report to a file
-  F                             rank every sample in this folder
-  O                             open another file
+  2  or  T          triage screen: verdict, hashes, packer, anomalies,
+                    capabilities, IOCs, entropy map
+  s                 strings (ASCII + UTF-16), tagged url/ip/registry/lolbin;
+                    type to filter
+  Shift+R           YARA scan (rule file or folder)
+  P                 plugins menu - the tools that apply to this file
+  Alt+X             find plaintext hidden behind a single-byte key
+  Alt+K             recover a repeating XOR key from the block
+  Alt+S             rebuild strings a function builds on the stack
+  Shift+L           view lens: decode the VIEW, not the file
+  Shift+Y           copy hash / block / IOC list / Markdown report out
+  Shift+F           rank every sample in this folder
+  Shift+O           open another file
+  Rule tables (API, packer, indicator) live in data files;
+  see `hiewlmc rules` for what is loaded and how to override.
 
 NAVIGATE
-  arrows PgUp PgDn Home End     move / scroll
-  Ctrl+Home  Ctrl+End           start / end of file
-  g  or  5                      goto  (n, +n, -n, .va, nt)
-  + / -                         push / pop bookmark
-  k                             name a bookmark
-  Backspace                     go back (return stack)
-  H                             jump history
+  arrows            move / scroll (PgUp PgDn Home End too)
+  Ctrl+Home/End     start / end of file
+  g  or  5          goto (n, +n, -n, .va, nt)
+  +  /  -           push / pop bookmark
+  k                 name a bookmark
+  Backspace         go back (return stack)
+  Shift+H           jump history
 
 VIEW
-  Enter                         cycle Hex / Code / Text / Doc
-  m  or  4                      mode menu
-  In every popup: type to filter, up/down to scroll, and left/right to
-  scroll sideways when a line is wider than the box (Shift+arrows in the
-  header and triage views, whose arrows switch panes).
-  Alt+A                         toggle offset / VA
-  \\                             cycle theme
-  E                             cycle text encoding
+  Enter             cycle Hex / Code / Text / Doc
+  m  or  4          mode menu
+  Alt+A             toggle offset / VA
+  \                 cycle theme
+  Shift+E           cycle text encoding
+  In every popup: type to filter, up/down to scroll, left/right to
+  scroll a line wider than the box.
 
 SEARCH
-  /  or  7                      find; Tab picks hex / text / text-i (no case)
-                                / utf-16 / asm.  Up/Down recalls past patterns,
-                                Ctrl+A lists every match at once
-  n  /  N                       find next / previous
-  x                             search across the whole folder
-                                (rewriting a folder lives in the CLI:
-                                 hiewlmc replace <dir> ... --recursive)
+  /  or  7          find; Tab picks hex / text / text-i / utf-16 / asm.
+                    Up/Down recalls patterns, Ctrl+A lists every match
+  n  /  Shift+N     find next / previous
+  x                 search across the whole folder
 
 EDIT  (the sample is LOCKED until you unlock it)
-  Ctrl+W                        unlock / re-lock writing (or start with --rw)
-  e  or  3                      edit (Tab hex<->ascii, Esc done)
-  Ins                           insert / overwrite
-  Ctrl+Z   Ctrl+Y               undo / redo
-  w  or  9                      save (atomic, .bak backup)
+  Ctrl+W            unlock / re-lock writing (or start with --rw)
+  e  or  3          edit (Tab hex<->ascii, Esc done)
+  Ins               insert / overwrite
+  Ctrl+Z / Ctrl+Y   undo / redo
+  w  or  9          save (atomic, .bak backup)
 
 BLOCK  (select: * or v, or Shift+arrows)
-  y   p   d                     yank / paste / delete
-  b                             block menu (write, read, copy, move, insert,
-                                fill, zero, delete, NOP)
-  C                             crypt the block (MODIFIES the bytes; L only
-                                changes the view)
-  M                             color the block (saved to sidecar)
-  ] / [                         jump to next / prev colored marker
+  y  p  d           yank / paste / delete
+  b                 block menu (write, read, copy, move, insert, fill,
+                    zero, delete, NOP)
+  Shift+C           crypt the block (MODIFIES bytes; L only the view)
+  Shift+M           color the block (saved to sidecar)
+  ]  /  [           jump to next / prev colored marker
 
 CODE  (disassembly)
-  f                             follow branch under cursor
-  o                             disassemble as x86 / x64 / ARM64 / ...
-  6  or  F6                     cross-references to cursor
-  Alt+F2                        NOP the instruction under cursor
-  G                             control-flow graph of this function
-  A                             assemble at cursor (x86/x64)
-  ;                             add / edit comment
-  Instructions are annotated with the API they call and the string they
-  point at, and are disassembled through the lens when one is set.
+  f                 follow branch under cursor
+  o                 disassemble as x86 / x64 / ARM64 / ...
+  6  or  F6         cross-references to cursor
+  Alt+F2            NOP the instruction under cursor
+  Shift+G           control-flow graph of this function
+  Shift+A           assemble at cursor (x86/x64)
+  ;                 add / edit comment
 
-DOCUMENT  (Office files: OLE2 .doc/.xls/.ppt, OOXML .docx/..., RTF)
-  Enter or 4                    Doc mode, when the file is a document
-  arrows                        left/right switch pane, up/down move
-  Enter                         jump to that part's bytes
-  < / >                         scroll a long row sideways
-  Panes: Structure (storages, parts, objects) - Findings - Macros
-  (decompressed VBA source and its keywords) - Info (metadata,
-  external references such as a remote template).
+DOCUMENT / IMAGE  (Office, PDF, ZIP, JPEG/PNG/TIFF)
+  Enter or 4        Doc mode, when the file is a document or image
+  arrows            left/right switch pane, up/down move
+  Enter             jump to that part's bytes
+  P then m          scrub identity metadata to a clean copy
+  Panes: Structure - Findings - Macros - Info. An image shows its
+  EXIF/XMP metadata; identity fields are flagged and can be scrubbed.
 
 ANALYSIS
-  8  or  F8                     header view (info / sections / imports /
-                                exports / resources) — imports are tagged
-                                with their behaviour category
-  i                             data inspector (int/float, LE+BE)
-  =                             calculator (@o/@b/@w/@d/@q operands)
-  h                             hashes (CRC32/MD5/SHA-256/BLAKE3)
-  c                             compare with a file (diff); >/< next
-  S                             split 2-pane diff view (needs c first)
-  t                             apply a struct template
-  K then 1-8 / Alt+1..8         set / jump to a numbered slot
-  F12                           names, slots & functions (members for ZIP/PDF)
+  8  or  F8         header view (info / sections / imports / exports /
+                    resources)
+  i                 data inspector (int/float, LE+BE)
+  =                 calculator (@o/@b/@w/@d/@q operands)
+  h                 hashes (CRC32/MD5/SHA-256/BLAKE3)
+  c                 compare with a file (diff); >/< next
+  Shift+S           split 2-pane diff view (needs c first)
+  t                 apply a struct template
+  Shift+K then 1-8  set / jump to a numbered slot (Alt+1..8 jumps)
+  F12               names, slots & functions (members for ZIP/PDF)
 
 MISC
-  Ctrl+.  Ctrl+P  Ctrl+L       record / play / loop macro (stops on search-fail)
-  ?  or  1                     this help
-  V                            about: version, author, build features
-  Ctrl+C  or  F10              quit from anywhere, even inside a dialog
-  q  or  0  or  F10            quit
-  Esc                          clear filter/highlight/block, then go back
+  Ctrl+. / P / L    record / play / loop macro
+  ?  or  1          this help
+  Shift+V           about: version, author, build features
+  Ctrl+C or F10     quit from anywhere, even inside a dialog
+  q  or  0          quit
+  Esc               clear filter/highlight/block, then go back
 
 Comments, bookmarks, slots and markers are saved automatically, keyed by the
-sample's SHA-256 — rename or move the file and they follow it.
+sample's SHA-256 - rename or move the file and they follow it.
 
-Read-only by default.  The target file is data, never executed.";
+Read-only by default.  The target file is data, never executed."#;
 
 /// Every command the palette can run: `(name, key hint, command)`.
 ///

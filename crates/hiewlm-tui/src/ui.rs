@@ -6,7 +6,7 @@ use crate::theme::Theme;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap};
 use ratatui::Frame;
 
 pub fn draw(f: &mut Frame, app: &mut App, theme: &Theme) {
@@ -135,6 +135,7 @@ fn draw_file_picker(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(lines).block(block).style(theme.dialog()),
@@ -192,6 +193,7 @@ fn draw_jump_list(
             " {title}{filt}  (type=filter - ↑↓ PgUp/Dn - ←→ scroll - Enter jump - Esc) "
         ))
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(lines)
@@ -233,6 +235,7 @@ fn draw_palette(f: &mut Frame, area: Rect, input: &str, sel: usize, theme: &Them
     let block = Block::default()
         .title(" Commands  (type to filter - ↑↓ - Enter runs - Esc) ")
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(lines).block(block).style(theme.dialog()),
@@ -298,6 +301,7 @@ fn draw_pane_list(
             "{title}{filt} (←→ pane - Shift+←→ scroll - type=filter - Enter jump - Esc) "
         ))
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(lines)
@@ -371,6 +375,7 @@ fn draw_header(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(lines).block(block).style(theme.dialog()),
@@ -1207,6 +1212,7 @@ fn draw_dialog(f: &mut Frame, area: Rect, app: &App, dialog: &Dialog, theme: &Th
     let block = Block::default()
         .title(format!(" {title} "))
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(body)
@@ -1265,6 +1271,7 @@ fn draw_message(
     let block = Block::default()
         .title(format!(" {title}{bar}  (Esc) "))
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(view)
@@ -1311,6 +1318,7 @@ fn draw_calc(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Theme) {
     let block = Block::default()
         .title(" Calculator  (type - Esc) ")
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(lines).block(block).style(theme.dialog()),
@@ -1400,6 +1408,7 @@ fn draw_assemble(f: &mut Frame, area: Rect, app: &App, input: &str, theme: &Them
     let block = Block::default()
         .title(" Assemble  (Enter patches - Esc) ")
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(theme.dialog());
     f.render_widget(
         Paragraph::new(lines).block(block).style(theme.dialog()),

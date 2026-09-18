@@ -23,8 +23,9 @@ pub fn classify(key: &str) -> Option<(&'static str, bool)> {
         "Company" => ("Company", true),
         // A template is often a UNC path — it leaks internal infrastructure.
         "Template" => ("Template path", true),
-        "Application" => ("Application", false),
-        "AppVersion" => ("App version", false),
+        // The authoring application and its version fingerprint the software.
+        "Application" => ("Application", true),
+        "AppVersion" => ("App version", true),
         // PDF Info dictionary
         "Author" => ("Author", true),
         "Creator" => ("Creator tool", false),
@@ -81,8 +82,11 @@ mod tests {
         assert!(is_identity("dc:creator"));
         assert!(is_identity("Author"));
         assert!(is_identity("Template"));
+        assert!(
+            is_identity("Application"),
+            "the authoring app is a fingerprint"
+        );
         assert!(!is_identity("Producer"));
-        assert!(!is_identity("Application"));
         assert!(!is_identity("unknown-key"));
     }
 

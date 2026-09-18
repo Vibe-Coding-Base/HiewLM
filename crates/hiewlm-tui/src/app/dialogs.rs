@@ -252,6 +252,36 @@ impl super::App {
                 Esc => {}
                 _ => self.dialog = Some(Dialog::BlockMenu { selected }),
             },
+            Dialog::PluginMenu { selected } => {
+                let entries = self.plugin_entries();
+                let n = entries.len();
+                match key.code {
+                    Up => {
+                        let s = if n == 0 { 0 } else { (selected + n - 1) % n };
+                        self.dialog = Some(Dialog::PluginMenu { selected: s });
+                    }
+                    Down | Tab => {
+                        let s = if n == 0 { 0 } else { (selected + 1) % n };
+                        self.dialog = Some(Dialog::PluginMenu { selected: s });
+                    }
+                    Enter => {
+                        if let Some(cmd) = entries.get(selected).map(|e| e.command) {
+                            self.apply(cmd);
+                        }
+                    }
+                    Char(c) => {
+                        let want = c.to_ascii_lowercase();
+                        if let Some(cmd) = entries.iter().find(|e| e.key == want).map(|e| e.command)
+                        {
+                            self.apply(cmd);
+                        } else {
+                            self.dialog = Some(Dialog::PluginMenu { selected });
+                        }
+                    }
+                    Esc => {}
+                    _ => self.dialog = Some(Dialog::PluginMenu { selected }),
+                }
+            }
             Dialog::CopyMenu { selected } => {
                 let n = crate::ui::COPY_MENU_LABELS.len();
                 match key.code {

@@ -642,6 +642,49 @@ fn panes_follow_the_file_type() {
 }
 
 #[test]
+fn plugin_menu_lists_the_tools_that_apply() {
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    // A code file offers stack-string reconstruction on top of the universal
+    // encoded-data tools.
+    let mut code = app();
+    code.disasm_arch = Arch::X86_64;
+    let keys: Vec<char> = code.plugin_entries().iter().map(|e| e.key).collect();
+    assert!(
+        keys.contains(&'x') && keys.contains(&'k'),
+        "the XOR tools apply to any file: {keys:?}"
+    );
+    assert!(
+        keys.contains(&'s'),
+        "a code file offers stack strings: {keys:?}"
+    );
+
+    // An image has no code to disassemble, so no stack-string entry — but the
+    // universal tools are still there.
+    let img = image_app();
+    let ikeys: Vec<char> = img.plugin_entries().iter().map(|e| e.key).collect();
+    assert!(
+        !ikeys.contains(&'s'),
+        "an image's arch is only a default, not real code: {ikeys:?}"
+    );
+    assert!(ikeys.contains(&'x'), "the XOR tools still apply: {ikeys:?}");
+
+    // P opens the menu, and pressing a tool's letter dismisses it and runs the
+    // tool.
+    let mut a = app();
+    a.apply(Command::OpenPluginMenu);
+    assert!(
+        matches!(a.dialog, Some(Dialog::PluginMenu { .. })),
+        "P opens the Plugins menu"
+    );
+    a.handle_key(KeyEvent::from(KeyCode::Char('x')));
+    assert!(
+        !matches!(a.dialog, Some(Dialog::PluginMenu { .. })),
+        "choosing a tool closes the menu"
+    );
+}
+
+#[test]
 fn mode_menu_offers_every_mode() {
     // Doc shipped unreachable from the menu: the list and its wrap-around were
     // still written for three modes.

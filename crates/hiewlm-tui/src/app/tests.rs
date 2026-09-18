@@ -605,7 +605,14 @@ fn image_app() -> App {
     jpeg.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
     jpeg.extend_from_slice(&exif);
     jpeg.extend_from_slice(&[0xFF, 0xD9]);
-    let path = std::env::temp_dir().join(format!("hiewlm_img_{}.jpg", std::process::id()));
+    // A unique name per call: tests run in parallel and must not share a path.
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "hiewlm_img_{}_{}.jpg",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
     fs::write(&path, jpeg).unwrap();
     let a = App::open(path).unwrap();
     assert!(a.doc_supported(), "the jpeg must parse as a document");

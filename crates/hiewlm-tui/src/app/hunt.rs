@@ -37,8 +37,8 @@ impl super::App {
             if scrubbable && has_identity {
                 v.push(PluginEntry {
                     key: 'm',
-                    label: "Scrub metadata → clean copy",
-                    detail: "remove identity, write a new file".into(),
+                    label: "Scrub metadata",
+                    detail: "write a cleaned copy, keep the original".into(),
                     command: Command::ScrubMetadata,
                 });
             }
@@ -172,7 +172,7 @@ impl super::App {
             sel: 0,
             filter: String::new(),
         });
-        self.set_status("Worst first · Enter opens · type to filter · Esc closes");
+        self.set_status("Worst first - Enter opens - type to filter - Esc closes");
     }
 
     /// Every match of the current pattern at once, as a jump list with context.
@@ -280,7 +280,7 @@ impl super::App {
             filter: String::new(),
         });
         self.set_status(format!(
-            "YARA: {n} rule(s) matched · 2 shows the updated verdict"
+            "YARA: {n} rule(s) matched - 2 shows the updated verdict"
         ));
     }
 
@@ -390,7 +390,7 @@ impl super::App {
                 )
             })
             .collect();
-        self.set_status("Enter puts that key on the lens · best-explaining first · Esc cancels");
+        self.set_status("Enter puts that key on the lens - best-explaining first - Esc cancels");
         self.dialog = Some(Dialog::XorHits {
             items,
             sel: 0,
@@ -426,7 +426,7 @@ impl super::App {
                 )
             })
             .collect();
-        self.set_status("Enter jumps there AND sets the lens to that recipe · type to filter");
+        self.set_status("Enter jumps there AND sets the lens to that recipe - type to filter");
         self.dialog = Some(Dialog::XorHits {
             items,
             sel: 0,

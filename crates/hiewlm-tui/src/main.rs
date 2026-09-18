@@ -112,7 +112,7 @@ fn main() -> Result<()> {
     };
     if cli.rw {
         app.read_only = false;
-        app.set_status("UNLOCKED (--rw): writes allowed · Ctrl+W re-locks.");
+        app.set_status("UNLOCKED (--rw): writes allowed - Ctrl+W re-locks.");
     }
 
     run(&mut guard.terminal, &mut app)

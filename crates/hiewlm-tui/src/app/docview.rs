@@ -12,6 +12,20 @@ impl super::App {
         self.document.is_some()
     }
 
+    /// The panes that apply to the open document, in tab order. A pane the file
+    /// type cannot have is not shown at all — an image or a PDF has no VBA, so it
+    /// gets no Macros tab, rather than an empty one that reads as a dead end.
+    pub fn doc_panes(&self) -> Vec<DocPane> {
+        let macro_capable = matches!(
+            self.document.as_ref().map(|d| d.kind),
+            Some(hiewlm_office::DocKind::Ole | hiewlm_office::DocKind::Ooxml)
+        );
+        DocPane::ALL
+            .into_iter()
+            .filter(|p| *p != DocPane::Macros || macro_capable)
+            .collect()
+    }
+
     /// The rows of the current document pane: label plus an optional offset to
     /// navigate to, the same shape every other list in hiewLM uses.
     pub fn doc_rows(&self) -> Vec<(String, Option<u64>)> {

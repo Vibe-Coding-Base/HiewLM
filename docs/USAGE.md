@@ -305,7 +305,7 @@ theme = "classic"          # classic | dark | light
 encoding = "cp437"         # ascii | cp437 | latin1 | utf16
 bytes_per_row = 16
 yara_rules = "~/rules"     # scanned by R without prompting
-plugins = []               # container plugins to activate
+plugins = []               # extra container plugins (zip and pdf are built in)
 ```
 
 Other locations:

@@ -6,6 +6,8 @@ All notable changes to hiewLM. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-19
+
 ### Added
 
 - **Image metadata.** JPEG, PNG and TIFF are now first-class in the document
@@ -37,6 +39,15 @@ All notable changes to hiewLM. The format follows
 - Document panes now follow the file type: an image, PDF or archive no longer
   shows a Macros tab it can never fill. Macros is kept for OLE and OOXML, the
   formats that can carry VBA.
+- The popups are redrawn: menus (Plugins, Block, Copy, Color) carry the selection
+  on a highlight bar with aligned columns instead of a "►" typed into the text;
+  the help is rebuilt with a consistent two-column layout; every popup gains a
+  column of padding; and the middle-dot separator is replaced with a hyphen.
+- The function bar groups the keys that need Shift after a `Shift:` label, so a
+  capital `P` for Plugins reads as "hold Shift" without guessing — a terminal in
+  raw mode cannot report Shift on its own to swap the bar as HIEW does.
+- The documentation covers images, the Plugins menu and the scrub, and a GitHub
+  wiki is generated from `docs/` and kept in sync automatically.
 
 ## [0.6.2] - 2026-09-07
 

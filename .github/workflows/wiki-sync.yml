@@ -1,0 +1,51 @@
+name: Wiki sync
+
+# Keep the GitHub wiki in step with the docs. docs/ is the single source; the
+# wiki is generated from it by scripts/gen-wiki.sh, so there is never a second
+# copy to remember to update. Runs whenever the docs, their screenshots or the
+# generator change on main, and on demand.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "assets/screenshots/**"
+      - "scripts/gen-wiki.sh"
+      - ".github/workflows/wiki-sync.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the wiki from docs and push it
+        run: |
+          set -eu
+          wiki="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git"
+          # The wiki repo only exists once its first page has been created in the
+          # web UI. If it is not there yet, skip rather than fail the build.
+          if ! git clone --quiet "$wiki" wiki 2>/dev/null; then
+            echo "Wiki not initialised (create its first page once); skipping."
+            exit 0
+          fi
+          sh scripts/gen-wiki.sh "$PWD" wiki
+          cd wiki
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki already up to date."
+          else
+            git commit -m "Sync wiki from docs (${{ github.sha }})"
+            git push
+          fi

@@ -54,6 +54,8 @@ ENT7.9 OVL+128K TLS]`.
 The score orders a queue; it does not convict a file. Everything it is built from
 is visible in the panes.
 
+![Triage screen: verdict, hashes, packer, structural anomalies](../assets/screenshots/triage.png)
+
 ### Views
 
 `Enter` cycles Hex → Code → Text → Doc. `4` or `m` opens the mode menu.
@@ -105,6 +107,8 @@ sideways.
 Nothing in this path executes anything: a remote template is reported, never
 fetched; a macro is read, never run.
 
+![Image metadata findings: author, GPS, camera surfaced from a JPEG](../assets/screenshots/image-metadata.png)
+
 ### Plugins, and scrubbing metadata
 
 `P` opens the **Plugins** menu — the tools that apply to the file in front of
@@ -112,12 +116,16 @@ you, filtered to what it supports: YARA scan, single-byte and repeating XOR key
 recovery, stack-string reconstruction for code, and, for a document or image, a
 metadata scrub.
 
+![The Plugins menu, filtered to what the open file supports](../assets/screenshots/plugins-menu.png)
+
 **Scrub metadata** (`P` then `m`, or `hiewlmc scrub`) writes a *copy* with the
 identity fingerprint removed — author, last-saved-by, company, manager, template
 path, GPS, owner, camera make and model, and the authoring software. Timestamps
 and technical parameters are kept. The TUI previews exactly what will be removed
 and lets you choose the output path (default `<name>.clean.<ext>`); the original
 is never modified. It works on OOXML documents and JPEG/PNG/TIFF images.
+
+![Scrub preview: exactly which identity fields will be removed, and where the copy goes](../assets/screenshots/scrub-preview.png)
 
 ### Finding things
 
@@ -350,6 +358,8 @@ interactive.
  `hiewlmc triage ~/incoming --format markdown`
 gives a ranked table to paste into a ticket; `hiewlm ~/incoming` opens the same
 ranking as a queue you can walk with `Enter`.
+
+![Folder triage: samples ranked worst-first, each with its score and badges](../assets/screenshots/folder-triage.png)
 
 **A document arrived by email.** Open it, press `2` for the verdict, then `Enter`
 to Doc mode. Findings tells you whether it fetches a remote template or runs a
